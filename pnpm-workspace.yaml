@@ -1,0 +1,5 @@
+packages:
+  - WAD2G5T3-Project
+
+# Keep the app's existing lockfile in its own folder.
+sharedWorkspaceLockfile: false

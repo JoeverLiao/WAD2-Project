@@ -5,16 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node --watch server/index.js",
+    "dev:all": "run-p dev dev:server",
+    "start:server": "node server/index.js",
+    "test:server": "node --test server/tests/*.test.js",
     "build": "vite build",
     "preview": "vite preview",
     "test:unit": "vitest",
     "test:e2e": "playwright test",
-    "lint": "run-s \"lint:*\"",
-    "lint:oxlint": "oxlint . --fix",
-    "lint:eslint": "eslint . --fix --cache",
-    "format": "prettier --write --experimental-cli src/"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write src/ server/"
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "mongoose": "^9.11.1",
     "pinia": "^4.0.2",
     "vue": "^3.5.40",
     "vue-router": "^5.2.0"
@@ -27,16 +32,13 @@
     "@vue/test-utils": "^2.4.11",
     "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-oxlint": "~1.73.0",
     "eslint-plugin-playwright": "^2.10.5",
     "eslint-plugin-vue": "~10.9.2",
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
     "npm-run-all2": "^9.0.2",
-    "oxlint": "~1.74.0",
     "prettier": "3.9.5",
     "vite": "^8.1.5",
-    "vite-plugin-vue-devtools": "^8.1.5",
     "vitest": "^4.1.10",
     "vue-eslint-parser": "^10.4.1"
   },

@@ -1,0 +1,7 @@
+# Generated dependencies and build/test output are local to each developer.
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.log
