@@ -29,13 +29,15 @@
         })
     })
 
-    function goToLocation(location){
-        if (map.getCenter().lat == location[0] && map.getCenter().lng == location[1]){
+    function goToLocation(item){
+        selectedListing.value = item;
+
+        if (map.getCenter().lat === item.latitude && map.getCenter().lng === item.longitude){
             return;
         }
 
         map.panTo(
-            location
+            [item.latitude, item.longitude]
         )
     }
 
@@ -45,7 +47,7 @@
     <div style="display: flex;">
         <div id="food-rescue-map"></div>
         <div class="listings-container">
-            <div class="map-card" @click="goToLocation([item.latitude, item.longitude])"
+            <div class="map-card" @click="goToLocation(item)"
                 v-for="item in listings"
                 :key="item.id"
             >
