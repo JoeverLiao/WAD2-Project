@@ -10,7 +10,17 @@ export async function apiRequest(path, { body, headers, ...options } = {}) {
   })
 
   if (response.status === 204) return null
-  const data = await response.json()
+
+  const text = await response.text()
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error(
+      `Server returned ${response.status}: ${text || '(empty response)'}`,
+    )
+  }
+
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
   return data
 }

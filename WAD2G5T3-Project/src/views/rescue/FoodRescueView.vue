@@ -1,5 +1,5 @@
 <script setup>
-  import FoodRescueMap from '../../components/FoodRescueMap.vue';
+import FoodRescueMap from '../../components/FoodRescueMap.vue'
 </script>
 
 <template>
@@ -8,6 +8,5 @@
     <p>Assigned to: Gabriele (Full Circle)</p>
     <!-- TODO: Gabriele: posting, browsing, map, listing details, and claim/unclaim. -->
     <FoodRescueMap />
-    
   </section>
 </template>

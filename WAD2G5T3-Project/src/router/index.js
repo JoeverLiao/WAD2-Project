@@ -47,19 +47,19 @@ export const routes = [
     path: '/login',
     name: 'login',
     component: () => import('../views/account/LoginView.vue'),
-    meta: { navLabel: 'Login' },
+    meta: { navLabel: 'Login', navGroup: 'Profile' },
   },
   {
     path: '/register',
     name: 'register',
     component: () => import('../views/account/RegisterView.vue'),
-    meta: { navLabel: 'Register' },
+    meta: { navLabel: 'Register', navGroup: 'Profile' },
   },
   {
     path: '/profile',
     name: 'profile',
     component: () => import('../views/account/ProfileView.vue'),
-    meta: { navLabel: 'Profile' },
+    meta: { navLabel: 'Profile', navGroup: 'Profile' },
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

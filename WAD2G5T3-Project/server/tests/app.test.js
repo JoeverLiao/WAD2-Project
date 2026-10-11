@@ -39,12 +39,6 @@ test('database errors return 503 without exposing connection details', async (t)
 test('feature endpoints explicitly remain unimplemented', async (t) => {
   const base = await startApp(t, async () => {})
   for (const [method, path] of [
-    ['POST', '/auth/register'],
-    ['POST', '/auth/login'],
-    ['POST', '/auth/logout'],
-    ['GET', '/auth/me'],
-    ['PATCH', '/auth/me'],
-    ['GET', '/dashboard'],
     ['POST', '/scanning/receipts'],
     ['POST', '/scanning/products'],
     ['POST', '/scanning/confirm'],
@@ -70,6 +64,30 @@ test('feature endpoints explicitly remain unimplemented', async (t) => {
     assert.equal(response.status, 501, `${method} ${path}`)
     assert.equal((await response.json()).error, 'Not implemented')
   }
+})
+
+test('auth endpoints validate input and require authentication', async (t) => {
+  const base = await startApp(t, async () => {})
+
+  // Register without body returns 400
+  const noBody = await fetch(`${base}/api/auth/register`, { method: 'POST' })
+  assert.equal(noBody.status, 400)
+
+  // Login without body returns 400
+  const noLogin = await fetch(`${base}/api/auth/login`, { method: 'POST' })
+  assert.equal(noLogin.status, 400)
+
+  // Logout succeeds without auth
+  const loggedOut = await fetch(`${base}/api/auth/logout`, { method: 'POST' })
+  assert.equal(loggedOut.status, 200)
+
+  // Profile endpoint requires auth
+  const profile = await fetch(`${base}/api/auth/me`)
+  assert.equal(profile.status, 401)
+
+  // Dashboard endpoint requires auth
+  const dash = await fetch(`${base}/api/dashboard`)
+  assert.equal(dash.status, 401)
 })
 
 test('unknown routes return JSON 404', async (t) => {

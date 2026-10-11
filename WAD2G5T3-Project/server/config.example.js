@@ -1,8 +1,12 @@
-// Copy to config.js and set your own connection string. config.js is ignored by Git.
+// Copy to config.js. config.js is ignored by Git.
+// Environment variables (.env at project root) override these values:
+//   MONGO_DB      — MongoDB connection string
+//   JWT_SECRET    — secret key for signing tokens
+//   JWT_EXPIRES_IN — token expiry duration (default 7d)
 export default {
-  mongodbUri: 'mongodb://127.0.0.1:27017/',
+  mongodbUri: 'mongodb://[IP_ADDRESS]:27017/',
   dbName: 'full_circle',
   dnsServers: [],
   port: 3000,
-  host: '127.0.0.1',
+  host: 'localhost',
 }
