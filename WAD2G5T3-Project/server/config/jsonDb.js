@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import crypto from 'node:crypto'
 import bcrypt from 'bcryptjs'
 
-const CREDENTIALS_PATH = 'data/credentials.json'
+const CREDENTIALS_PATH = '../data/credentials.json'
 
 let cache = null
 let cacheTime = 0
