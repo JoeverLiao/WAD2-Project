@@ -7,6 +7,10 @@ export async function getDashboard(req, res, next) {
     const startOfDay = new Date()
     startOfDay.setHours(0, 0, 0, 0)
 
+    const threeDaysFromNow = new Date()
+    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3)
+    threeDaysFromNow.setHours(23, 59, 59, 999)
+
     let items = []
     try {
       items = await InventoryItem.find({}).lean()
@@ -16,15 +20,43 @@ export async function getDashboard(req, res, next) {
 
     const totalItems = items.reduce((sum, i) => sum + (i.quantity || 1), 0)
     const categories = [...new Set(items.map((i) => i.name.toLowerCase()))].length
+
     const itemsExpiringToday = items.filter(
       (i) => i.expiresAt && i.expiresAt >= startOfDay && i.expiresAt <= today,
     )
     const expiredItems = items.filter((i) => i.expiresAt && i.expiresAt < startOfDay)
     const urgentCount = itemsExpiringToday.length + expiredItems.length
 
-    const byStorage = { fridge: 0, freezer: 0, pantry: 0 }
-    items.forEach((i) => {
-      if (byStorage[i.storage] !== undefined) byStorage[i.storage] += i.quantity || 1
+    const storageTypes = ['fridge', 'freezer', 'pantry']
+    const byStorage = {}
+    storageTypes.forEach((type) => {
+      const storageItems = items.filter((i) => i.storage === type)
+      const expiringSoon = storageItems.filter(
+        (i) => i.expiresAt && i.expiresAt <= threeDaysFromNow,
+      )
+      const healthyItems = storageItems.filter(
+        (i) => !i.expiresAt || i.expiresAt > threeDaysFromNow,
+      )
+
+      byStorage[type] = {
+        count: storageItems.reduce((sum, i) => sum + (i.quantity || 1), 0),
+        itemCount: storageItems.length,
+        items: storageItems.map((i) => ({
+          _id: i._id,
+          name: i.name,
+          quantity: i.quantity,
+          unit: i.unit,
+          expiresAt: i.expiresAt,
+        })),
+        expiringSoon: expiringSoon.map((i) => ({
+          _id: i._id,
+          name: i.name,
+          quantity: i.quantity,
+          unit: i.unit,
+          expiresAt: i.expiresAt,
+        })),
+        healthyCount: healthyItems.length,
+      }
     })
 
     res.json({

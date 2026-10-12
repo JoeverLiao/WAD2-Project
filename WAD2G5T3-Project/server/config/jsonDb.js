@@ -54,7 +54,7 @@ export async function createUser({ username, email, password }) {
 
 export async function updateUser(id, updates) {
   const users = await readAll()
-  const idx = users.findIndex((u) => u.id === id)
+  const idx = users.reduce((found, u, i) => (u.id === id) ? i : found, -1)
   if (idx === -1) return null
   users[idx] = { ...users[idx], ...updates, updatedAt: new Date().toISOString() }
   await writeAll(users)
