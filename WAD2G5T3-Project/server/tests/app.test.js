@@ -39,7 +39,6 @@ test('database errors return 503 without exposing connection details', async (t)
 test('feature endpoints explicitly remain unimplemented', async (t) => {
   const base = await startApp(t, async () => {})
   for (const [method, path] of [
-    ['POST', '/scanning/receipts'],
     ['POST', '/scanning/products'],
     ['POST', '/scanning/confirm'],
     ['GET', '/inventory'],
