@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import AnalyticsView from '../views/analytics/AnalyticsView.vue'
@@ -33,6 +33,19 @@ async function dragAcross(svg, start, end) {
 }
 
 describe('Analytics demo', () => {
+  beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = vi.fn(function () {
+      this.setAttribute('open', '')
+    })
+    HTMLDialogElement.prototype.close = vi.fn(function () {
+      this.removeAttribute('open')
+    })
+  })
+  afterEach(() => {
+    delete HTMLDialogElement.prototype.showModal
+    delete HTMLDialogElement.prototype.close
+    vi.restoreAllMocks()
+  })
   it('shows 50 unique records and calculates totals from their weights', () => {
     expect(sampleAnalyticsEvents).toHaveLength(50)
     expect(new Set(sampleAnalyticsEvents.map((event) => event._id)).size).toBe(50)
@@ -117,6 +130,48 @@ describe('Analytics demo', () => {
     expect((await wheel(-100, 20)).defaultPrevented).toBe(false)
     expect((await wheel(-100, 510, 340)).defaultPrevented).toBe(false)
     expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    wrapper.unmount()
+  })
+
+  it('opens a clicked date and saves changes to the table, chart and totals', async () => {
+    const { wrapper, svg } = mountChart()
+    const before = wrapper.findAll('strong')[0].text()
+    await svg.trigger('click', { clientX: 70, clientY: 100 })
+    await nextTick()
+    const dialog = wrapper.get('dialog')
+    expect(dialog.attributes('open')).toBeDefined()
+    expect(dialog.text()).toContain('25 Aug 2026')
+    await dialog.get('[name="name"]').setValue('Rescued apples')
+    await dialog.get('[name="action"]').setValue('discarded')
+    await dialog.get('[name="weightKg"]').setValue('2')
+    await dialog.get('form').trigger('submit')
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    expect(wrapper.findAll('tbody tr').at(-1).text()).toContain('Rescued apples')
+    expect(wrapper.findAll('tbody tr').at(-1).text()).toContain('Discarded')
+    expect(wrapper.findAll('strong')[0].text()).not.toBe(before)
+    expect(wrapper.get('svg polyline[stroke="#cf563e"]').attributes('points').split(' ')[0]).toBe(
+      '70,30',
+    )
+    expect(sampleAnalyticsEvents[0].name).toBe('Apples')
+    wrapper.unmount()
+  })
+
+  it('cancels edits, rejects invalid values, and opens the correct date after zoom', async () => {
+    const { wrapper, svg } = mountChart()
+    await dragAcross(svg, 246, 774)
+    // The click emitted at the end of a drag must not open an editor.
+    await svg.trigger('click', { clientX: 774, clientY: 100 })
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    await svg.trigger('click', { clientX: 70, clientY: 100 })
+    await nextTick()
+    expect(wrapper.get('dialog').text()).toContain('4 Sept 2026')
+    await wrapper.get('dialog [name="weightKg"]').setValue('-2')
+    await wrapper.get('dialog form').trigger('submit')
+    expect(wrapper.get('[role="alert"]').text()).toContain('non-negative')
+    await wrapper.get('dialog [name="name"]').setValue('Cancelled food')
+    await wrapper.get('dialog').trigger('cancel')
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Cancelled food')
     wrapper.unmount()
   })
 })

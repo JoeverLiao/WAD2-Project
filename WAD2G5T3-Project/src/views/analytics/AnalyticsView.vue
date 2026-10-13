@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
 
 const actionLabels = {
@@ -16,6 +16,12 @@ const days = [
   ...new Set(sampleAnalyticsEvents.map((event) => event.occurredAt.slice(0, 10))),
 ].sort()
 const range = ref([0, days.length - 1])
+const events = ref(sampleAnalyticsEvents.map((event) => ({ ...event })))
+const editor = ref(null)
+const selectedDate = ref(null)
+const drafts = ref([])
+const editError = ref('')
+let suppressClick = false
 const drag = ref(null)
 const hover = ref(null)
 const chart = ref(null)
@@ -30,7 +36,7 @@ const formatDate = (date) => dateFormat.format(new Date(`${date}T12:00:00Z`))
 const isZoomed = computed(() => range.value[0] !== 0 || range.value[1] !== days.length - 1)
 const visibleDays = computed(() => days.slice(range.value[0], range.value[1] + 1))
 const visibleEvents = computed(() =>
-  sampleAnalyticsEvents.filter(
+  events.value.filter(
     (event) =>
       event.occurredAt.slice(0, 10) >= visibleDays.value[0] &&
       event.occurredAt.slice(0, 10) <= visibleDays.value.at(-1),
@@ -101,6 +107,7 @@ function indexAt(position) {
 }
 function startDrag(event) {
   if (!event.isPrimary || event.button !== 0) return
+  suppressClick = false
   const position = pointerX(event)
   chart.value.setPointerCapture(event.pointerId)
   drag.value = { start: position, end: position, pointerId: event.pointerId }
@@ -119,6 +126,7 @@ function finishDrag(event) {
   chart.value.releasePointerCapture(event.pointerId)
   // Ignore clicks and tiny movements; keep at least two dates.
   if (Math.abs(end - start) < 12) return
+  suppressClick = true
   const first = indexAt(Math.min(start, end))
   const last = indexAt(Math.max(start, end))
   if (first === last) return
@@ -167,6 +175,66 @@ function wheelZoom(event) {
   )
   range.value = [start, start + nextSpan]
   hover.value = indexAt(point.x)
+}
+async function openDay(index) {
+  selectedDate.value = daily.value[index].date
+  drafts.value = events.value
+    .filter((event) => event.occurredAt.startsWith(selectedDate.value))
+    .map((event) => ({ ...event }))
+  editError.value = ''
+  await nextTick()
+  editor.value.showModal()
+}
+function clickDate(event) {
+  if (suppressClick) {
+    suppressClick = false
+    return
+  }
+  const point = chartPoint(event)
+  if (
+    point.x < plot.left ||
+    point.x > plot.right ||
+    point.y < plot.top ||
+    point.y > plot.bottom + 40
+  )
+    return
+  openDay(indexAt(point.x))
+}
+function closeEditor() {
+  editor.value.close()
+  selectedDate.value = null
+  drafts.value = []
+}
+function saveDay() {
+  if (
+    drafts.value.some(
+      (event) =>
+        !event.name.trim() ||
+        !event.unit.trim() ||
+        !event.location.trim() ||
+        !Object.hasOwn(actionLabels, event.action) ||
+        ['quantity', 'weightKg', 'valueSgd'].some(
+          (field) =>
+            typeof event[field] !== 'number' || !Number.isFinite(event[field]) || event[field] < 0,
+        ),
+    )
+  ) {
+    editError.value = 'Enter a food name, unit and location, and valid non-negative numbers.'
+    return
+  }
+  const updates = new Map(
+    drafts.value.map((event) => [
+      event._id,
+      {
+        ...event,
+        name: event.name.trim(),
+        unit: event.unit.trim(),
+        location: event.location.trim(),
+      },
+    ]),
+  )
+  events.value = events.value.map((event) => updates.get(event._id) || event)
+  closeEditor()
 }
 </script>
 
@@ -222,7 +290,8 @@ function wheelZoom(event) {
             <h2 class="h4">Daily food impact</h2>
             <p id="chart-help" class="text-muted small">
               Drag across the graph to zoom, or hover over a date and scroll up to zoom in and down
-              to zoom out. Drag the bar handles to adjust the dates.
+              to zoom out. Drag the bar handles to adjust the dates. Click a date to view and edit
+              its activity.
             </p>
           </div>
           <button class="btn btn-outline-success" :disabled="!isZoomed" @click="resetZoom">
@@ -290,6 +359,7 @@ function wheelZoom(event) {
           @lostpointercapture="cancelDrag"
           @pointerleave="hover = null"
           @wheel="wheelZoom"
+          @click="clickDate"
         >
           <title id="chart-title">Daily food kept from waste and discarded, in kilograms</title>
           <desc id="chart-description">
@@ -340,6 +410,13 @@ function wheelZoom(event) {
               :cy="y(day[line.key])"
               r="3"
               :fill="line.color"
+              :tabindex="line.key === 'saved' ? 0 : undefined"
+              :role="line.key === 'saved' ? 'button' : undefined"
+              :aria-label="
+                line.key === 'saved' ? `Edit activity for ${formatDate(day.date)}` : undefined
+              "
+              @keydown.enter.prevent="openDay(index)"
+              @keydown.space.prevent="openDay(index)"
             />
           </g>
           <rect
@@ -399,7 +476,14 @@ function wheelZoom(event) {
             </thead>
             <tbody>
               <tr v-for="event in recentEvents" :key="event._id">
-                <td class="text-nowrap">{{ formatDate(event.occurredAt.slice(0, 10)) }}</td>
+                <td class="text-nowrap">
+                  <button
+                    class="btn btn-link p-0"
+                    @click="openDay(visibleDays.indexOf(event.occurredAt.slice(0, 10)))"
+                  >
+                    {{ formatDate(event.occurredAt.slice(0, 10)) }}
+                  </button>
+                </td>
                 <td>
                   {{ event.name }}<span class="d-block text-muted small">{{ event.category }}</span>
                 </td>
@@ -420,12 +504,128 @@ function wheelZoom(event) {
         </div>
       </div>
     </div>
+    <dialog
+      v-if="selectedDate"
+      ref="editor"
+      class="activity-editor"
+      aria-labelledby="editor-title"
+      aria-describedby="editor-help"
+      @cancel.prevent="closeEditor"
+    >
+      <form @submit.prevent="saveDay">
+        <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+          <h2 id="editor-title" class="h4 mb-0">
+            Activity for {{ formatDate(selectedDate) }} 2026
+          </h2>
+          <button
+            type="button"
+            class="btn-close"
+            aria-label="Close editor"
+            @click="closeEditor"
+          ></button>
+        </div>
+        <p id="editor-help" class="small text-muted">
+          Edit this day's demo activity. Changes update the chart and totals, and reset when you
+          leave or refresh this page.
+        </p>
+        <fieldset v-for="(draft, index) in drafts" :key="draft._id" class="border rounded p-3 mb-3">
+          <legend class="float-none w-auto fs-6 px-2">Food record {{ index + 1 }}</legend>
+          <div class="row g-3">
+            <label class="col-sm-8"
+              >Food name<input
+                v-model="draft.name"
+                class="form-control"
+                name="name"
+                required
+                maxlength="100"
+            /></label>
+            <label class="col-sm-4"
+              >Action<select v-model="draft.action" class="form-select" name="action">
+                <option v-for="(label, key) in actionLabels" :key="key" :value="key">
+                  {{ label }}
+                </option>
+              </select></label
+            >
+            <label class="col-sm-6"
+              >Quantity<input
+                v-model.number="draft.quantity"
+                class="form-control"
+                name="quantity"
+                type="number"
+                min="0"
+                step="any"
+                required
+            /></label>
+            <label class="col-sm-6"
+              >Unit<input
+                v-model="draft.unit"
+                class="form-control"
+                name="unit"
+                required
+                maxlength="40"
+            /></label>
+            <label class="col-sm-6"
+              >Weight (kg)<input
+                v-model.number="draft.weightKg"
+                class="form-control"
+                name="weightKg"
+                type="number"
+                min="0"
+                step="0.01"
+                required
+            /></label>
+            <label class="col-sm-6"
+              >Total value (SGD)<input
+                v-model.number="draft.valueSgd"
+                class="form-control"
+                name="valueSgd"
+                type="number"
+                min="0"
+                step="0.01"
+                required
+            /></label>
+            <label class="col-12"
+              >Location<input
+                v-model="draft.location"
+                class="form-control"
+                name="location"
+                required
+                maxlength="100"
+            /></label>
+          </div>
+          <p class="small text-muted mt-3 mb-0">
+            Category: {{ draft.category }} · Source: {{ draft.source }}
+          </p>
+        </fieldset>
+        <p v-if="editError" class="text-danger" role="alert">{{ editError }}</p>
+        <div class="d-flex justify-content-end gap-2">
+          <button type="button" class="btn btn-outline-secondary" @click="closeEditor">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-success">Save changes</button>
+        </div>
+      </form>
+    </dialog>
   </section>
 </template>
 
 <style scoped>
 .analytics-page {
   max-width: 1200px;
+}
+.activity-editor {
+  width: min(640px, calc(100% - 32px));
+  max-height: 85vh;
+  overflow-y: auto;
+  border: 1px solid #ced8d1;
+  border-radius: 14px;
+  padding: 24px;
+}
+.activity-editor::backdrop {
+  background: rgb(18 37 27 / 50%);
+}
+.impact-chart circle[role='button']:focus-visible {
+  outline: 3px solid #203c2c;
 }
 .date-range-bar {
   position: relative;
