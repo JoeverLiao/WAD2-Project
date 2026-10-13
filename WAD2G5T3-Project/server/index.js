@@ -14,12 +14,16 @@ try {
 
   let mongoConnected = false
   try {
-    await connectDatabase(mongodbUri, dbName, dnsServers)
+    // FIXED: Forcing public Google/Cloudflare DNS directly here to resolve the cloud cluster link smoothly!
+    await connectDatabase(mongodbUri, dbName, dnsServers || ['8.8.8.8', '1.1.1.1'])
     console.log(`MongoDB database ${dbName}: collections and indexes ready`)
     mongoConnected = true
-  } catch {
-    console.log(
-      'MongoDB not available — running with JSON-based auth. Other features require MongoDB.',
+  } catch (error) {
+    // Log the reason (name + message only; the message never contains the password).
+    console.error(`MongoDB connection FAILED (${error.name}): ${error.message}`)
+    console.error(
+      'Login/register use MongoDB and will return 503 until it is reachable. ' +
+        'Check MONGO_DB in .env (it overrides server/config.js) and that mongod is running.',
     )
   }
 

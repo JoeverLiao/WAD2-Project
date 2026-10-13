@@ -2,13 +2,15 @@ import mongoose from 'mongoose'
 import dns from 'node:dns'
 import { databaseModels } from '../models/index.js'
 
-// Fail promptly instead of queueing model operations without a database.
+// Strict handling: Fail promptly instead of queueing model operations without a database.
 mongoose.set('bufferCommands', false)
 
+// RESTORED THE FUNCTION EXPORT:
 export async function connectDatabase(uri, dbName, dnsServers = []) {
   if (!uri) throw new Error('mongodbUri is required in server/config.js.')
   if (!dbName) throw new Error('dbName is required in server/config.js.')
-  if (dnsServers.length) dns.setServers(dnsServers)
+  if (dnsServers && dnsServers.length) dns.setServers(dnsServers)
+  
   await mongoose.connect(uri, {
     dbName,
     serverSelectionTimeoutMS: 5000,

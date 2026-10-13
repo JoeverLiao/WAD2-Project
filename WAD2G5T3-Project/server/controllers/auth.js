@@ -38,7 +38,7 @@ export async function register(req, res, next) {
     res.cookie('token', token, {
       httpOnly: true,
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // milliseconds
       path: '/',
     })
 
@@ -61,21 +61,38 @@ export async function login(req, res, next) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
+    if (typeof user.password !== 'string' || !user.password) {
+      // Data problem (user document has no stored hash). Log it, answer like a bad login.
+      console.error(`login: user ${user.id} has no stored password hash`)
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
+
     const valid = await user.comparePassword(password)
     if (!valid) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
-    user.loginStatus = true
-    user.lastLogin = new Date()
-    await user.save()
+    // Credentials are valid at this point. A failure to record loginStatus/lastLogin is a
+    // separate problem: log it clearly, but do not report it as a wrong password.
+    // updateOne avoids re-validating unrelated fields the way user.save() would.
+    try {
+      const now = new Date()
+      await User.updateOne({ _id: user._id }, { loginStatus: true, lastLogin: now })
+      user.loginStatus = true
+      user.lastLogin = now
+    } catch (statusError) {
+      console.error(
+        `login: authenticated user ${user.id}, but updating loginStatus/lastLogin failed ` +
+          `(${statusError.name}): ${statusError.message}`,
+      )
+    }
 
     const token = signToken(user)
 
     res.cookie('token', token, {
       httpOnly: true,
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // milliseconds
       path: '/',
     })
 
