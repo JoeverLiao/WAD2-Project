@@ -215,7 +215,7 @@ onMounted(async () => {
         <div class="donation-callout border border-primary border-dashed rounded p-3 text-center bg-light shadow-sm">
           <h4 class="h6 fw-bold text-primary mb-1">Want to Donate?</h4>
           <RouterLink :to="{ name: 'food-rescue' }" class="btn btn-sm btn-primary mt-1 px-3 fw-semibold">
-            Links to Neighbor Food Rescue ↳
+            Neighbor Food Rescue ↳
           </RouterLink>
         </div>
       </div>
