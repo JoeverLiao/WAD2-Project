@@ -59,22 +59,47 @@ describe('Analytics demo', () => {
     wrapper.unmount()
   })
 
-  it('zooms in either drag direction, supports repeated zoom, and resets the data', async () => {
+  it('pans live in both directions without changing the zoom level, and resets the data', async () => {
     const { wrapper, svg } = mountChart()
-    await dragAcross(svg, 774, 246)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(30)
-    expect(wrapper.get('[aria-label="Start date"]').attributes('aria-valuetext')).toBe('4 Sept')
+    const inputs = wrapper.findAll('input[type="range"]')
+    await inputs[0].setValue('10')
+    await inputs[1].setValue('30')
+    await pointer(svg, 'pointerdown', 730)
+    await pointer(svg, 'pointermove', 290)
+    expect(inputs[0].element.value).toBe('20')
+    expect(inputs[1].element.value).toBe('40')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(21)
+    await pointer(svg, 'pointerup', 290)
     expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
-    await dragAcross(svg, 246, 774)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(18)
+    await dragAcross(svg, 290, 730)
+    expect(inputs[0].element.value).toBe('10')
+    expect(inputs[1].element.value).toBe('30')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(21)
     await wrapper.get('button').trigger('click')
     expect(wrapper.findAll('tbody tr')).toHaveLength(50)
     expect(wrapper.get('[aria-label="Start date"]').element.value).toBe('0')
     wrapper.unmount()
   })
 
-  it('ignores simple clicks and cancelled selections', async () => {
+  it('clamps panning at both date boundaries without shrinking the window', async () => {
     const { wrapper, svg } = mountChart()
+    const inputs = wrapper.findAll('input[type="range"]')
+    await inputs[0].setValue('10')
+    await inputs[1].setValue('30')
+    await dragAcross(svg, 510, 2510)
+    expect(inputs[0].element.value).toBe('0')
+    expect(inputs[1].element.value).toBe('20')
+    await dragAcross(svg, 510, -1490)
+    expect(inputs[0].element.value).toBe('29')
+    expect(inputs[1].element.value).toBe('49')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(21)
+    wrapper.unmount()
+  })
+
+  it('does not zoom on drag and ignores simple clicks and cancelled drags', async () => {
+    const { wrapper, svg } = mountChart()
+    await dragAcross(svg, 246, 774)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
     await dragAcross(svg, 246, 249)
     expect(wrapper.findAll('tbody tr')).toHaveLength(50)
     await pointer(svg, 'pointerdown')
@@ -156,11 +181,14 @@ describe('Analytics demo', () => {
     wrapper.unmount()
   })
 
-  it('cancels edits, rejects invalid values, and opens the correct date after zoom', async () => {
+  it('cancels edits, rejects invalid values, and opens the correct date after panning', async () => {
     const { wrapper, svg } = mountChart()
-    await dragAcross(svg, 246, 774)
+    const inputs = wrapper.findAll('input[type="range"]')
+    await inputs[0].setValue('5')
+    await inputs[1].setValue('25')
+    await dragAcross(svg, 730, 510)
     // The click emitted at the end of a drag must not open an editor.
-    await svg.trigger('click', { clientX: 774, clientY: 100 })
+    await svg.trigger('click', { clientX: 510, clientY: 100 })
     expect(wrapper.find('dialog').exists()).toBe(false)
     await svg.trigger('click', { clientX: 70, clientY: 100 })
     await nextTick()

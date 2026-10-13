@@ -108,35 +108,48 @@ function indexAt(position) {
 function startDrag(event) {
   if (!event.isPrimary || event.button !== 0) return
   suppressClick = false
-  const position = pointerX(event)
+  const point = chartPoint(event)
+  if (point.x < plot.left || point.x > plot.right || point.y < plot.top || point.y > plot.bottom)
+    return
   chart.value.setPointerCapture(event.pointerId)
-  drag.value = { start: position, end: position, pointerId: event.pointerId }
+  drag.value = {
+    start: point.x,
+    clientX: event.clientX,
+    range: [...range.value],
+    pointerId: event.pointerId,
+    moved: false,
+  }
   hover.value = null
 }
 function movePointer(event) {
-  const position = pointerX(event)
-  if (drag.value && drag.value.pointerId === event.pointerId) drag.value.end = position
-  else if (!drag.value) hover.value = indexAt(position)
+  if (drag.value && drag.value.pointerId === event.pointerId) {
+    if (Math.abs(event.clientX - drag.value.clientX) >= 6) drag.value.moved = true
+    if (!drag.value.moved) return
+    suppressClick = true
+    const [first, last] = drag.value.range
+    const span = last - first
+    // Move the dates with the pointer, preserving the original zoom level.
+    const shift = Math.round(
+      ((drag.value.start - chartPoint(event).x) / (plot.right - plot.left)) * span,
+    )
+    const start = Math.max(0, Math.min(days.length - 1 - span, first + shift))
+    range.value = [start, start + span]
+  } else if (!drag.value) hover.value = indexAt(pointerX(event))
 }
 function finishDrag(event) {
   if (!drag.value || drag.value.pointerId !== event.pointerId) return
-  const { start } = drag.value
-  const end = pointerX(event)
+  movePointer(event)
   drag.value = null
   chart.value.releasePointerCapture(event.pointerId)
-  // Ignore clicks and tiny movements; keep at least two dates.
-  if (Math.abs(end - start) < 12) return
-  suppressClick = true
-  const first = indexAt(Math.min(start, end))
-  const last = indexAt(Math.max(start, end))
-  if (first === last) return
-  const offset = range.value[0]
-  range.value = [offset + first, offset + last]
   hover.value = null
 }
 function cancelDrag() {
+  const pointerId = drag.value?.pointerId
   drag.value = null
   hover.value = null
+  if (pointerId !== undefined && chart.value.hasPointerCapture?.(pointerId)) {
+    chart.value.releasePointerCapture(pointerId)
+  }
 }
 function resetZoom() {
   range.value = [0, days.length - 1]
@@ -289,9 +302,9 @@ function saveDay() {
           <div>
             <h2 class="h4">Daily food impact</h2>
             <p id="chart-help" class="text-muted small">
-              Drag across the graph to zoom, or hover over a date and scroll up to zoom in and down
-              to zoom out. Drag the bar handles to adjust the dates. Click a date to view and edit
-              its activity.
+              Scroll up over the graph to zoom in and down to zoom out. When zoomed in, drag left or
+              right to move through the dates. Drag the bar handles to adjust the dates. Click a
+              date to view and edit its activity.
             </p>
           </div>
           <button class="btn btn-outline-success" :disabled="!isZoomed" @click="resetZoom">
@@ -303,141 +316,57 @@ function saveDay() {
             {{ formatDate(visibleDays[0]) }} – {{ formatDate(visibleDays.at(-1)) }} 2026 ·
             {{ visibleEvents.length }} events
           </p>
-          <div
-            class="date-range-bar"
-            role="group"
-            aria-label="Selected date range"
-            :style="{
-              '--range-start': `${(range[0] / (days.length - 1)) * 100}%`,
-              '--range-end': `${(range[1] / (days.length - 1)) * 100}%`,
-            }"
-          >
+          <div class="date-range-bar" role="group" aria-label="Selected date range" :style="{
+            '--range-start': `${(range[0] / (days.length - 1)) * 100}%`,
+            '--range-end': `${(range[1] / (days.length - 1)) * 100}%`,
+          }">
             <div class="date-range-track"></div>
-            <input
-              type="range"
-              aria-label="Start date"
-              :aria-valuetext="formatDate(days[range[0]])"
-              :value="range[0]"
-              min="0"
-              :max="days.length - 1"
-              step="1"
-              @input="changeRange(0, $event)"
-            />
-            <input
-              type="range"
-              aria-label="End date"
-              :aria-valuetext="formatDate(days[range[1]])"
-              :value="range[1]"
-              min="0"
-              :max="days.length - 1"
-              step="1"
-              @input="changeRange(1, $event)"
-            />
+            <input type="range" aria-label="Start date" :aria-valuetext="formatDate(days[range[0]])" :value="range[0]"
+              min="0" :max="days.length - 1" step="1" @input="changeRange(0, $event)" />
+            <input type="range" aria-label="End date" :aria-valuetext="formatDate(days[range[1]])" :value="range[1]"
+              min="0" :max="days.length - 1" step="1" @input="changeRange(1, $event)" />
           </div>
           <div class="d-flex justify-content-between text-muted small">
-            <span>{{ formatDate(days[0]) }}</span
-            ><span>{{ formatDate(days.at(-1)) }}</span>
+            <span>{{ formatDate(days[0]) }}</span><span>{{ formatDate(days.at(-1)) }}</span>
           </div>
         </div>
         <div class="d-flex flex-wrap gap-3 small mb-2">
-          <span v-for="line in series" :key="line.key"
-            ><span class="legend-dot" :style="{ background: line.color }"></span
-            >{{ line.label }}</span
-          >
+          <span v-for="line in series" :key="line.key"><span class="legend-dot"
+              :style="{ background: line.color }"></span>{{ line.label }}</span>
         </div>
-        <svg
-          ref="chart"
-          class="impact-chart"
-          viewBox="0 0 1000 365"
-          role="img"
-          aria-labelledby="chart-title chart-description"
-          aria-describedby="chart-help"
-          @pointerdown="startDrag"
-          @pointermove="movePointer"
-          @pointerup="finishDrag"
-          @pointercancel="cancelDrag"
-          @lostpointercapture="cancelDrag"
-          @pointerleave="hover = null"
-          @wheel="wheelZoom"
-          @click="clickDate"
-        >
+        <svg ref="chart" class="impact-chart" :class="{ 'is-dragging': drag }" viewBox="0 0 1000 365" role="img"
+          aria-labelledby="chart-title chart-description" aria-describedby="chart-help" @pointerdown="startDrag"
+          @pointermove="movePointer" @pointerup="finishDrag" @pointercancel="cancelDrag"
+          @lostpointercapture="cancelDrag" @pointerleave="hover = null" @wheel="wheelZoom" @click="clickDate">
           <title id="chart-title">Daily food kept from waste and discarded, in kilograms</title>
           <desc id="chart-description">
-            Two lines compare daily food weight. Select dates using the range bar, drag to zoom, or
+            Two lines compare daily food weight. Select dates using the range bar, drag to pan, or
             scroll over the plot to zoom around a date. The activity table lists the underlying
             records.
           </desc>
           <text :x="plot.left" y="17" class="axis-label">Weight (kg)</text>
           <g v-for="tick in 5" :key="tick">
-            <line
-              :x1="plot.left"
-              :x2="plot.right"
-              :y1="y(((tick - 1) * yMax) / 4)"
-              :y2="y(((tick - 1) * yMax) / 4)"
-              stroke="#e4e9e6"
-            />
-            <text
-              :x="plot.left - 12"
-              :y="y(((tick - 1) * yMax) / 4) + 5"
-              text-anchor="end"
-              class="axis-label"
-            >
+            <line :x1="plot.left" :x2="plot.right" :y1="y(((tick - 1) * yMax) / 4)" :y2="y(((tick - 1) * yMax) / 4)"
+              stroke="#e4e9e6" />
+            <text :x="plot.left - 12" :y="y(((tick - 1) * yMax) / 4) + 5" text-anchor="end" class="axis-label">
               {{ (((tick - 1) * yMax) / 4).toFixed(2) }}
             </text>
           </g>
-          <text
-            v-for="index in xTicks"
-            :key="index"
-            :x="x(index)"
-            :y="plot.bottom + 28"
-            text-anchor="middle"
-            class="axis-label"
-          >
+          <text v-for="index in xTicks" :key="index" :x="x(index)" :y="plot.bottom + 28" text-anchor="middle"
+            class="axis-label">
             {{ formatDate(daily[index].date) }}
           </text>
           <g v-for="line in series" :key="line.key">
-            <polyline
-              :points="points(line.key)"
-              fill="none"
-              :stroke="line.color"
-              stroke-width="2.5"
-              :stroke-dasharray="line.key === 'discarded' ? '6 4' : undefined"
-            />
-            <circle
-              v-for="(day, index) in daily"
-              :key="day.date"
-              :cx="x(index)"
-              :cy="y(day[line.key])"
-              r="3"
-              :fill="line.color"
-              :tabindex="line.key === 'saved' ? 0 : undefined"
-              :role="line.key === 'saved' ? 'button' : undefined"
-              :aria-label="
-                line.key === 'saved' ? `Edit activity for ${formatDate(day.date)}` : undefined
-              "
-              @keydown.enter.prevent="openDay(index)"
-              @keydown.space.prevent="openDay(index)"
-            />
+            <polyline :points="points(line.key)" fill="none" :stroke="line.color" stroke-width="2.5"
+              :stroke-dasharray="line.key === 'discarded' ? '6 4' : undefined" />
+            <circle v-for="(day, index) in daily" :key="day.date" :cx="x(index)" :cy="y(day[line.key])" r="3"
+              :fill="line.color" :tabindex="line.key === 'saved' ? 0 : undefined"
+              :role="line.key === 'saved' ? 'button' : undefined" :aria-label="line.key === 'saved' ? `Edit activity for ${formatDate(day.date)}` : undefined
+                " @keydown.enter.prevent="openDay(index)" @keydown.space.prevent="openDay(index)" />
           </g>
-          <rect
-            v-if="drag"
-            :x="Math.min(drag.start, drag.end)"
-            :y="plot.top"
-            :width="Math.abs(drag.end - drag.start)"
-            :height="plot.bottom - plot.top"
-            fill="#198754"
-            fill-opacity="0.16"
-            stroke="#198754"
-          />
           <g v-if="hoverDay && !drag" pointer-events="none">
-            <line
-              :x1="x(hover)"
-              :x2="x(hover)"
-              :y1="plot.top"
-              :y2="plot.bottom"
-              stroke="#65776c"
-              stroke-dasharray="4 4"
-            />
+            <line :x1="x(hover)" :x2="x(hover)" :y1="plot.top" :y2="plot.bottom" stroke="#65776c"
+              stroke-dasharray="4 4" />
             <g :transform="`translate(${Math.min(x(hover) + 10, plot.right - 220)}, 35)`">
               <rect width="220" height="85" rx="8" fill="#fff" stroke="#ced8d1" />
               <text x="12" y="23" class="tooltip-label">{{ formatDate(hoverDay.date) }}</text>
@@ -477,10 +406,7 @@ function saveDay() {
             <tbody>
               <tr v-for="event in recentEvents" :key="event._id">
                 <td class="text-nowrap">
-                  <button
-                    class="btn btn-link p-0"
-                    @click="openDay(visibleDays.indexOf(event.occurredAt.slice(0, 10)))"
-                  >
+                  <button class="btn btn-link p-0" @click="openDay(visibleDays.indexOf(event.occurredAt.slice(0, 10)))">
                     {{ formatDate(event.occurredAt.slice(0, 10)) }}
                   </button>
                 </td>
@@ -488,11 +414,8 @@ function saveDay() {
                   {{ event.name }}<span class="d-block text-muted small">{{ event.category }}</span>
                 </td>
                 <td>
-                  <span
-                    class="badge"
-                    :class="event.action === 'discarded' ? 'text-bg-danger' : 'text-bg-success'"
-                    >{{ actionLabels[event.action] }}</span
-                  >
+                  <span class="badge" :class="event.action === 'discarded' ? 'text-bg-danger' : 'text-bg-success'">{{
+                    actionLabels[event.action] }}</span>
                 </td>
                 <td class="text-nowrap">{{ event.quantity }} {{ event.unit }}</td>
                 <td class="text-nowrap">{{ event.weightKg.toFixed(2) }} kg</td>
@@ -504,25 +427,14 @@ function saveDay() {
         </div>
       </div>
     </div>
-    <dialog
-      v-if="selectedDate"
-      ref="editor"
-      class="activity-editor"
-      aria-labelledby="editor-title"
-      aria-describedby="editor-help"
-      @cancel.prevent="closeEditor"
-    >
+    <dialog v-if="selectedDate" ref="editor" class="activity-editor" aria-labelledby="editor-title"
+      aria-describedby="editor-help" @cancel.prevent="closeEditor">
       <form @submit.prevent="saveDay">
         <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
           <h2 id="editor-title" class="h4 mb-0">
             Activity for {{ formatDate(selectedDate) }} 2026
           </h2>
-          <button
-            type="button"
-            class="btn-close"
-            aria-label="Close editor"
-            @click="closeEditor"
-          ></button>
+          <button type="button" class="btn-close" aria-label="Close editor" @click="closeEditor"></button>
         </div>
         <p id="editor-help" class="small text-muted">
           Edit this day's demo activity. Changes update the chart and totals, and reset when you
@@ -531,67 +443,23 @@ function saveDay() {
         <fieldset v-for="(draft, index) in drafts" :key="draft._id" class="border rounded p-3 mb-3">
           <legend class="float-none w-auto fs-6 px-2">Food record {{ index + 1 }}</legend>
           <div class="row g-3">
-            <label class="col-sm-8"
-              >Food name<input
-                v-model="draft.name"
-                class="form-control"
-                name="name"
-                required
-                maxlength="100"
-            /></label>
-            <label class="col-sm-4"
-              >Action<select v-model="draft.action" class="form-select" name="action">
+            <label class="col-sm-8">Food name<input v-model="draft.name" class="form-control" name="name" required
+                maxlength="100" /></label>
+            <label class="col-sm-4">Action<select v-model="draft.action" class="form-select" name="action">
                 <option v-for="(label, key) in actionLabels" :key="key" :value="key">
                   {{ label }}
                 </option>
-              </select></label
-            >
-            <label class="col-sm-6"
-              >Quantity<input
-                v-model.number="draft.quantity"
-                class="form-control"
-                name="quantity"
-                type="number"
-                min="0"
-                step="any"
-                required
-            /></label>
-            <label class="col-sm-6"
-              >Unit<input
-                v-model="draft.unit"
-                class="form-control"
-                name="unit"
-                required
-                maxlength="40"
-            /></label>
-            <label class="col-sm-6"
-              >Weight (kg)<input
-                v-model.number="draft.weightKg"
-                class="form-control"
-                name="weightKg"
-                type="number"
-                min="0"
-                step="0.01"
-                required
-            /></label>
-            <label class="col-sm-6"
-              >Total value (SGD)<input
-                v-model.number="draft.valueSgd"
-                class="form-control"
-                name="valueSgd"
-                type="number"
-                min="0"
-                step="0.01"
-                required
-            /></label>
-            <label class="col-12"
-              >Location<input
-                v-model="draft.location"
-                class="form-control"
-                name="location"
-                required
-                maxlength="100"
-            /></label>
+              </select></label>
+            <label class="col-sm-6">Quantity<input v-model.number="draft.quantity" class="form-control" name="quantity"
+                type="number" min="0" step="any" required /></label>
+            <label class="col-sm-6">Unit<input v-model="draft.unit" class="form-control" name="unit" required
+                maxlength="40" /></label>
+            <label class="col-sm-6">Weight (kg)<input v-model.number="draft.weightKg" class="form-control"
+                name="weightKg" type="number" min="0" step="0.01" required /></label>
+            <label class="col-sm-6">Total value (SGD)<input v-model.number="draft.valueSgd" class="form-control"
+                name="valueSgd" type="number" min="0" step="0.01" required /></label>
+            <label class="col-12">Location<input v-model="draft.location" class="form-control" name="location" required
+                maxlength="100" /></label>
           </div>
           <p class="small text-muted mt-3 mb-0">
             Category: {{ draft.category }} · Source: {{ draft.source }}
@@ -613,6 +481,7 @@ function saveDay() {
 .analytics-page {
   max-width: 1200px;
 }
+
 .activity-editor {
   width: min(640px, calc(100% - 32px));
   max-height: 85vh;
@@ -621,29 +490,32 @@ function saveDay() {
   border-radius: 14px;
   padding: 24px;
 }
+
 .activity-editor::backdrop {
   background: rgb(18 37 27 / 50%);
 }
+
 .impact-chart circle[role='button']:focus-visible {
   outline: 3px solid #203c2c;
 }
+
 .date-range-bar {
   position: relative;
   height: 40px;
   margin: 0 12px;
 }
+
 .date-range-track {
   position: absolute;
   inset: 16px 0;
   border-radius: 8px;
-  background: linear-gradient(
-    to right,
-    #dfe7e2 var(--range-start),
-    #198754 var(--range-start),
-    #198754 var(--range-end),
-    #dfe7e2 var(--range-end)
-  );
+  background: linear-gradient(to right,
+      #dfe7e2 var(--range-start),
+      #198754 var(--range-start),
+      #198754 var(--range-end),
+      #dfe7e2 var(--range-end));
 }
+
 .date-range-bar input {
   position: absolute;
   inset: 0 -12px;
@@ -654,6 +526,7 @@ function saveDay() {
   background: transparent;
   pointer-events: none;
 }
+
 .date-range-bar input::-webkit-slider-thumb {
   appearance: none;
   width: 24px;
@@ -664,6 +537,7 @@ function saveDay() {
   pointer-events: auto;
   cursor: ew-resize;
 }
+
 .date-range-bar input::-moz-range-thumb {
   width: 18px;
   height: 18px;
@@ -673,27 +547,36 @@ function saveDay() {
   pointer-events: auto;
   cursor: ew-resize;
 }
+
 .date-range-bar input:focus-visible {
   outline: 2px solid #198754;
   outline-offset: 2px;
   border-radius: 8px;
 }
+
 .impact-chart {
   display: block;
   width: 100%;
   min-height: 230px;
   touch-action: none;
   user-select: none;
-  cursor: crosshair;
+  cursor: grab;
 }
+
+.impact-chart.is-dragging {
+  cursor: grabbing;
+}
+
 .axis-label {
   font-size: 13px;
   fill: #536259;
 }
+
 .tooltip-label {
   font-size: 14px;
   fill: #203c2c;
 }
+
 .legend-dot {
   display: inline-block;
   width: 10px;
