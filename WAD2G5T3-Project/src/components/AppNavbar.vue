@@ -122,7 +122,7 @@ a:focus-visible,
   position: absolute;
   top: 100%;
   left: 0;
-  z-index: 100;
+  z-index: 1050;
   flex-direction: column;
   background-color: #1e5a3e;
   border-radius: 4px;
