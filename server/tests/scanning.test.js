@@ -1,11 +1,18 @@
+// Tests for POST /api/scanning/receipts. The route is mounted on a small Express app, so no
+// database is needed. Run from the server folder:  node --test tests/scanning.test.js
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import fs from 'node:fs'
 import { test } from 'node:test'
-import { createApp } from '../server.js'
+import express from 'express'
 import auth from '../middleware/auth.js'
+import scanningRoutes from '../routes/scanningRoutes.js'
+import { canRenderText, renderReceiptPhoto } from './helpers/receiptPhoto.js'
 
 async function startApp(t) {
-  const server = createApp({ databaseHealth: async () => {} }).listen(0, '127.0.0.1')
+  const app = express()
+  app.use('/api/scanning', scanningRoutes)
+  const server = app.listen(0, '127.0.0.1')
   await once(server, 'listening')
   t.after(
     () =>
@@ -67,4 +74,27 @@ test('receipt scanning rejects a file that is not really an image', async (t) =>
   })
   assert.equal(response.status, 400)
   assert.deepEqual(await response.json(), { error: 'That file could not be read as an image.' })
+})
+
+// End to end: a faded, tilted, shadowed photo goes through preprocessing and real OCR.
+// Needs the English language data to be downloaded already (server/.tesseract-cache), so it is
+// skipped on a fresh checkout instead of failing without internet.
+const languageData = new URL('../.tesseract-cache/eng.traineddata', import.meta.url)
+const e2eSkip = !fs.existsSync(languageData)
+  ? 'OCR language data not downloaded yet (run one scan first)'
+  : !(await canRenderText())
+    ? 'no usable font for drawing the test image'
+    : false
+
+test('receipt scanning reads a faded, tilted, shadowed photo', { skip: e2eSkip }, async (t) => {
+  const base = await startApp(t)
+  const photo = await renderReceiptPhoto({ tilt: 3, ink: '#8f8f8f', shadow: 0.35, blur: 1 })
+  const response = await postReceipt(base, { body: receiptForm(photo, 'image/jpeg', 'photo.jpg') })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  assert.equal(typeof result.confidence, 'number')
+  assert.equal(typeof result.lowConfidence, 'boolean')
+  for (const expected of ['MILK', '6.40', 'EGGS', '3.20', 'TOTAL', '19.65']) {
+    assert.ok(result.rawText.includes(expected), `"${expected}" missing from: ${result.rawText}`)
+  }
 })

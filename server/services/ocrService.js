@@ -3,16 +3,17 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
-import sharp from 'sharp'
 import { createWorker, PSM } from 'tesseract.js'
+import { preprocessReceiptImage, ReceiptImageError } from './receiptImage.js'
 
 // Thrown when the uploaded file is not a readable image (answer 400).
-export class ReceiptImageError extends Error {}
+export { ReceiptImageError }
 // Thrown when the OCR engine could not start, e.g. the language data could not be
 // downloaded (answer 503).
 export class OcrUnavailableError extends Error {}
 
 const LANG = 'eng'
+const LOW_CONFIDENCE_BELOW = 55
 const DEFAULT_LANG_SOURCE = `https://cdn.jsdelivr.net/npm/@tesseract.js-data/${LANG}/4.0.0_best_int`
 const DOWNLOAD_TIMEOUT_MS = Number(process.env.OCR_DOWNLOAD_TIMEOUT_MS) || 60 * 1000
 const SETUP_TIMEOUT_MS = Number(process.env.OCR_SETUP_TIMEOUT_MS) || 90 * 1000
@@ -118,30 +119,13 @@ function getWorker() {
   return workerPromise
 }
 
-// Make the photo easier for Tesseract to read: auto-rotate (phone photos), greyscale,
-// normalise contrast, upscale narrow receipts, sharpen edges.
-async function preprocessImage(buffer) {
-  try {
-    return await sharp(buffer)
-      .rotate()
-      .grayscale()
-      .normalize()
-      .resize({ width: 1600, withoutEnlargement: false })
-      .sharpen()
-      .png()
-      .toBuffer()
-  } catch {
-    throw new ReceiptImageError('That file could not be read as an image.')
-  }
-}
-
 /**
  * Run OCR on an uploaded receipt image.
  * @param {Buffer} imageBuffer raw image bytes (jpg / png / webp)
- * @returns {Promise<{ rawText: string, lines: string[], confidence: number }>}
+ * @returns {Promise<{ rawText: string, lines: string[], confidence: number, lowConfidence: boolean }>}
  */
 export async function extractTextFromReceipt(imageBuffer) {
-  const processed = await preprocessImage(imageBuffer)
+  const processed = await preprocessReceiptImage(imageBuffer)
   const worker = await getWorker()
   const { data } = await worker.recognize(processed)
 
@@ -151,7 +135,10 @@ export async function extractTextFromReceipt(imageBuffer) {
     .map((line) => line.trim())
     .filter(Boolean)
 
-  return { rawText, lines, confidence: Math.round(data.confidence || 0) }
+  const confidence = Math.round(data.confidence || 0)
+  // Heuristic only: below this Tesseract is usually reading poorly (checked on a benchmark of
+  // scanned and faded receipts: few false alarms, but it misses many bad reads).
+  return { rawText, lines, confidence, lowConfidence: confidence < LOW_CONFIDENCE_BELOW }
 }
 
 export async function shutdownOcr() {

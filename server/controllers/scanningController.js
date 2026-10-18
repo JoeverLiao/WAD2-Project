@@ -11,7 +11,7 @@ const scanReceipt = async (req, res) => {
   }
 
   try {
-    const { rawText, lines, confidence } = await extractTextFromReceipt(req.file.buffer)
+    const { rawText, lines, confidence, lowConfidence } = await extractTextFromReceipt(req.file.buffer)
 
     if (!rawText) {
       return res.status(422).json({
@@ -20,7 +20,7 @@ const scanReceipt = async (req, res) => {
       })
     }
 
-    return res.json({ rawText, lines, confidence })
+    return res.json({ rawText, lines, confidence, lowConfidence })
   } catch (error) {
     if (error instanceof ReceiptImageError) {
       return res.status(400).json({ error: error.message })

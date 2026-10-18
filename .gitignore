@@ -7,3 +7,4 @@ playwright-report/
 *.log
 config.env
 .DS_Store
+.tesseract-cache/

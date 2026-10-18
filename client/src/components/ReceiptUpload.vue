@@ -160,6 +160,10 @@ onBeforeUnmount(clearPreview)
           Extracted text
           <span class="badge bg-secondary ms-1">confidence {{ ocrResult.confidence }}%</span>
         </label>
+        <div v-if="ocrResult.lowConfidence" class="alert alert-warning py-2 small" role="alert">
+          This receipt was hard to read, so some words or prices may be wrong. Check the text
+          below, or retake the photo in good light with the receipt flat and filling the frame.
+        </div>
         <textarea
           id="ocr-text"
           class="form-control font-monospace"
