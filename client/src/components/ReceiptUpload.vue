@@ -162,7 +162,7 @@ onBeforeUnmount(clearPreview)
         </label>
         <div v-if="ocrResult.lowConfidence" class="alert alert-warning py-2 small" role="alert">
           This receipt was hard to read, so some words or prices may be wrong. Check the text
-          below, or retake the photo in good light with the receipt flat and filling the frame.
+          below, or retake the photo in good light, close enough that the receipt fills most of the frame and lies flat.
         </div>
         <textarea
           id="ocr-text"

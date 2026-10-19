@@ -3,6 +3,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
+import sharp from 'sharp'
 import { createWorker, PSM } from 'tesseract.js'
 import { preprocessReceiptImage, ReceiptImageError } from './receiptImage.js'
 
@@ -120,11 +121,11 @@ function getWorker() {
 }
 
 /**
- * Run OCR on an uploaded receipt image.
+ * Fallback engine: Tesseract.
  * @param {Buffer} imageBuffer raw image bytes (jpg / png / webp)
  * @returns {Promise<{ rawText: string, lines: string[], confidence: number, lowConfidence: boolean }>}
  */
-export async function extractTextFromReceipt(imageBuffer) {
+async function extractWithTesseract(imageBuffer) {
   const processed = await preprocessReceiptImage(imageBuffer)
   const worker = await getWorker()
   const { data } = await worker.recognize(processed)
@@ -141,7 +142,110 @@ export async function extractTextFromReceipt(imageBuffer) {
   return { rawText, lines, confidence, lowConfidence: confidence < LOW_CONFIDENCE_BELOW }
 }
 
+// ---------------------------------------------------------------------------------------
+// Main engine: PaddleOCR (neural text detection + recognition, run locally through ONNX).
+// On photographed receipts it reads far more accurately than Tesseract. Its models ship inside
+// the npm package, so nothing is downloaded. Tesseract above stays as the fallback.
+// ---------------------------------------------------------------------------------------
+const LOW_PADDLE_CONFIDENCE_BELOW = 88
+let paddlePromise = null
+let paddleQueue = Promise.resolve()
+
+function getPaddle() {
+  if (!paddlePromise) {
+    paddlePromise = import('@gutenye/ocr-node')
+      .then(({ default: Ocr }) => Ocr.create())
+      .catch((error) => {
+        paddlePromise = null // allow a retry on the next request
+        throw error
+      })
+  }
+  return paddlePromise
+}
+
+// PaddleOCR returns one box per piece of text. Put boxes that share a row back together,
+// left to right, so "FRESH MILK ........ 6.40" stays on one line.
+function groupIntoLines(texts) {
+  const boxes = texts
+    .map((t) => {
+      const ys = t.box.map((p) => p[1])
+      const xs = t.box.map((p) => p[0])
+      const top = Math.min(...ys)
+      const bottom = Math.max(...ys)
+      return { text: t.text, mean: t.mean, left: Math.min(...xs), top, bottom }
+    })
+    .filter((b) => b.text && b.text.trim())
+    .sort((a, b) => a.top + a.bottom - (b.top + b.bottom))
+
+  const rows = []
+  for (const box of boxes) {
+    const centre = (box.top + box.bottom) / 2
+    const row = rows[rows.length - 1]
+    if (row && Math.abs(centre - row.centre) < (row.height + (box.bottom - box.top)) / 4) {
+      row.boxes.push(box)
+      row.centre = (row.centre * (row.boxes.length - 1) + centre) / row.boxes.length
+    } else {
+      rows.push({ boxes: [box], centre, height: box.bottom - box.top })
+    }
+  }
+  return rows.map((row) =>
+    row.boxes
+      .sort((a, b) => a.left - b.left)
+      .map((b) => b.text.trim())
+      .join('  '),
+  )
+}
+
+async function extractWithPaddle(imageBuffer) {
+  const processed = await preprocessReceiptImage(imageBuffer, { gentle: true })
+  const { data, info } = await sharp(processed)
+    .ensureAlpha(1)
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  const ocr = await getPaddle()
+
+  // One image at a time: keeps memory use predictable on a small server.
+  const run = paddleQueue.then(() => ocr.detect({ data, width: info.width, height: info.height }))
+  paddleQueue = run.catch(() => {})
+  const { texts } = await run
+
+  const lines = groupIntoLines(texts)
+  const chars = texts.reduce((n, t) => n + t.text.length, 0)
+  const weighted = texts.reduce((sum, t) => sum + t.mean * t.text.length, 0)
+  const confidence = chars ? Math.round((weighted / chars) * 100) : 0
+  return {
+    rawText: lines.join('\n'),
+    lines,
+    confidence,
+    // Few lines found means the photo was too small, dark or blurry to detect text at all.
+    lowConfidence: lines.length < 3 || confidence < LOW_PADDLE_CONFIDENCE_BELOW,
+  }
+}
+
+/**
+ * Run OCR on an uploaded receipt image.
+ * Uses PaddleOCR; falls back to Tesseract if PaddleOCR cannot start on this machine
+ * (set OCR_ENGINE=tesseract to force the fallback).
+ * @param {Buffer} imageBuffer raw image bytes (jpg / png / webp)
+ * @returns {Promise<{ rawText: string, lines: string[], confidence: number, lowConfidence: boolean }>}
+ */
+export async function extractTextFromReceipt(imageBuffer) {
+  if (process.env.OCR_ENGINE !== 'tesseract') {
+    try {
+      await getPaddle()
+      return await extractWithPaddle(imageBuffer)
+    } catch (error) {
+      // A bad upload is the user's problem, not the engine's: report it as it is.
+      if (error instanceof ReceiptImageError) throw error
+      console.error('PaddleOCR failed, falling back to Tesseract:', error)
+      return extractWithTesseract(imageBuffer)
+    }
+  }
+  return extractWithTesseract(imageBuffer)
+}
+
 export async function shutdownOcr() {
+  paddlePromise = null
   if (!workerPromise) return
   const pending = workerPromise
   workerPromise = null

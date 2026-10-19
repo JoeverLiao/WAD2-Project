@@ -16,6 +16,7 @@ import sharp from 'sharp'
 export class ReceiptImageError extends Error {}
 
 const LOAD_WIDTH = 2400 // width used while locating and straightening the paper
+const GENTLE_WIDTH = 1400 // same, for the gentle (neural OCR) version
 const TARGET_WIDTH = 1600 // width of the cropped paper that is handed to Tesseract
 const MIN_SKEW_DEGREES = 0.3 // smaller tilts are left alone
 
@@ -278,7 +279,7 @@ export async function estimateSkew(img) {
  * @param {Buffer} buffer raw image bytes (jpg / png / webp)
  * @returns {Promise<Buffer>} a PNG ready for Tesseract
  */
-export async function preprocessReceiptImage(buffer) {
+export async function preprocessReceiptImage(buffer, { gentle = false } = {}) {
   let img
   try {
     img = await toGray(
@@ -305,10 +306,15 @@ export async function preprocessReceiptImage(buffer) {
   }
 
   // 4-6. Fixed scale, flat lighting, soft contrast.
-  if (img.w !== TARGET_WIDTH) img = await resizeGray(img, TARGET_WIDTH)
+  // "gentle" keeps natural grey tones (no hard contrast, almost no blur): the neural OCR engine
+  // reads those better. The default strong version is tuned for Tesseract.
+  const width = gentle ? GENTLE_WIDTH : TARGET_WIDTH
+  if (img.w !== width) img = await resizeGray(img, width)
   const background = await estimateBackground(img)
-  const flat = await toGray(fromGray({ data: flatten(img.data, background), w: img.w, h: img.h }).blur(1.0))
-  const contrasted = { data: softContrast(flat.data), w: img.w, h: img.h }
+  const flat = await toGray(
+    fromGray({ data: flatten(img.data, background), w: img.w, h: img.h }).blur(gentle ? 0.3 : 1.0),
+  )
+  const contrasted = { data: gentle ? flat.data : softContrast(flat.data), w: img.w, h: img.h }
 
   // 7. White border: Tesseract reads text touching the image edge badly.
   const margin = Math.round(img.w * 0.04)

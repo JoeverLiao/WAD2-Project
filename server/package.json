@@ -6,12 +6,14 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:scanning": "node --test --test-force-exit tests/scanning.test.js tests/receiptImage.test.js",
     "dev": "nodemon server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@gutenye/ocr-node": "^1.4.9",
     "bcryptjs": "^3.0.3",
     "connect-mongo": "^6.0.0",
     "cookie-parser": "^1.4.7",

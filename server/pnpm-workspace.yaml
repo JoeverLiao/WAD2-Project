@@ -1,2 +1,7 @@
 allowBuilds:
   tesseract.js: true
+  onnxruntime-node: false
+  sharp: false
+
+overrides:
+  sharp: 0.35.5
