@@ -1,0 +1,32 @@
+@import url("https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&display=swap");
+
+:root {
+    --font-sans: "Patrick Hand", cursive;
+    --font-display: "Kalam", cursive;
+    --ink: #123f3b;
+    --muted: #557b77;
+    --aqua: #0fa89c;
+    --aqua-soft: #d9f4ef;
+    --paper: #fbfffd;
+    --yellow: #ffdd69;
+    --coral: #ff9587;
+    --lime: #dff09c;
+    --line: #9bcac5;
+    --bg-grid-color: rgba(46, 135, 126, 0.055);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    color: #123f3b;
+    background-color: #edf9f6;
+    background-image:
+        linear-gradient(var(--bg-grid-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--bg-grid-color) 1px, transparent 1px);
+    background-size: 28px 28px;
+    font-family: 'Kalam', cursive;
+    font-size: 17px;
+    -webkit-font-smoothing: antialiased;
+}
