@@ -1,3 +1,4 @@
+
 import { createRouter, createWebHistory } from 'vue-router'
 
 export const routes = [
@@ -31,6 +32,14 @@ export const routes = [
     component: () => import('../views/freshness/FreshnessRecipesView.vue'),
     meta: { navLabel: 'Freshness & Recipes' },
   },
+
+  // NEW: Full recipe details page
+  {
+    path: '/freshness/recipes/:id',
+    name: 'recipe-detail',
+    component: () => import('../views/freshness/RecipeDetailView.vue'),
+  },
+
   {
     path: '/food-rescue',
     name: 'food-rescue',
@@ -61,7 +70,10 @@ export const routes = [
     component: () => import('../views/account/ProfileView.vue'),
     meta: { navLabel: 'Profile', navGroup: 'Profile' },
   },
-  { path: '/:pathMatch(.*)*', redirect: '/' },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
+  },
 ]
 
 const router = createRouter({
