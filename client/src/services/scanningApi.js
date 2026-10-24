@@ -4,7 +4,7 @@
 /**
  * Upload a receipt image and get the OCR text back.
  * @param {File} file
- * @returns {Promise<{ rawText: string, lines: string[], confidence: number }>}
+ * @returns {Promise<{ rawText: string, lines: string[], confidence: number, lowConfidence: boolean, parsed: object|null }>}
  */
 export async function uploadReceipt(file) {
   const formData = new FormData()
@@ -31,5 +31,42 @@ export async function uploadReceipt(file) {
   }
 
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
+  return data
+}
+
+/**
+ * Save the reviewed items to the user's inventory.
+ * On a 400 the thrown error has `.details`: [{ index, field, message }] telling which
+ * item and field the server rejected, so the form can mark them.
+ * @param {Array<object>} items payloads built by toPayload()
+ * @returns {Promise<{ saved: number, items: object[] }>}
+ */
+export async function confirmReceiptItems(items) {
+  let response
+  try {
+    response = await fetch('/api/scanning/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    })
+  } catch {
+    throw new Error('Could not reach the server. Please check your connection.')
+  }
+
+  if (response.status === 401) throw new Error('Please log in again to save your items.')
+
+  const text = await response.text()
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error(`Server returned ${response.status}: ${text || '(empty response)'}`)
+  }
+
+  if (!response.ok) {
+    const error = new Error(data.error || `Request failed (${response.status})`)
+    error.details = Array.isArray(data.details) ? data.details : []
+    throw error
+  }
   return data
 }

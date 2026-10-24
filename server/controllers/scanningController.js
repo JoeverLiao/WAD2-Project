@@ -1,3 +1,7 @@
+import mongoose from 'mongoose'
+import InventoryItem from '../models/inventoryItemModel.js'
+import { validateInventoryItems } from '../services/inventoryValidation.js'
+import { parseReceiptText } from '../services/receiptParser.js'
 import { notImplemented } from './notImplemented.js'
 import {
   extractTextFromReceipt,
@@ -20,7 +24,16 @@ const scanReceipt = async (req, res) => {
       })
     }
 
-    return res.json({ rawText, lines, confidence, lowConfidence })
+    // Parsing is a convenience on top of OCR: if it ever fails, still return the text so the
+    // user can type the items in by hand instead of losing the scan.
+    let parsed = null
+    try {
+      parsed = parseReceiptText(rawText)
+    } catch (error) {
+      console.error('Receipt parsing failed:', error)
+    }
+
+    return res.json({ rawText, lines, confidence, lowConfidence, parsed })
   } catch (error) {
     if (error instanceof ReceiptImageError) {
       return res.status(400).json({ error: error.message })
@@ -36,9 +49,43 @@ const scanReceipt = async (req, res) => {
   }
 }
 
-// TODO (Tarunikaa): parsing, review/correction, and confirmed inventory insertion.
+const toPublicItem = (doc) => ({
+  id: doc._id.toString(),
+  name: doc.name,
+  quantity: doc.quantity,
+  unit: doc.unit ?? null,
+  storage: doc.storage,
+  purchasedAt: doc.purchasedAt ?? null,
+  expiresAt: doc.expiresAt ?? null,
+  purchasePrice: doc.purchasePrice ?? null,
+})
+
+// Saves the items the user reviewed and confirmed into THEIR inventory.
+// Everything is validated first, so either every item is saved or none is.
+const confirmItems = async (req, res) => {
+  const { items, errors } = validateInventoryItems(req.body?.items)
+  if (errors.length) {
+    return res.status(400).json({ error: 'Please fix the items marked in red and try again.', details: errors })
+  }
+  if (!mongoose.isValidObjectId(req.userId)) {
+    return res.status(401).json({ error: 'Please log in again.' })
+  }
+
+  try {
+    // `user` always comes from the login token, never from the request body.
+    const saved = await InventoryItem.insertMany(items.map((item) => ({ ...item, user: req.userId })))
+    return res.status(201).json({ saved: saved.length, items: saved.map(toPublicItem) })
+  } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ error: 'Some items were not valid. Please check them and try again.' })
+    }
+    console.error('Saving scanned items failed:', error)
+    return res.status(500).json({ error: 'Could not save your items. Please try again.' })
+  }
+}
+
+// Product (barcode) scanning is a separate feature, not part of the receipt flow.
 const scanProduct = notImplemented('Product scanning')
-const confirmItems = notImplemented('Confirm scanned items')
 
 export default {
   scanReceipt,

@@ -97,4 +97,10 @@ test('receipt scanning reads a faded, tilted, shadowed photo', { skip: e2eSkip }
   for (const expected of ['MILK', '6.40', 'EGGS', '3.20', 'TOTAL', '19.65']) {
     assert.ok(result.rawText.includes(expected), `"${expected}" missing from: ${result.rawText}`)
   }
+  // The text is also parsed into items, ready for the review form.
+  assert.equal(result.parsed.purchasedAt, '2026-10-12')
+  assert.equal(result.parsed.total, 19.65)
+  const names = result.parsed.items.map((item) => item.name.toLowerCase())
+  assert.ok(names.some((n) => n.includes('milk')), `no milk in ${names}`)
+  assert.ok(names.some((n) => n.includes('egg')), `no eggs in ${names}`)
 })
