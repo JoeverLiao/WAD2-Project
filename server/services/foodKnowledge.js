@@ -132,8 +132,6 @@ const FOODS = [
   ['Cooking Oil', 'cooking oil,vegetable oil,sunflower oil,canola oil', 'pantry'],
   ['Honey', 'honey', 'pantry'],
   ['Jam', 'jam', 'pantry'],
-  ['Sauce', 'sauce', 'pantry'],
-  ['Canned Food', 'canned,tinned,baked beans,sardine,sardines', 'pantry'],
   ['Biscuits', 'biscuit,biscuits,cookie,cookies,cracker,crackers', 'pantry'],
   ['Chips', 'chips,crisps', 'pantry'],
   ['Chocolate', 'chocolate', 'pantry'],

@@ -16,6 +16,8 @@ import {
 const props = defineProps({
   // The `parsed` object from POST /api/scanning/receipts (may be null if parsing failed).
   parsed: { type: Object, default: null },
+  // true when the user types the items in themselves instead of scanning a receipt
+  manual: { type: Boolean, default: false },
 })
 const emit = defineEmits(['saved', 'reset'])
 
@@ -54,10 +56,10 @@ function initialRows(parsed) {
   )
 }
 
-const noItemsFound = !props.parsed?.items?.length
+const noItemsFound = !props.manual && !props.parsed?.items?.length
 const rows = ref(initialRows(props.parsed))
-const purchasedAt = ref(props.parsed?.purchasedAt ?? '')
 const today = toIsoDay(new Date())
+const purchasedAt = ref(props.parsed?.purchasedAt ?? (props.manual ? today : ''))
 
 const submitted = ref(false)
 const touched = reactive({}) // { [rowKey]: { [field]: true } }
@@ -122,7 +124,7 @@ async function save() {
   const sent = includedRows.value.slice()
   saving.value = true
   try {
-    const result = await confirmReceiptItems(sent.map((row) => toPayload(row, purchasedAt.value)))
+    const result = await confirmReceiptItems(sent.map((row) => toPayload(row, purchasedAt.value)), props.manual ? 'manual' : 'receipt')
     savedCount.value = result.saved
     addedCount.value = result.added ?? result.saved
     mergedCount.value = result.merged ?? 0
@@ -161,13 +163,20 @@ const totalWarning = computed(() => {
             ({{ addedCount }} new).
           </span>
         </div>
-        <button type="button" class="btn btn-success" @click="emit('reset')">Scan another receipt</button>
+        <button type="button" class="btn btn-success" @click="emit('reset')">
+          {{ manual ? 'Add more items' : 'Scan another receipt' }}
+        </button>
       </div>
 
       <!-- Review -->
       <form v-else id="review-form" novalidate @submit.prevent="save">
-        <h2 class="h5">Check your items</h2>
-        <p class="text-body-secondary small mb-3">
+        <h2 class="h5">{{ manual ? 'Add items yourself' : 'Check your items' }}</h2>
+        <p v-if="manual" class="text-body-secondary small mb-3" data-testid="manual-intro">
+          Type in what you bought. Only the name, quantity and where it is kept are needed: the price and the
+          use-by date are optional. Common foods are saved under a standard name (for example "Full cream milk"
+          becomes "Milk") so the same product is always counted together.
+        </p>
+        <p v-else class="text-body-secondary small mb-3">
           We read these from the receipt. Fix anything that is wrong, untick things you do not want to
           save, then press <strong>Save to inventory</strong>.
         </p>
@@ -198,7 +207,9 @@ const totalWarning = computed(() => {
             <div v-if="parsed?.dateAmbiguous" class="form-text text-warning-emphasis">
               The receipt date could be read as day/month or month/day. Please check it.
             </div>
-            <div v-else-if="!purchasedAt" class="form-text">No date was found on the receipt (optional).</div>
+            <div v-else-if="!purchasedAt" class="form-text">
+              {{ manual ? 'Optional.' : 'No date was found on the receipt (optional).' }}
+            </div>
           </div>
         </div>
 
@@ -255,6 +266,7 @@ const totalWarning = computed(() => {
                   class="form-control"
                   :class="{ 'is-invalid': errorFor(row, 'name') }"
                   maxlength="100"
+                  :placeholder="manual ? 'For example: Milk' : ''"
                   data-testid="name"
                   @blur="touch(row, 'name')"
                   @input="edited(row, 'name')"
@@ -293,7 +305,7 @@ const totalWarning = computed(() => {
                 <div class="invalid-feedback">{{ errorFor(row, 'unit') }}</div>
               </div>
               <div class="col-4 col-md-2">
-                <label class="form-label small mb-1" :for="`price-${row.key}`">Price</label>
+                <label class="form-label small mb-1" :for="`price-${row.key}`">Price (optional)</label>
                 <input
                   :id="`price-${row.key}`"
                   v-model="row.purchasePrice"

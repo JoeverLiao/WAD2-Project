@@ -93,6 +93,26 @@ test('the same product on several rows is saved as one with the quantities added
   assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 3, purchasePrice: 9 })
 })
 
+test('manual entry: no price needed, and common foods get their standard name', async (t) => {
+  const bulk = mockBulk(t)
+  const base = await startApp(t)
+  const response = await fetch(`${base}/api/scanning/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...cookie },
+    body: JSON.stringify({
+      source: 'manual',
+      items: [
+        { name: 'Full cream milk', quantity: 1, storage: 'fridge' },
+        { name: 'Grandma special sauce', quantity: 2, storage: 'pantry' },
+      ],
+    }),
+  })
+  assert.equal(response.status, 201)
+  const ops = bulk.mock.calls[0].arguments[0]
+  assert.deepEqual(ops.map((o) => o.updateOne.filter.name), ['Milk', 'Grandma special sauce'])
+  assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 1 }) // no price field at all
+})
+
 test('the owner comes from the login, never from the request', async (t) => {
   const bulk = mockBulk(t)
   const base = await startApp(t)

@@ -39,15 +39,16 @@ export async function uploadReceipt(file) {
  * On a 400 the thrown error has `.details`: [{ index, field, message }] telling which
  * item and field the server rejected, so the form can mark them.
  * @param {Array<object>} items payloads built by toPayload()
- * @returns {Promise<{ saved: number, items: object[] }>}
+ * @param {'receipt'|'manual'} [source] where the items came from (manual entries get standard names)
+ * @returns {Promise<{ saved: number, added: number, merged: number }>}
  */
-export async function confirmReceiptItems(items) {
+export async function confirmReceiptItems(items, source = 'receipt') {
   let response
   try {
     response = await fetch('/api/scanning/confirm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ items, source }),
     })
   } catch {
     throw new Error('Could not reach the server. Please check your connection.')
