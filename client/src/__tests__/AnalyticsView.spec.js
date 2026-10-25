@@ -6,7 +6,7 @@ import { sampleAnalyticsEvents } from '../data/analyticsDemo.js'
 
 function mountChart() {
   const wrapper = mount(AnalyticsView)
-  const svg = wrapper.get('svg')
+  const svg = wrapper.get('.impact-chart')
   // jsdom has no SVG coordinate transforms or pointer capture.
   svg.element.createSVGPoint = () => ({
     x: 0,
@@ -173,7 +173,7 @@ describe('Analytics demo', () => {
     expect(wrapper.find('dialog').exists()).toBe(false)
     expect(wrapper.findAll('tbody tr').at(-1).text()).toContain('Rescued apples')
     expect(wrapper.findAll('tbody tr').at(-1).text()).toContain('Discarded')
-    expect(wrapper.findAll('strong')[0].text()).not.toBe(before)
+    await vi.waitFor(() => expect(wrapper.findAll('strong')[0].text()).not.toBe(before))
     expect(wrapper.get('svg polyline[stroke="#cf563e"]').attributes('points').split(' ')[0]).toBe(
       '70,30',
     )
