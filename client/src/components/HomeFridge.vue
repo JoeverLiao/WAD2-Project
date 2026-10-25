@@ -1,5 +1,19 @@
 <script setup>
+import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
+
+const shakeStyle = ref({})
+function randomizeShake() {
+  const angle = () => `${(Math.random() * 1.2 - 0.6).toFixed(3)}deg`
+  shakeStyle.value = {
+    '--shake-a': angle(),
+    '--shake-b': angle(),
+    '--shake-c': angle(),
+    '--shake-d': angle(),
+    '--shake-x': `${(Math.random() * 2.4 - 1.2).toFixed(2)}px`,
+  }
+}
+randomizeShake()
 </script>
 
 <template>
@@ -34,7 +48,7 @@ import { RouterLink } from 'vue-router'
           fill="#9ee4dc"
           stroke-width="3"
         />
-        <g class="fridge-appliance">
+        <g class="fridge-appliance" :style="shakeStyle" @animationiteration="randomizeShake">
           <!-- The cabinet stays in place while its illustrated front swings open. -->
           <path
             d="M218 88c108-19 240-16 344 9 16 143 15 307-10 451-100 17-227 11-329-8-14-143-16-301-5-452Z"
@@ -134,6 +148,7 @@ import { RouterLink } from 'vue-router'
 }
 .fridge-appliance {
   transform-origin: 390px 330px;
+  animation: fridge-shake 1400ms ease-in-out infinite;
 }
 .fridge-door {
   transform-origin: 218px 310px;
@@ -141,12 +156,12 @@ import { RouterLink } from 'vue-router'
   transition: transform 650ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .fridge-link:is(:hover, :focus-visible) .fridge-appliance {
-  animation: fridge-shake 450ms ease-in-out;
+  animation: none;
 }
 .fridge-link:is(:hover, :focus-visible) .fridge-door {
   transform: perspective(950px) rotateY(-68deg);
   transition-duration: 850ms;
-  transition-delay: 320ms;
+  transition-delay: 0ms;
 }
 .mist-puff,
 .breeze-line,
@@ -189,15 +204,19 @@ import { RouterLink } from 'vue-router'
 @keyframes fridge-shake {
   0%,
   100% {
-    transform: rotate(0deg);
+    transform: translateX(0) rotate(0deg);
   }
-  20%,
-  60% {
-    transform: rotate(-1.8deg);
+  18% {
+    transform: translateX(var(--shake-x)) rotate(var(--shake-a));
   }
-  40%,
-  80% {
-    transform: rotate(1.8deg);
+  43% {
+    transform: rotate(var(--shake-b));
+  }
+  68% {
+    transform: translateX(calc(var(--shake-x) * -0.5)) rotate(var(--shake-c));
+  }
+  86% {
+    transform: rotate(var(--shake-d));
   }
 }
 @keyframes cold-drift {
@@ -234,6 +253,7 @@ import { RouterLink } from 'vue-router'
     transition: none;
     transform: perspective(950px) rotateY(-45deg);
   }
+  .fridge-appliance,
   .fridge-link:is(:hover, :focus-visible) .fridge-appliance,
   .fridge-link:is(:hover, :focus-visible) .mist-puff,
   .fridge-link:is(:hover, :focus-visible) .breeze-line,
