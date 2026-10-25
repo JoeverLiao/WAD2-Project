@@ -6,6 +6,10 @@ import { useInventoryStore, storageAreas, isInArea } from '../../stores/inventor
 import { sampleRecipes } from '../../data/freshnessDemo.js'
 import { getDaysRemaining, getExpiryStatus } from '../../utils/expiryUtils.js'
 import { matchRecipes } from '../../utils/recipeUtils.js'
+import { useAuthStore } from '../../stores/auth.js'
+
+const authStore = useAuthStore()
+const { user, isAuthenticated } = storeToRefs(authStore)
 
 // Same items + area names as the Smart Fridge page
 const { items } = storeToRefs(useInventoryStore())
@@ -75,7 +79,7 @@ function pillClass(days) {
       <header class="hero row align-items-center g-4 mb-5">
         <div class="col-lg-7">
           <p class="eyebrow">
-              ✿ YOUR KITCHEN AT A GLANCE
+              ✿ {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} KITCHEN AT A GLANCE
           </p>
           <h1 class="hero-title">
             Good food, <span class="scribble">well kept.</span>
@@ -106,7 +110,7 @@ function pillClass(days) {
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 1.5" /></svg>
             </span>
             <div>
-              <h2 id="time-left-heading" class="panel-title">A little time left. A lot of good.</h2>
+              <h2 id="time-left-heading" class="panel-title">Quick Bites. Use them before they're gone!</h2>
               <p class="panel-sub">From your storage · Use them up first</p>
             </div>
           </div>
