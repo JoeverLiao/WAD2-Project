@@ -4,6 +4,8 @@ import { apiRequest } from '../services/api.js'
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
+    // True once the session has been checked with the server at least once.
+    checked: false,
   }),
   getters: {
     isAuthenticated: (state) => state.user !== null,
@@ -14,6 +16,8 @@ export const useAuthStore = defineStore('auth', {
         this.user = await apiRequest('/auth/me')
       } catch {
         this.user = null
+      } finally {
+        this.checked = true
       }
     },
     async login(email, password) {

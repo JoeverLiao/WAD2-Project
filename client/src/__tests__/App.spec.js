@@ -1,36 +1,64 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import App from '../App.vue'
-import { routes } from '../router'
+import { authGuard, routes } from '../router'
+
+function mockSession(user) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      user
+        ? new Response(JSON.stringify(user), { status: 200 })
+        : new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401 }),
+    ),
+  )
+}
+
+async function mountApp(path) {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  router.beforeEach(authGuard)
+  await router.push(path)
+  await router.isReady()
+  const wrapper = mount(App, {
+    global: { plugins: [pinia, router], stubs: { RouterView: true } },
+  })
+  await flushPromises()
+  return { router, wrapper }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('App', () => {
-  it('renders an empty home page with routes to every feature', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/')
-    await router.isReady()
-    const wrapper = mount(App, { global: { plugins: [createPinia(), router] } })
+  it('keeps the full navbar and shows a login prompt on protected pages for guests', async () => {
+    mockSession(null)
+    const { router, wrapper } = await mountApp('/analytics')
 
-    // Wait for async onMounted hooks in Navbar
+    expect(router.currentRoute.value.name).toBe('analytics')
+    expect(wrapper.findAll('nav a')).toHaveLength(11)
+    expect(wrapper.get('main').text()).toContain(
+      'Please login to access your Food Waste Analytics',
+    )
+    expect(wrapper.get('main a').attributes('href')).toBe('/login?redirect=/analytics')
+
+    await router.push('/login')
     await flushPromises()
+    expect(wrapper.find('.login-prompt').exists()).toBe(false)
+    wrapper.unmount()
+  })
 
-    expect(wrapper.get('main').text()).toBe('')
-    expect(wrapper.get('main section').attributes('aria-label')).toBe('Home')
+  it('shows protected pages to signed-in users', async () => {
+    mockSession({ id: '1', username: 'demo', email: 'demo@example.com' })
+    const { wrapper } = await mountApp('/analytics')
 
-    const links = wrapper.findAll('nav a')
-    expect(links).toHaveLength(10)
-    for (const link of links) {
-      await router.push(link.attributes('href'))
-      await flushPromises()
-      expect(wrapper.get('main section').attributes('aria-label')).toBe(link.text())
-    }
-
-    await router.push('/unknown-page')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/')
-    expect(wrapper.get('main').text()).toBe('')
+    expect(wrapper.find('.login-prompt').exists()).toBe(false)
+    expect(wrapper.findAll('nav a')).toHaveLength(11)
     wrapper.unmount()
   })
 })

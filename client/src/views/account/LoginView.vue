@@ -1,10 +1,11 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const email = ref('')
 const password = ref('')
@@ -20,7 +21,10 @@ async function handleLogin() {
   loading.value = true
   try {
     await auth.login(email.value.trim(), password.value)
-    router.push({ name: 'dashboard' })
+    // Return to the page the user originally asked for, if it was an in-app path.
+    const redirect = route.query.redirect
+    const isInternal = typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    router.push(isInternal ? redirect : { name: 'dashboard' })
   } catch (e) {
     error.value = e.message || 'Login failed'
   } finally {

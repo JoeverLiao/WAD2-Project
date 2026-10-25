@@ -1,10 +1,11 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const username = ref('')
 const email = ref('')
@@ -30,7 +31,10 @@ async function handleRegister() {
   loading.value = true
   try {
     await auth.register(username.value.trim(), email.value.trim(), password.value)
-    router.push({ name: 'dashboard' })
+    // Return to the page the user originally asked for, if it was an in-app path.
+    const redirect = route.query.redirect
+    const isInternal = typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    router.push(isInternal ? redirect : { name: 'dashboard' })
   } catch (e) {
     error.value = e.message || 'Registration failed'
   } finally {

@@ -1,12 +1,13 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth.js'
 
 export const routes = [
   {
     path: '/',
     name: 'home',
     component: () => import('../views/HomeView.vue'),
-    meta: { navLabel: 'Home' },
+    meta: { navLabel: 'Home', public: true },
   },
   {
     path: '/dashboard',
@@ -38,6 +39,7 @@ export const routes = [
     path: '/freshness/recipes/:id',
     name: 'recipe-detail',
     component: () => import('../views/freshness/RecipeDetailView.vue'),
+    meta: { promptLabel: 'Recipes' },
   },
 
   {
@@ -56,13 +58,13 @@ export const routes = [
     path: '/login',
     name: 'login',
     component: () => import('../views/account/LoginView.vue'),
-    meta: { navLabel: 'Login', navGroup: 'Profile' },
+    meta: { navLabel: 'Login', navGroup: 'Profile', public: true },
   },
   {
     path: '/register',
     name: 'register',
     component: () => import('../views/account/RegisterView.vue'),
-    meta: { navLabel: 'Register', navGroup: 'Profile' },
+    meta: { navLabel: 'Register', navGroup: 'Profile', public: true },
   },
   {
     path: '/profile',
@@ -76,9 +78,18 @@ export const routes = [
   },
 ]
 
+// Pages without meta.public show a login prompt to guests (see App.vue).
+// Checking the session before the first page renders avoids flashing that prompt.
+export async function authGuard() {
+  const auth = useAuthStore()
+  if (!auth.checked) await auth.checkAuth()
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 })
+
+router.beforeEach(authGuard)
 
 export default router
