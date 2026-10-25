@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -31,6 +31,17 @@ async function mountApp(path) {
   return { router, wrapper }
 }
 
+beforeEach(() => {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  )
+})
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -41,10 +52,11 @@ describe('App', () => {
     const { router, wrapper } = await mountApp('/analytics')
 
     expect(router.currentRoute.value.name).toBe('analytics')
-    expect(wrapper.findAll('nav a')).toHaveLength(11)
-    expect(wrapper.get('main').text()).toContain(
-      'Please login to access your Food Waste Analytics',
-    )
+    expect(wrapper.findAll('nav .orbit-option')).toHaveLength(8)
+    expect(
+      wrapper.get('button[aria-controls="radial-navigation"]').attributes('aria-expanded'),
+    ).toBe('false')
+    expect(wrapper.get('main').text()).toContain('Please login to access your Food Waste Analytics')
     expect(wrapper.get('main a').attributes('href')).toBe('/login?redirect=/analytics')
 
     await router.push('/login')
@@ -58,7 +70,7 @@ describe('App', () => {
     const { wrapper } = await mountApp('/analytics')
 
     expect(wrapper.find('.login-prompt').exists()).toBe(false)
-    expect(wrapper.findAll('nav a')).toHaveLength(11)
+    expect(wrapper.findAll('nav .orbit-option')).toHaveLength(8)
     wrapper.unmount()
   })
 })

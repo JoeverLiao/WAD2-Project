@@ -1,603 +1,654 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/auth.js'
 import NavIcon from './NavIcon.vue'
 
-const auth = useAuthStore()
 const route = useRoute()
-const navbar = ref(null)
-const navItems = ref(null)
-const hovered = ref(false)
-const openGroup = ref(null)
-const highlight = ref(null)
-const ripple = ref(null)
-const menuLeft = ref(0)
-let resizeObserver
-let measureFrame
-let rippleTimer
-let rippleId = 0
-
 const routes = useRouter().getRoutes()
-const topLinks = routes.filter((item) => item.meta.navLabel && !item.meta.navGroup)
-const groups = [...new Set(routes.map((item) => item.meta.navGroup).filter(Boolean))].map(
-  (label, index) => ({
+const entries = [
+  ...routes
+    .filter((item) => item.meta.navLabel && !item.meta.navGroup)
+    .map((item) => ({
+      key: String(item.name),
+      label: item.meta.navLabel,
+      name: item.name,
+    })),
+  ...[...new Set(routes.map((item) => item.meta.navGroup).filter(Boolean))].map((label) => ({
+    key: label.toLowerCase(),
     label,
-    id: `navbar-group-${index}`,
     children: routes.filter((item) => item.meta.navGroup === label),
-  }),
-)
-const activeKey = computed(() =>
-  openGroup.value
-    ? `group:${openGroup.value}`
-    : route.meta.navGroup
-      ? `group:${route.meta.navGroup}`
-      : `route:${String(route.name)}`,
-)
-const highlightStyle = computed(() =>
-  highlight.value
-    ? {
-        width: `${highlight.value.width}px`,
-        transform: `translateX(${highlight.value.x}px)`,
-      }
-    : {},
-)
+  })),
+]
+const navbar = ref(null)
+const toggle = ref(null)
+const opened = ref(false)
+const accountOpen = ref(false)
+const hovered = ref(false)
+const tooltip = ref(null)
+const glows = ref([])
+const angles = ref(entries.map((_, index) => slotAngle(index, 0)))
+let frame
+let glowId = 0
+let motionPreference
+let previousIndex = 0
+let autoCloseTimer
+let rotating = false
 
-function findItem(key) {
-  return [...(navbar.value?.querySelectorAll('[data-nav-key]') || [])].find(
-    (item) => item.dataset.navKey === key,
-  )
+function cancelAutoClose() {
+  clearTimeout(autoCloseTimer)
 }
-
-function measure() {
-  if (!navbar.value) return
-  const active = findItem(activeKey.value)
-  if (active) {
-    const parent = navbar.value.getBoundingClientRect()
-    const rect = active.getBoundingClientRect()
-    const width = Math.min(rect.width + 48, parent.width - 32)
-    const center = rect.left - parent.left + rect.width / 2
-    highlight.value = {
-      x: Math.max(16, Math.min(center - width / 2, parent.width - width - 16)),
-      width,
+function selectDestination(event) {
+  tooltip.value = null
+  // Leave modified link clicks to the browser (for example, opening a new tab).
+  if (event?.ctrlKey || event?.metaKey || event?.shiftKey || event?.altKey) return
+  accountOpen.value = false
+  cancelAutoClose()
+  function finishSelection() {
+    if (rotating) {
+      autoCloseTimer = setTimeout(finishSelection, 100)
+      return
     }
-  } else {
-    highlight.value = null
+    closeMenu(navbar.value?.contains(document.activeElement))
   }
+  autoCloseTimer = setTimeout(finishSelection, 1200)
+}
+function selectEntry(item, event) {
+  tooltip.value = null
+  if (!item.children) return selectDestination(event)
+  cancelAutoClose()
+  accountOpen.value = !accountOpen.value
+}
 
-  if (openGroup.value) {
-    const button = findItem(`group:${openGroup.value}`)
-    const menu = document.getElementById(button?.getAttribute('aria-controls'))
-    if (button && menu) {
-      const parent = navbar.value.getBoundingClientRect()
-      const left = Math.max(
-        16,
-        Math.min(button.getBoundingClientRect().left, window.innerWidth - menu.offsetWidth - 16),
-      )
-      menuLeft.value = left - parent.left
+const routeKey = computed(
+  () =>
+    route.meta.navGroup?.toLowerCase() ||
+    (route.name === 'recipe-detail' ? 'freshness-recipes' : String(route.name)),
+)
+const selectedKey = computed(() => (accountOpen.value ? 'profile' : routeKey.value))
+const selectedIndex = computed(() =>
+  Math.max(
+    0,
+    entries.findIndex((item) => item.key === selectedKey.value),
+  ),
+)
+const account = entries.find((item) => item.children)
+
+// All destinations remain on the visible lower arc. Wrapped items travel around
+// the upper side of the ellipse, like chambers rotating through a revolver.
+function slotAngle(index, selected) {
+  const offset =
+    ((index - selected + entries.length / 2 + entries.length) % entries.length) - entries.length / 2
+  return offset * 21
+}
+function rotateTo(selected, animate = true) {
+  tooltip.value = null
+  cancelAnimationFrame(frame)
+  rotating = false
+  let steps = selected - previousIndex
+  if (steps > entries.length / 2) steps -= entries.length
+  if (steps < -entries.length / 2) steps += entries.length
+  previousIndex = selected
+  const starts = angles.value.map((angle) => ((((angle + 180) % 360) + 360) % 360) - 180)
+  const ends = entries.map((_, index) => {
+    let target = slotAngle(index, selected)
+    if (steps > 0 && target > starts[index] + 1) target -= 360
+    if (steps < 0 && target < starts[index] - 1) target += 360
+    return target
+  })
+  if (!animate || motionPreference?.matches) {
+    angles.value = entries.map((_, index) => slotAngle(index, selected))
+    return
+  }
+  const start = performance.now()
+  rotating = true
+  function tick(now) {
+    const progress = Math.min((now - start) / 760, 1)
+    const eased = 1 - (1 - progress) ** 3
+    angles.value = starts.map((angle, index) => angle + (ends[index] - angle) * eased)
+    if (progress < 1) frame = requestAnimationFrame(tick)
+    else {
+      angles.value = entries.map((_, index) => slotAngle(index, selected))
+      rotating = false
     }
   }
+  frame = requestAnimationFrame(tick)
 }
-
-function revealSelection() {
-  const active = findItem(activeKey.value)
-  if (!active || !navItems.value) return
-  const track = navItems.value.getBoundingClientRect()
-  const rect = active.getBoundingClientRect()
-  navItems.value.scrollLeft += rect.left + rect.width / 2 - track.left - track.width / 2
+function position(index) {
+  const radians = (angles.value[index] * Math.PI) / 180
+  return { '--orbit-x': Math.sin(radians), '--orbit-y': Math.cos(radians) }
 }
-
-function queueMeasure() {
-  if (!navbar.value) return
-  cancelAnimationFrame(measureFrame)
-  measureFrame = requestAnimationFrame(measure)
+function closeMenu(restoreFocus = false) {
+  tooltip.value = null
+  cancelAutoClose()
+  opened.value = false
+  accountOpen.value = false
+  if (restoreFocus) toggle.value?.focus()
 }
-
-function finishExpansion(event) {
-  if (event.propertyName !== 'grid-template-columns') return
-  revealSelection()
-  queueMeasure()
+async function toggleMenu() {
+  if (opened.value) return closeMenu(true)
+  opened.value = true
+  rotateTo(selectedIndex.value, false)
+  await nextTick()
 }
-
 function moveLight(event) {
   if (event.pointerType === 'touch') return
   const rect = navbar.value.getBoundingClientRect()
   navbar.value.style.setProperty('--light-x', `${event.clientX - rect.left}px`)
-  navbar.value.style.setProperty('--light-y', `${event.clientY - rect.top}px`)
+  navbar.value.style.setProperty('--light-y', `${event.clientY - rect.top + 215}px`)
   hovered.value = true
 }
-
-function clickEffect(event) {
-  const target = event.target.closest('a, button')
-  if (!target || !navbar.value.contains(target)) return
-  const parent = navbar.value.getBoundingClientRect()
-  const rect = target.getBoundingClientRect()
-  ripple.value = {
-    id: ++rippleId,
-    x: (event.detail ? event.clientX : rect.left + rect.width / 2) - parent.left,
-    y: (event.detail ? event.clientY : rect.top + rect.height / 2) - parent.top,
-  }
-  clearTimeout(rippleTimer)
-  rippleTimer = setTimeout(() => {
-    ripple.value = null
-  }, 650)
-}
-
-function closeMenu(restoreFocus = false) {
-  const label = openGroup.value
-  openGroup.value = null
-  if (restoreFocus && label) findItem(`group:${label}`)?.focus()
-}
-
-async function openMenu(label, focusFirst = false) {
-  openGroup.value = label
-  await nextTick()
-  measure()
-  if (focusFirst) {
-    const button = findItem(`group:${label}`)
-    document.getElementById(button.getAttribute('aria-controls'))?.querySelector('a')?.focus()
+function showTooltip(event, item, index) {
+  if (!opened.value || selectedIndex.value === index || rotating) return
+  if (event.pointerType === 'touch') return
+  if (event.type === 'focus' && !event.currentTarget.matches(':focus-visible')) return
+  const rect = event.currentTarget.getBoundingClientRect()
+  tooltip.value = {
+    key: item.key,
+    label: item.label,
+    x: Math.max(102, Math.min(rect.left + rect.width / 2, window.innerWidth - 102)),
+    y: Math.min(rect.bottom + 10, window.innerHeight - 72),
   }
 }
-
-function outsideClick(event) {
+function handlePageClick(event) {
+  const rect = event.target instanceof Element ? event.target.getBoundingClientRect() : null
+  const x = event.detail || !rect ? event.clientX : rect.left + rect.width / 2
+  const y = event.detail || !rect ? event.clientY : rect.top + rect.height / 2
+  glows.value = [...glows.value.slice(-7), { id: ++glowId, x, y }]
   if (!navbar.value?.contains(event.target)) closeMenu()
 }
-
-function focusOut(event) {
-  if (!navbar.value.contains(event.relatedTarget)) closeMenu()
+function removeGlow(id) {
+  glows.value = glows.value.filter((glow) => glow.id !== id)
 }
-
+function escapeMenu(event) {
+  if (event.key !== 'Escape' || !opened.value) return
+  event.preventDefault()
+  if (accountOpen.value) {
+    accountOpen.value = false
+    navbar.value?.querySelector('[data-nav-key="profile"]')?.focus()
+  } else closeMenu(true)
+}
+async function focusAccount(event) {
+  event.preventDefault()
+  cancelAutoClose()
+  accountOpen.value = true
+  await nextTick()
+  navbar.value?.querySelector('.account-menu a')?.focus()
+}
+function moveFocus(event, index) {
+  let next
+  if (event.key === 'ArrowRight') next = (index + 1) % entries.length
+  if (event.key === 'ArrowLeft') next = (index - 1 + entries.length) % entries.length
+  if (event.key === 'Home') next = 0
+  if (event.key === 'End') next = entries.length - 1
+  if (next === undefined) return
+  event.preventDefault()
+  navbar.value?.querySelectorAll('.orbit-option')[next]?.focus()
+}
+watch(selectedIndex, (index) => rotateTo(index, opened.value))
 watch(
   () => route.fullPath,
-  () => closeMenu(),
+  () => {
+    accountOpen.value = false
+  },
 )
-
-watch(activeKey, async () => {
-  await nextTick()
-  revealSelection()
-  measure()
+function motionChanged() {
+  if (motionPreference.matches) rotateTo(selectedIndex.value, false)
+}
+onMounted(() => {
+  motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
+  motionPreference.addEventListener('change', motionChanged)
+  rotateTo(selectedIndex.value, false)
+  document.addEventListener('click', handlePageClick, true)
+  document.addEventListener('keydown', escapeMenu)
 })
-
-onMounted(async () => {
-  revealSelection()
-  measure()
-  if (typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(queueMeasure)
-    resizeObserver.observe(navbar.value)
-    navbar.value.querySelectorAll('[data-nav-key]').forEach((item) => resizeObserver.observe(item))
-  }
-  window.addEventListener('resize', queueMeasure)
-  document.addEventListener('pointerdown', outsideClick)
-  document.fonts?.ready.then(queueMeasure)
-  try {
-    await auth.checkAuth()
-  } catch {
-    // Keep navigation available if the backend cannot be reached.
-  }
-})
-
 onBeforeUnmount(() => {
-  resizeObserver?.disconnect()
-  cancelAnimationFrame(measureFrame)
-  clearTimeout(rippleTimer)
-  window.removeEventListener('resize', queueMeasure)
-  document.removeEventListener('pointerdown', outsideClick)
+  cancelAutoClose()
+  cancelAnimationFrame(frame)
+  motionPreference?.removeEventListener('change', motionChanged)
+  document.removeEventListener('click', handlePageClick, true)
+  document.removeEventListener('keydown', escapeMenu)
 })
 </script>
 
 <template>
   <nav
     ref="navbar"
-    class="app-navbar"
-    :class="{ 'is-hovered': hovered }"
+    class="orbit-navbar"
+    :class="{ 'is-open': opened, 'is-hovered': hovered }"
     aria-label="Main navigation"
     @pointermove="moveLight"
     @pointerleave="hovered = false"
-    @click="clickEffect"
-    @focusout="focusOut"
-    @keydown.esc.stop.prevent="closeMenu(true)"
   >
-    <svg
-      v-if="highlight"
-      class="nav-highlight"
-      :style="highlightStyle"
-      viewBox="0 0 160 28"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path d="M0 0 C24 0 24 28 56 28 H104 C136 28 136 0 160 0 Z" />
-    </svg>
-    <div class="nav-effects" aria-hidden="true">
-      <div class="nav-light"></div>
-      <span
-        v-if="ripple"
-        :key="ripple.id"
-        class="nav-ripple"
-        :style="{ left: `${ripple.x}px`, top: `${ripple.y}px` }"
-      ></span>
-    </div>
-    <RouterLink :to="{ name: 'home' }" class="nav-brand" @click="closeMenu()"
-      >Full Circle</RouterLink
-    >
-    <ul ref="navItems" class="nav-items" @scroll="queueMeasure" @transitionend="finishExpansion">
-      <li v-for="link in topLinks" :key="link.name">
-        <RouterLink
-          :to="{ name: link.name }"
-          class="nav-option"
-          :class="{ 'is-selected': activeKey === `route:${String(link.name)}` }"
-          :data-nav-key="`route:${String(link.name)}`"
-          :aria-label="link.meta.navLabel"
-          :title="link.meta.navLabel"
-          @click="closeMenu()"
-          ><span class="nav-label"
-            ><NavIcon :name="String(link.name)" /><span class="nav-text"
-              ><span>{{ link.meta.navLabel }}</span></span
-            ></span
-          ></RouterLink
+    <div id="radial-navigation" class="radial-panel" :inert="!opened" :aria-hidden="!opened">
+      <svg width="0" height="0" class="ring-definition" aria-hidden="true">
+        <defs>
+          <clipPath id="navbar-donut" clipPathUnits="objectBoundingBox">
+            <path
+              clip-rule="evenodd"
+              d="M1 .5 A.5 .5 0 1 0 0 .5 A.5 .5 0 1 0 1 .5 Z M.8 .5 A.3 .233 0 1 0 .2 .5 A.3 .233 0 1 0 .8 .5 Z"
+            />
+          </clipPath>
+        </defs>
+      </svg>
+      <div class="nav-surface" aria-hidden="true"><div class="nav-light"></div></div>
+      <ul class="orbit-items">
+        <li
+          v-for="(item, index) in entries"
+          :key="item.key"
+          class="orbit-slot"
+          :style="position(index)"
         >
-      </li>
-      <li v-for="group in groups" :key="group.id" class="nav-group">
-        <button
-          type="button"
-          class="nav-option nav-group-toggle"
-          :class="{ 'is-selected': activeKey === `group:${group.label}` }"
-          :data-nav-key="`group:${group.label}`"
-          :aria-label="group.label"
-          :title="group.label"
-          :aria-expanded="openGroup === group.label"
-          :aria-controls="group.id"
-          @click="openGroup === group.label ? closeMenu() : openMenu(group.label)"
-          @keydown.down.prevent="openMenu(group.label, true)"
-        >
-          <span class="nav-label">
-            <NavIcon :name="group.label.toLowerCase()" />
-            <span class="nav-text"
-              ><span>
-                {{ group.label }}
-                <svg
-                  class="nav-chevron"
-                  :class="{ 'is-open': openGroup === group.label }"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="m4 6 4 4 4-4"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg> </span
-            ></span>
-          </span>
-        </button>
-      </li>
-    </ul>
-    <Transition v-for="group in groups" :key="group.id" name="nav-menu">
-      <ul
-        v-show="openGroup === group.label"
-        :id="group.id"
-        class="nav-submenu"
-        :style="{ left: `${menuLeft}px` }"
-      >
-        <li v-for="child in group.children" :key="child.name">
-          <RouterLink :to="{ name: child.name }" @click="closeMenu()">
-            <NavIcon :name="String(child.name)" />
-            {{ child.meta.navLabel }}
-          </RouterLink>
+          <component
+            :is="item.children ? 'button' : RouterLink"
+            :to="item.children ? undefined : { name: item.name }"
+            :type="item.children ? 'button' : undefined"
+            class="orbit-option"
+            :class="{ 'is-selected': selectedIndex === index }"
+            :data-nav-key="item.key"
+            :aria-label="item.label"
+            :aria-describedby="tooltip?.key === item.key ? 'nav-icon-tooltip' : undefined"
+            :aria-expanded="item.children ? accountOpen : undefined"
+            :aria-controls="item.children ? 'account-navigation' : undefined"
+            @click="selectEntry(item, $event)"
+            @pointerenter="showTooltip($event, item, index)"
+            @pointerleave="tooltip = null"
+            @focus="showTooltip($event, item, index)"
+            @blur="tooltip = null"
+            @keydown="moveFocus($event, index)"
+            @keydown.down="item.children && focusAccount($event)"
+          >
+            <NavIcon :name="item.key" />
+            <span class="orbit-label" aria-hidden="true">{{ item.label }}</span>
+          </component>
         </li>
       </ul>
-    </Transition>
+      <Transition name="account">
+        <ul v-if="accountOpen && account" id="account-navigation" class="account-menu">
+          <li v-for="child in account.children" :key="child.name">
+            <RouterLink :to="{ name: child.name }" @click="selectDestination"
+              ><NavIcon :name="String(child.name)" />{{ child.meta.navLabel }}</RouterLink
+            >
+          </li>
+        </ul>
+      </Transition>
+    </div>
+    <button
+      ref="toggle"
+      type="button"
+      class="nav-toggle"
+      :aria-label="opened ? 'Close navigation' : 'Open navigation'"
+      :aria-expanded="opened"
+      aria-controls="radial-navigation"
+      @click="toggleMenu"
+    >
+      <span class="toggle-lines" aria-hidden="true"><span></span><span></span><span></span></span>
+    </button>
   </nav>
+  <Teleport to="body">
+    <Transition name="tooltip">
+      <span
+        v-if="tooltip"
+        id="nav-icon-tooltip"
+        role="tooltip"
+        class="nav-tooltip"
+        :style="{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }"
+        >{{ tooltip.label }}</span
+      >
+    </Transition>
+    <div class="page-click-glows" aria-hidden="true">
+      <span
+        v-for="glow in glows"
+        :key="glow.id"
+        class="page-click-glow"
+        :style="{ left: `${glow.x}px`, top: `${glow.y}px` }"
+        @animationend="removeGlow(glow.id)"
+      ></span>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
-.app-navbar {
+.orbit-navbar {
   --light-x: 50%;
   --light-y: 50%;
-  --selection-duration: 560ms;
-  display: grid;
-  grid-template-columns: 130px minmax(0, 1fr) 130px;
-  align-items: center;
-  position: relative;
-  z-index: 100;
-  isolation: isolate;
-  margin: 16px auto 52px;
-  width: calc(100% - 48px);
-  max-width: 960px;
-  padding: 0 10px;
-  border-radius: 20px;
-  background: #164b35;
-  filter: drop-shadow(0 8px 12px rgb(16 58 41 / 14%));
+  position: fixed;
+  z-index: 1000;
+  top: 0;
+  left: 50%;
+  width: min(640px, calc(100% - 16px));
+  height: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
   color: #fff;
   font:
     500 12px/1.4 system-ui,
     sans-serif;
 }
-
-.nav-brand {
-  grid-column: 1;
+.radial-panel {
   position: relative;
-  flex-shrink: 0;
-  padding: 14px 16px;
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
+  height: 215px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-50px) scale(0.16);
+  transform-origin: 50% 36px;
+  transition:
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 260ms ease,
+    visibility 560ms;
 }
-.nav-brand:hover {
-  color: #d9f1de;
+.is-open .radial-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
 }
-
-.nav-effects {
+.nav-surface {
   position: absolute;
-  inset: 0;
+  top: -215px;
+  width: 100%;
+  height: 430px;
+  clip-path: url(#navbar-donut);
   overflow: hidden;
-  border-radius: inherit;
-  pointer-events: none;
+  background: #164b35;
+  pointer-events: auto;
 }
-
+.ring-definition {
+  position: absolute;
+}
 .nav-light {
   position: absolute;
   inset: 0;
-  background: radial-gradient(
-    circle 125px at var(--light-x) var(--light-y),
-    rgb(210 255 225 / 24%),
-    rgb(210 255 225 / 7%) 45%,
-    transparent 75%
-  );
   opacity: 0;
+  background: radial-gradient(
+    circle 135px at var(--light-x) var(--light-y),
+    rgb(207 255 223 / 28%),
+    transparent 76%
+  );
   transition: opacity 180ms ease;
 }
-
 .is-hovered .nav-light {
   opacity: 1;
 }
-
-.nav-highlight {
+.orbit-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.orbit-slot {
   position: absolute;
-  bottom: -27px;
-  left: 0;
-  height: 28px;
-  fill: #164b35;
+  left: calc(50% + var(--orbit-x) * 42%);
+  top: calc(19px + var(--orbit-y) * 132px);
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+}
+.orbit-option {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  text-decoration: none;
+  pointer-events: auto;
+  transition:
+    background-color 220ms ease,
+    color 220ms ease,
+    border-color 220ms ease;
+}
+.orbit-option .nav-icon {
+  width: 23px;
+  height: 23px;
+  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.orbit-option:hover {
+  background: rgb(0 20 9 / 24%);
+  color: #fff;
+}
+.orbit-option.is-selected {
+  background: #d9f1de;
+  color: #164b35;
+  border-color: rgb(255 255 255 / 60%);
+  box-shadow: 0 0 24px rgb(186 255 206 / 15%);
+}
+.orbit-option.is-selected .nav-icon {
+  transform: scale(1.15);
+}
+.orbit-label {
+  position: absolute;
+  top: 55px;
+  left: 50%;
+  width: 156px;
+  transform: translate(-50%, -5px);
+  color: #e4f7e9;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  opacity: 0;
   pointer-events: none;
   transition:
-    transform var(--selection-duration) cubic-bezier(0.22, 1, 0.36, 1),
-    width var(--selection-duration) cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 260ms ease,
+    transform 560ms ease;
 }
-
-.nav-ripple {
+.is-selected .orbit-label {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.nav-toggle {
   position: absolute;
-  width: 120px;
-  height: 120px;
-  margin: -60px;
-  border: 1px solid rgb(255 255 255 / 45%);
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 1px solid rgb(225 255 234 / 30%);
   border-radius: 50%;
-  background: rgb(235 255 240 / 32%);
-  animation: nav-click 600ms ease-out forwards;
+  background: #164b35;
+  color: #fff;
+  box-shadow: 0 5px 20px rgb(10 42 29 / 22%);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
 }
-
-@keyframes nav-click {
+.nav-toggle:hover {
+  background: #205e43;
+  box-shadow: 0 0 22px rgb(122 220 158 / 40%);
+}
+.is-open .nav-toggle {
+  background: #103b2a;
+  box-shadow: none;
+}
+.toggle-lines {
+  position: relative;
+  width: 20px;
+  height: 16px;
+}
+.toggle-lines span {
+  position: absolute;
+  left: 0;
+  width: 20px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transition:
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease;
+}
+.toggle-lines span:nth-child(1) {
+  top: 0;
+}
+.toggle-lines span:nth-child(2) {
+  top: 7px;
+}
+.toggle-lines span:nth-child(3) {
+  top: 14px;
+}
+.is-open .toggle-lines span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.is-open .toggle-lines span:nth-child(2) {
+  opacity: 0;
+}
+.is-open .toggle-lines span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+.orbit-option:focus-visible,
+.nav-toggle:focus-visible,
+.account-menu a:focus-visible {
+  outline: 2px solid #b3e9c4;
+  outline-offset: 4px;
+}
+.account-menu {
+  position: absolute;
+  top: 229px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 190px;
+  margin: 0;
+  padding: 7px;
+  list-style: none;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 16px;
+  background: #164b35;
+  box-shadow: 0 10px 26px rgb(10 42 29 / 22%);
+  pointer-events: auto;
+}
+.account-menu a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  color: #fff;
+  text-decoration: none;
+}
+.account-menu a:hover {
+  background: #103b2a;
+}
+.account-menu a.router-link-exact-active {
+  background: #d9f1de;
+  color: #164b35;
+}
+.account-enter-active,
+.account-leave-active {
+  transition:
+    opacity 200ms ease,
+    translate 200ms ease;
+}
+.account-enter-from,
+.account-leave-to {
+  opacity: 0;
+  translate: 0 -8px;
+}
+.page-click-glows {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  overflow: hidden;
+}
+.nav-tooltip {
+  position: fixed;
+  z-index: 1100;
+  width: max-content;
+  max-width: 180px;
+  padding: 8px 12px;
+  border: 1px solid rgb(22 75 53 / 16%);
+  border-radius: 10px;
+  background: #f1fbf4;
+  color: #164b35;
+  box-shadow: 0 5px 18px rgb(10 42 29 / 20%);
+  font:
+    600 12px/1.4 system-ui,
+    sans-serif;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.tooltip-enter-active,
+.tooltip-leave-active {
+  transition:
+    opacity 180ms ease,
+    translate 180ms ease;
+}
+.tooltip-enter-from,
+.tooltip-leave-to {
+  opacity: 0;
+  translate: 0 -5px;
+}
+.page-click-glow {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  margin: -50px;
+  border-radius: 50%;
+  border: 1px solid rgb(112 215 156 / 65%);
+  background: radial-gradient(
+    circle,
+    rgb(164 255 202 / 55%),
+    rgb(63 187 122 / 20%) 45%,
+    transparent 72%
+  );
+  animation: page-click 700ms ease-out forwards;
+}
+@keyframes page-click {
   from {
-    transform: scale(0);
-    opacity: 0.8;
+    transform: scale(0.15);
+    opacity: 1;
   }
   to {
-    transform: scale(3);
+    transform: scale(1.5);
     opacity: 0;
   }
 }
-
-.nav-items {
-  grid-column: 2;
-  position: relative;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  margin: 0;
-  padding: 12px 32px 18px;
-  list-style: none;
-}
-
-.nav-items::-webkit-scrollbar {
-  display: none;
-}
-.nav-items > li {
-  flex-shrink: 0;
-}
-.nav-items > li:first-child {
-  margin-left: auto;
-}
-.nav-items > li:last-child {
-  margin-right: auto;
-}
-
-.nav-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  transform-origin: center;
-  transition: transform var(--selection-duration) cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.nav-text {
-  display: grid;
-  grid-template-columns: 0fr;
-  grid-template-rows: 0fr;
-  margin-top: 0;
-  opacity: 0;
-  transition:
-    grid-template-columns var(--selection-duration) cubic-bezier(0.22, 1, 0.36, 1),
-    grid-template-rows var(--selection-duration) cubic-bezier(0.22, 1, 0.36, 1),
-    margin-top var(--selection-duration) cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 180ms ease;
-}
-.nav-text > span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.nav-option.is-selected .nav-text {
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
-  margin-top: 8px;
-  opacity: 1;
-}
-.nav-label .nav-icon {
-  transition: transform var(--selection-duration) cubic-bezier(0.22, 1, 0.36, 1);
-}
-.nav-option.is-selected .nav-icon {
-  transform: scale(1.18);
-}
-
-.nav-option {
-  display: flex;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 11px 12px;
-  border: 0;
-  border-radius: 13px;
-  background: transparent;
-  color: #fff;
-  font: inherit;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    color 180ms ease,
-    background-color 180ms ease;
-}
-
-.nav-option:hover {
-  color: #fff;
-  background-color: rgb(0 20 9 / 20%);
-}
-.nav-option:active {
-  background-color: rgb(0 20 9 / 30%);
-}
-.nav-option.is-selected {
-  color: #d9f1de;
-}
-.nav-option.is-selected .nav-label {
-  transform: translateY(14px);
-}
-.nav-option.is-selected:hover {
-  background-color: rgb(255 255 255 / 12%);
-}
-.nav-option:focus-visible,
-.nav-brand:focus-visible,
-.nav-submenu a:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 3px;
-}
-.nav-option.is-selected:focus-visible {
-  outline-color: #d9f1de;
-}
-.nav-group {
-  position: relative;
-}
-.nav-chevron {
-  flex-shrink: 0;
-  transition: transform 200ms ease;
-}
-.nav-chevron.is-open {
-  transform: rotate(180deg);
-}
-
-.nav-submenu {
-  position: absolute;
-  top: calc(100% + 36px);
-  z-index: 10;
-  width: 190px;
-  padding: 7px;
-  margin: 0;
-  list-style: none;
-  border: 1px solid rgb(255 255 255 / 16%);
-  border-radius: 15px;
-  background: #164b35;
-  box-shadow: 0 12px 30px rgb(10 40 24 / 22%);
-}
-
-.nav-submenu a {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 12px;
-  border-radius: 9px;
-  color: #fff;
-  text-decoration: none;
-  transition: background-color 160ms ease;
-}
-.nav-submenu a:hover {
-  background-color: #103a29;
-}
-.nav-submenu a.router-link-exact-active {
-  background-color: #d9f1de;
-  color: #123f2c;
-}
-.nav-menu-enter-active,
-.nav-menu-leave-active {
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
-}
-.nav-menu-enter-from,
-.nav-menu-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
-}
-
-@media (max-width: 600px) {
-  .app-navbar {
-    grid-template-columns: minmax(0, 1fr);
-    width: calc(100% - 20px);
-    margin-top: 10px;
-    padding: 0 8px;
-    border-radius: 17px;
-    font-size: 12px;
+@media (max-width: 480px) {
+  .orbit-option,
+  .orbit-slot {
+    width: 44px;
+    height: 44px;
   }
-  .nav-items {
-    grid-column: 1;
-    gap: 4px;
+  .orbit-option .nav-icon {
+    width: 21px;
+    height: 21px;
   }
-  .nav-brand {
-    padding: 12px 16px 0;
-    font-size: 16px;
-  }
-  .nav-option {
-    padding: 10px;
+  .orbit-label {
+    top: 51px;
+    width: 142px;
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  .nav-highlight,
-  .nav-label,
-  .nav-text,
-  .nav-label .nav-icon,
-  .nav-option,
+  .radial-panel,
   .nav-light,
-  .nav-chevron,
-  .nav-submenu a,
-  .nav-menu-enter-active,
-  .nav-menu-leave-active {
+  .nav-toggle,
+  .toggle-lines span,
+  .orbit-option,
+  .orbit-option .nav-icon,
+  .orbit-label,
+  .tooltip-enter-active,
+  .tooltip-leave-active,
+  .account-enter-active,
+  .account-leave-active {
     transition: none;
   }
-  .nav-ripple {
-    animation: none;
-    display: none;
+  .page-click-glow {
+    animation: click-fade 180ms ease-out forwards;
+  }
+}
+@keyframes click-fade {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 0;
   }
 }
 </style>
