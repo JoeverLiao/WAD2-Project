@@ -28,10 +28,6 @@ function isRealDate(year, month, day) {
   return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day
 }
 
-function todayIso(today) {
-  return isoDate(today.getFullYear(), today.getMonth() + 1, today.getDate())
-}
-
 // Receipts are sometimes printed or scanned a day ahead/behind; allow one day of slack.
 function notInFuture(iso, today) {
   const limit = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
@@ -138,7 +134,7 @@ const NON_ITEM_LINE = new RegExp(
   [
     '\\b(sub\\s?total|total|totalt|grand\\s*total|amount|balance|change|cash|tender|tendered|rounding|round\\s*off)\\b',
     '\\b(gst|hst|pst|vat|tax|moms|svc|service\\s*charge|surcharge|tip|gratuity)\\b',
-    '%',
+    '%|=|tax',
     '\\b(visa|master\\s?card|amex|nets|paynow|paylah|credit|debit|card|payment|paid|approval|auth|terminal|batch|trace)\\b',
     '\\b(thank|thanks|welcome|goodbye|please\\s+come|have\\s+a\\s+nice|visit\\s+us|follow\\s+us|survey|feedback)\\b',
     '\\b(receipt|invoice|nota|kvitto|tel|telephone|phone|hotline|fax|www|http|website|email|e-mail)\\b',
@@ -178,9 +174,9 @@ const UNIT_WORDS = /^(g|kg|ml|l|oz|lb|lbs|pk|pack|packs|pcs|pc|s)$/i
  */
 export function tidyName(raw) {
   let name = raw
-    .replace(/\b\d{5,}\b/g, ' ') // product / barcode numbers
+    .replace(/\b\d{5,}/g, ' ') // product / barcode numbers, even when glued to a word ("261030079GG")
     .replace(/^\s*\d{4}\s+(?=[A-Za-z])/, '') // short produce codes such as "4012 ORANGE"
-    .replace(/\s+(?:H?MRJ|GST|HST|PST|TX)\s*$/i, '') // tax flags printed before the price
+    .replace(/(?:\s+(?:H?MRJ|GST|HST|PST|TX|NF|TF|N|T|F|X))+\s*$/i, '') // tax / food-stamp flags printed before the price
     .replace(/[|_~`^<>{}[\]\\]/g, ' ') // characters OCR invents
     .replace(/[.·•]{2,}/g, ' ') // dotted leaders
     .replace(/\s*[*#@]+\s*/g, ' ')
@@ -222,6 +218,12 @@ function takeQuantity(text) {
       return { quantity: q, unit: null, name: rest }
     }
   }
+  // "1COFFEE", "2LATTE": the count is glued to the name (needs 3+ letters so "7UP" stays whole).
+  const glued = text.match(/^\s*(\d{1,2})(?=[A-Za-z]{3,})(?!(?:litre|liter|kg|ml|gram|pack|pcs)\b)(.*)$/i)
+  if (glued && Number(glued[1]) > 0) return { quantity: Number(glued[1]), unit: null, name: glued[2] }
+  // "NORRLANDS GULD 2,00": a whole-number quantity printed after the name in decimal form.
+  const decimalTail = text.match(/^(.*?[A-Za-z]\S*)\s+(\d{1,3})[.,]00\s*$/)
+  if (decimalTail && Number(decimalTail[2]) > 0) return { quantity: Number(decimalTail[2]), unit: null, name: decimalTail[1] }
   // "FRESH MILK 1L        2": a lone number in its own column at the end (2+ spaces before it).
   const trail = text.match(/^(.*?\S)\s{2,}(\d{1,2})\s*$/)
   if (trail && !UNIT_WORDS.test(trail[2])) {
@@ -250,6 +252,61 @@ function looksLikeMerchantLine(line) {
   return true
 }
 
+// True when two names differ by at most one letter (and are long enough that this is not a coincidence).
+function nearlySameName(a, b) {
+  const x = a.toLowerCase()
+  const y = b.toLowerCase()
+  if (x.length < 8 || y.length < 8 || Math.abs(x.length - y.length) > 1) return false
+  if (x.length === y.length) {
+    let differences = 0
+    for (let i = 0; i < x.length; i++) {
+      if (x[i] === y[i]) continue
+      // Only a misread LETTER counts: "250ml" vs "350ml" are different products.
+      if (!/[a-z]/.test(x[i]) || !/[a-z]/.test(y[i]) || ++differences > 1) return false
+    }
+    return true
+  }
+  const [short, long] = x.length < y.length ? [x, y] : [y, x]
+  let i = 0
+  while (i < short.length && short[i] === long[i]) i++
+  return /[a-z]/.test(long[i] ?? '') && short.slice(i) === long.slice(i + 1)
+}
+
+/**
+ * Combine lines that are the same product (same name and unit) into one item with the quantities
+ * and prices added up: "Coffee" listed three times becomes Coffee x 3.
+ */
+function groupDuplicates(items) {
+  const round = (n, places) => Math.round(n * 10 ** places) / 10 ** places
+  const groups = new Map()
+  for (const item of items) {
+    const key = `${item.name.toLowerCase()}|${item.unit}|${item.storage}`
+    // OCR sometimes misreads one letter ("Norrlande Guld"): long names one letter apart are the same product.
+    const group =
+      groups.get(key) ??
+      [...groups.values()].find(
+        (g) => g.unit === item.unit && g.storage === item.storage && nearlySameName(g.name, item.name),
+      )
+    if (!group) {
+      groups.set(key, { ...item, lineCount: 1, unpriced: item.price === null ? 1 : 0 })
+      continue
+    }
+    group.quantity = round(group.quantity + item.quantity, 3)
+    if (item.price !== null) group.price = round((group.price ?? 0) + item.price, 2)
+    else group.unpriced += 1
+    group.include = group.include || item.include
+    group.lineCount += 1
+    group.rawLine = `${group.rawLine} + ${item.rawLine}`
+  }
+  return [...groups.values()].map(({ lineCount, unpriced, ...item }) => {
+    if (lineCount > 1) {
+      item.warnings = [`Listed on ${lineCount} receipt lines: quantities were added together`, ...item.warnings]
+    }
+    if (lineCount > 1 && unpriced > 0 && item.price !== null) item.warnings.push('Some lines had no readable price')
+    return item
+  })
+}
+
 // ----- main entry point ------------------------------------------------------------------------
 
 /**
@@ -263,8 +320,8 @@ function looksLikeMerchantLine(line) {
  *   itemsSum: number,
  *   totalMatches: boolean|null,
  *   items: Array<{
- *     name: string, quantity: number, unit: string, price: number|null,
- *     storage: 'fridge'|'freezer'|'pantry', expiresAt: string|null, expiresEstimated: boolean,
+ *     name: string, receiptName: string, quantity: number, unit: string, price: number|null,
+ *     storage: 'fridge'|'freezer'|'pantry', expiresAt: null,
  *     likelyFood: boolean|null, include: boolean, rawLine: string, warnings: string[]
  *   }>
  * }}
@@ -276,7 +333,6 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
     .filter((line) => line.trim() && !SEPARATOR_LINE.test(line))
 
   const { purchasedAt, dateAmbiguous } = findPurchaseDate(lines, today)
-  const baseDate = purchasedAt ?? todayIso(today)
 
   let merchant = null
   let total = null
@@ -324,7 +380,7 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
     }
 
     // A price on its own line belongs to the item above it that has no price yet.
-    if (!/[A-Za-z]{2,}/.test(body) && price !== null && !negative) {
+    if ((body.match(/[A-Za-z]/g) || []).length < 2 && price !== null && !negative) {
       if (previous && previous.price === null && previous.lineIndex >= i - 2) {
         previous.price = price
         previous.lineIndex = i
@@ -346,29 +402,35 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
     const { quantity: foundQty, name: rawName } = takeQuantity(body)
     // When the price is unreadable it leaves junk like "&,0" or "$5" after the name: drop it.
     const afterQty = price === null ? rawName.replace(/(\s+[^A-Za-z\s]+)+\s*$/, '') : rawName
-    const name = tidyName(afterQty)
-    if (!hasEnoughLetters(name)) continue
+    const hadCode = /\b\d{5,}/.test(afterQty)
+    const cleaned = tidyName(afterQty)
+    // Digits and symbols outnumbering letters ("T=FLTAX7.000000n$20.98") is never a product.
+    if (/[=$]/.test(cleaned) || (cleaned.match(/\d/g) || []).length > (cleaned.match(/[A-Za-z]/g) || []).length) continue
+    // Two letters ("GG", "B&B") are accepted only with a price and a product code or "&".
+    if (!hasEnoughLetters(cleaned) && !(price !== null && (hadCode || cleaned.includes('&')) && (cleaned.match(/[A-Za-z]/g) || []).length >= 2)) continue
     // No price and no leading quantity: probably a header, address or OCR noise, not an item.
     // Exception: the next line is a "3 @ $1.47" / "0.358 kg @ ..." detail that carries the price.
     const nextLine = lines[i + 1] ?? ''
     const detailFollows = WEIGHT_DETAIL.test(nextLine) || COUNT_DETAIL.test(nextLine)
     if (price === null && foundQty === null && !detailFollows) continue
-    if (price === null && foundQty !== null && (foundQty > 20 || ADDRESS_WORDS.test(name))) continue
+    if (price === null && foundQty !== null && (foundQty > 20 || ADDRESS_WORDS.test(cleaned))) continue
     // Prices of zero or absurdly large amounts are OCR mistakes.
     if (price !== null && (price === 0 || price > 9999)) continue
 
     const warnings = []
 
-    const info = classifyItem(name)
-    const unit = 'pieces'
+    const info = classifyItem(cleaned)
+    // The same product always gets the same name, whatever the brand, size or shop.
+    const name = info.canonicalName ?? cleaned
     items.push({
       name,
+      receiptName: cleaned,
       quantity: foundQty ?? 1,
-      unit,
+      unit: 'pieces',
       price,
       storage: info.storage,
-      expiresAt: info.shelfDays ? addDays(baseDate, info.shelfDays) : null,
-      expiresEstimated: Boolean(info.shelfDays),
+      // Receipts never show a use-by date, so it always starts empty for the user to fill in.
+      expiresAt: null,
       likelyFood: info.likelyFood,
       include: info.likelyFood !== false,
       rawLine: line,
@@ -378,25 +440,25 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
     if (items.length >= MAX_ITEMS) break
   }
 
-  // Finish: warnings that need the whole list, then remove internal bookkeeping.
-  for (const item of items) {
+  // Finish: the same product listed on several lines (or with a quantity) becomes ONE item.
+  const list = groupDuplicates(items)
+  for (const item of list) {
     if (item.price === null) item.warnings.unshift('Price could not be read')
     if (item.likelyFood === false) item.warnings.push('Does not look like food: untick to skip it')
     else if (item.likelyFood === null) item.warnings.push('Please check this item and where it is stored')
-    if (item.expiresEstimated) item.warnings.push('Expiry date is an estimate')
     if (item.quantity > 99) item.warnings.push('Quantity looks very high')
     delete item.lineIndex
   }
 
   const round2 = (n) => Math.round(n * 100) / 100
-  const itemsSum = round2(items.reduce((sum, item) => sum + (item.price ?? 0), 0))
+  const itemsSum = round2(list.reduce((sum, item) => sum + (item.price ?? 0), 0))
   // The items (less any coupons) should add up to the subtotal, or to the total when there is no tax line.
   const netSum = round2(itemsSum + discounts)
   const targets = [subtotal, total].filter((n) => n !== null)
   const totalMatches =
-    targets.length === 0 || items.length === 0
+    targets.length === 0 || list.length === 0
       ? null
       : targets.some((t) => Math.abs(netSum - t) <= 0.05 || Math.abs(itemsSum - t) <= 0.05)
 
-  return { merchant, purchasedAt, dateAmbiguous, total, subtotal, itemsSum, totalMatches, items }
+  return { merchant, purchasedAt, dateAmbiguous, total, subtotal, itemsSum, totalMatches, items: list }
 }

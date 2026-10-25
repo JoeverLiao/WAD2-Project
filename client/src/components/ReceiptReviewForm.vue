@@ -31,6 +31,7 @@ function newRow(values = {}) {
     expiresAt: '',
     purchasePrice: '',
     warnings: [],
+    receiptName: '',
     ...values,
   }
 }
@@ -48,6 +49,7 @@ function initialRows(parsed) {
       expiresAt: item.expiresAt ?? '',
       purchasePrice: item.price ?? '',
       warnings: item.warnings ?? [],
+      receiptName: item.receiptName ?? '',
     }),
   )
 }
@@ -63,6 +65,8 @@ const serverErrors = reactive({}) // { [rowKey]: { [field]: message } }
 const saving = ref(false)
 const saveError = ref('')
 const savedCount = ref(0)
+const addedCount = ref(0)
+const mergedCount = ref(0)
 
 const includedRows = computed(() => rows.value.filter((row) => row.include))
 const rowErrors = computed(() =>
@@ -120,6 +124,8 @@ async function save() {
   try {
     const result = await confirmReceiptItems(sent.map((row) => toPayload(row, purchasedAt.value)))
     savedCount.value = result.saved
+    addedCount.value = result.added ?? result.saved
+    mergedCount.value = result.merged ?? 0
     emit('saved', result)
   } catch (error) {
     saveError.value = error.message
@@ -150,6 +156,10 @@ const totalWarning = computed(() => {
       <div v-if="savedCount" class="text-center py-3" data-testid="saved-message">
         <div class="alert alert-success" role="status">
           Saved {{ savedCount }} {{ savedCount === 1 ? 'item' : 'items' }} to your inventory.
+          <span v-if="mergedCount" data-testid="merged-message">
+            {{ mergedCount }} {{ mergedCount === 1 ? 'was' : 'were' }} already in stock, so the quantity was increased
+            ({{ addedCount }} new).
+          </span>
         </div>
         <button type="button" class="btn btn-success" @click="emit('reset')">Scan another receipt</button>
       </div>
@@ -223,6 +233,13 @@ const totalWarning = computed(() => {
             </button>
           </div>
 
+          <p
+            v-if="row.receiptName && row.receiptName.toLowerCase() !== row.name.trim().toLowerCase()"
+            class="small text-body-secondary mb-1"
+            data-testid="receipt-name"
+          >
+            On the receipt: {{ row.receiptName }}
+          </p>
           <ul v-if="row.warnings.length" class="small text-warning-emphasis ps-3 mb-2">
             <li v-for="warning in row.warnings" :key="warning">{{ warning }}</li>
           </ul>

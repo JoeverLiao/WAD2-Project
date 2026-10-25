@@ -74,16 +74,18 @@ TOTAL                   19.65`)
     assert.equal(r.totalMatches, true)
   })
   test('finds each item with its quantity and price', () => {
-    assert.deepEqual(names(r), ['Fresh Milk 1L', 'Eggs Large 10s', 'Banana Cavendish', 'Chicken Breast 500g'])
+    assert.deepEqual(names(r), ['Milk', 'Eggs', 'Banana', 'Chicken Breast'])
     assert.deepEqual(r.items.map((i) => i.quantity), [2, 1, 1, 1])
     assert.deepEqual(r.items.map((i) => i.price), [6.4, 3.2, 2.1, 7.95])
   })
-  test('suggests storage and an estimated expiry from the purchase date', () => {
+  test('suggests where each item is stored but never a use-by date', () => {
     const [milk, , banana] = r.items
     assert.equal(milk.storage, 'fridge')
-    assert.equal(milk.expiresAt, '2026-10-19')
-    assert.equal(milk.expiresEstimated, true)
     assert.equal(banana.storage, 'pantry')
+    assert.ok(r.items.every((i) => i.expiresAt === null && !('expiresEstimated' in i)))
+  })
+  test('keeps the wording from the receipt next to the standard name', () => {
+    assert.equal(r.items[0].receiptName, 'Fresh Milk 1L')
   })
 })
 
@@ -93,7 +95,7 @@ describe('leading quantity formats', () => {
 3x Eggs 4.50
 1,00 Norrlands Guld 45,00`)
     assert.deepEqual(r.items.map((i) => [i.name, i.quantity, i.price]), [
-      ['Apples', 2, 3],
+      ['Apple', 2, 3],
       ['Eggs', 3, 4.5],
       ['Norrlands Guld', 1, 45],
     ])
@@ -143,15 +145,17 @@ Netto Hons Brutto
 250 540.00 135.01 675.10`)
   test('reads the date and the repeated items', () => {
     assert.equal(r.purchasedAt, '2020-09-18')
-    assert.equal(r.items.length, 3)
-    assert.ok(r.items.every((i) => i.quantity === 1 && i.price === 45))
+    assert.equal(r.items.length, 1) // three lines of the same beer are ONE item
+    assert.equal(r.items[0].quantity, 3)
+    assert.equal(r.items[0].price, 135)
     assert.equal(r.total, 675)
   })
   test('does not mistake the VAT table for items', () => {
     assert.ok(!names(r).some((n) => /netto|brutto|moms/i.test(n)))
   })
-  test('warns about a product it does not recognise', () => {
+  test('warns about a product it does not recognise, and about the combined lines', () => {
     assert.ok(r.items[0].warnings.some((w) => /check this item/i.test(w)))
+    assert.ok(r.items[0].warnings.some((w) => /3 receipt lines/i.test(w)))
   })
 })
 
@@ -182,15 +186,15 @@ TOTAL 27.38`)
   test('keeps the multi-line items with their quantity, unit and price', () => {
     assert.equal(byName['Avocado'].quantity, 3)
     assert.equal(byName['Avocado'].price, 4.41)
-    assert.equal(byName['Orange Navel Lg'].quantity, 0.358)
-    assert.equal(byName['Orange Navel Lg'].unit, 'kg')
-    assert.equal(byName['Orange Navel Lg'].price, 0.56)
+    assert.equal(byName['Orange'].quantity, 0.358)
+    assert.equal(byName['Orange'].unit, 'kg')
+    assert.equal(byName['Orange'].price, 0.56)
     assert.equal(byName['Lime'].quantity, 5)
     assert.equal(byName['Lime'].price, 2)
   })
   test('does not turn discounts, coupons, tax or headings into items', () => {
     assert.deepEqual(names(r), [
-      'Finish Quantum', 'Herbal Tea', 'Avocado', 'Orange Navel Lg', 'Lime', 'Ziploc Org Singl', 'Tylenol Cold & S',
+      'Finish Quantum', 'Tea', 'Avocado', 'Orange', 'Lime', 'Ziploc Org Singl', 'Tylenol Cold & S',
     ])
   })
   test('starts non-food items unticked', () => {
@@ -215,6 +219,47 @@ describe('OCR slips in the total line', () => {
   })
 })
 
+describe('the same product is always ONE item with a clean, shared name', () => {
+  test('repeated lines add up; the count printed at the front is never part of the name', () => {
+    const r = parse(`CAFE
+1COFFEE 3.00
+1LATTE 4.00
+2COFFEE 6.00
+1 COFFEE 3.00
+Subtotal 16.00`)
+    assert.deepEqual(r.items.map((i) => [i.name, i.quantity, i.price]), [
+      ['Coffee', 4, 12],
+      ['Latte', 1, 4],
+    ])
+    assert.equal(r.totalMatches, true)
+  })
+  test('different brands and sizes of the same product get the same name', () => {
+    const r = parse('1 MEIJI FRESH MILK 1L 3.00\n2 FARMHOUSE MILK 2L 8.00')
+    assert.deepEqual(r.items.map((i) => [i.name, i.quantity]), [['Milk', 3]])
+  })
+  test('products with a code or a tax flag are cleaned (Target style)', () => {
+    const r = parse(`GROCERY
+284060402 HORIZON NF $5.49
+261030079GG Nf $10.89
+083057607 B&B T $14.99
+083057779 PETCOLLAR T $5.99
+SUBTOTAL $37.36`)
+    assert.deepEqual(names(r), ['Horizon', 'GG', 'B&B', 'Petcollar'])
+    assert.equal(r.totalMatches, true)
+    assert.equal(r.items[3].include, false)
+  })
+  test('tax and payment lines are never added as items, even when OCR glued them together', () => {
+    const r = parse(`1 Milk 3.00
+SUBTOTAL $3.00
+T=FLTAX7.000000n$20.98 $1.47
+TAX 7.000000% $0.21
+*0015 MASTERCARD CHARGE $3.21
+AID: A0000000041010
+TOTAL $3.21`)
+    assert.deepEqual(names(r), ['Milk'])
+  })
+})
+
 describe('bad input', () => {
   test('empty, null and garbage text give no items and do not throw', () => {
     for (const text of ['', null, undefined, '   \n \n', '||| ~~~ ###', 'rs has\nLr |\nBhaaasnstisggyyysgqssnssssing\nNOTA']) {
@@ -229,7 +274,8 @@ describe('bad input', () => {
     assert.ok(r.items[0].warnings.includes('Price could not be read'))
   })
   test('never returns more than 100 items', () => {
-    const text = Array.from({ length: 150 }, (_, i) => `Item${i} apple 1.00`).join('\n')
+    const word = (i) => String.fromCharCode(97 + (i % 26)) + String.fromCharCode(97 + Math.floor(i / 26))
+    const text = Array.from({ length: 150 }, (_, i) => `Prod ${word(i)}${word(i)} 1.00`).join('\n')
     assert.equal(parse(text).items.length, 100)
   })
 })

@@ -35,8 +35,14 @@ const post = (base, body, headers = cookie) =>
     body: JSON.stringify(body),
   })
 
-const milk = { name: 'Fresh Milk 1L', quantity: 2, unit: 'pieces', storage: 'fridge', purchasedAt: '2026-10-12', expiresAt: '2026-10-19', purchasePrice: 6.4 }
-const fakeSave = (docs) => docs.map((d, i) => ({ _id: { toString: () => `id${i}` }, ...d }))
+const milk = { name: 'Milk', quantity: 2, unit: 'pieces', storage: 'fridge', purchasedAt: '2026-10-12', purchasePrice: 6.4 }
+// Stand-in for the database: pretends every product was new (upserted) unless told otherwise.
+const fakeBulk = (matched = 0) => async (ops) => ({ upsertedCount: ops.length - matched, matchedCount: matched })
+const mockBulk = (t, impl = fakeBulk()) => {
+  const bulk = mock.method(InventoryItem, 'bulkWrite', impl)
+  t.after(() => bulk.mock.restore())
+  return bulk
+}
 
 test('saving requires login', async (t) => {
   const base = await startApp(t)
@@ -44,41 +50,63 @@ test('saving requires login', async (t) => {
   assert.equal(response.status, 401)
 })
 
-test('saves valid items for the logged-in user and returns them', async (t) => {
-  const insert = mock.method(InventoryItem, 'insertMany', async (docs) => fakeSave(docs))
-  t.after(() => insert.mock.restore())
+test('saves valid items for the logged-in user', async (t) => {
+  const bulk = mockBulk(t)
   const base = await startApp(t)
 
   const response = await post(base, { items: [milk, { name: 'Eggs', quantity: '1', storage: 'fridge' }] })
   assert.equal(response.status, 201)
-  const body = await response.json()
-  assert.equal(body.saved, 2)
-  assert.equal(body.items[0].name, 'Fresh Milk 1L')
+  assert.deepEqual(await response.json(), { saved: 2, added: 2, merged: 0 })
 
-  const docs = insert.mock.calls[0].arguments[0]
-  assert.equal(docs.length, 2)
-  assert.equal(docs[0].user, USER_ID)
-  assert.equal(docs[1].quantity, 1) // "1" was turned into a number
-  assert.ok(docs[0].purchasedAt instanceof Date)
-  assert.equal(docs[0].purchasedAt.toISOString(), '2026-10-12T12:00:00.000Z')
+  const ops = bulk.mock.calls[0].arguments[0]
+  assert.equal(ops.length, 2)
+  const first = ops[0].updateOne
+  assert.equal(first.filter.user, USER_ID)
+  assert.equal(first.filter.name, 'Milk')
+  assert.equal(first.upsert, true)
+  assert.deepEqual(first.collation, { locale: 'en', strength: 2 })
+  assert.deepEqual(first.update.$inc, { quantity: 2, purchasePrice: 6.4 })
+  assert.equal(first.update.$setOnInsert.purchasedAt.toISOString(), '2026-10-12T12:00:00.000Z')
+  assert.equal(ops[1].updateOne.update.$inc.quantity, 1) // "1" was turned into a number
+  assert.equal(ops[1].updateOne.update.$setOnInsert, undefined)
+})
+
+test('an item already in stock has its quantity increased, not a second entry', async (t) => {
+  mockBulk(t, fakeBulk(1))
+  const base = await startApp(t)
+  const response = await post(base, { items: [milk, { name: 'Eggs', quantity: 6, storage: 'fridge' }] })
+  assert.deepEqual(await response.json(), { saved: 2, added: 1, merged: 1 })
+})
+
+test('the same product on several rows is saved as one with the quantities added', async (t) => {
+  const bulk = mockBulk(t)
+  const base = await startApp(t)
+  const response = await post(base, {
+    items: [
+      { name: 'Coffee', quantity: 1, unit: 'pieces', storage: 'pantry', purchasePrice: 3 },
+      { name: 'COFFEE', quantity: 2, unit: 'pieces', storage: 'pantry', purchasePrice: 6 },
+    ],
+  })
+  assert.equal(response.status, 201)
+  const ops = bulk.mock.calls[0].arguments[0]
+  assert.equal(ops.length, 1)
+  assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 3, purchasePrice: 9 })
 })
 
 test('the owner comes from the login, never from the request', async (t) => {
-  const insert = mock.method(InventoryItem, 'insertMany', async (docs) => fakeSave(docs))
-  t.after(() => insert.mock.restore())
+  const bulk = mockBulk(t)
   const base = await startApp(t)
 
   const response = await post(base, { items: [{ ...milk, user: '000000000000000000000000', _id: 'x', admin: true }] })
   assert.equal(response.status, 201)
-  const [doc] = insert.mock.calls[0].arguments[0]
-  assert.equal(doc.user, USER_ID)
-  assert.equal(doc.admin, undefined)
-  assert.equal(doc._id, undefined)
+  const [op] = bulk.mock.calls[0].arguments[0]
+  assert.equal(op.updateOne.filter.user, USER_ID)
+  assert.equal(JSON.stringify(op).includes('admin'), false)
+  assert.equal(JSON.stringify(op).includes('000000000000000000000000'), false)
 })
 
 test('one bad item rejects the whole request and saves nothing', async (t) => {
-  const insert = mock.method(InventoryItem, 'insertMany', async (docs) => fakeSave(docs))
-  t.after(() => insert.mock.restore())
+  const bulk = mockBulk(t)
   const base = await startApp(t)
 
   const response = await post(base, { items: [milk, { ...milk, name: '   ', quantity: -1, storage: 'garage' }] })
@@ -88,7 +116,7 @@ test('one bad item rejects the whole request and saves nothing', async (t) => {
     body.details.map((d) => [d.index, d.field]),
     [[1, 'name'], [1, 'quantity'], [1, 'storage']],
   )
-  assert.equal(insert.mock.callCount(), 0)
+  assert.equal(bulk.mock.callCount(), 0)
 })
 
 test('rejects an empty or missing list', async (t) => {
@@ -100,14 +128,11 @@ test('rejects an empty or missing list', async (t) => {
 })
 
 test('a database failure gives a friendly 500, not a crash', async (t) => {
-  const insert = mock.method(InventoryItem, 'insertMany', async () => {
+  mockBulk(t, async () => {
     throw new Error('connection lost')
   })
   const log = mock.method(console, 'error', () => {})
-  t.after(() => {
-    insert.mock.restore()
-    log.mock.restore()
-  })
+  t.after(() => log.mock.restore())
   const base = await startApp(t)
   const response = await post(base, { items: [milk] })
   assert.equal(response.status, 500)

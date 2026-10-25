@@ -1,91 +1,193 @@
-// What we know about common groceries: where they are usually kept and how long they last.
-// Used only to PRE-FILL the review form. The user can change every value before saving.
+// What we know about common groceries, so the same product always gets the SAME name no matter
+// the brand, size or shop ("Meiji Fresh Milk 1L" and "FARMHOUSE MILK 2L" are both "Milk"), and
+// so we can suggest where it is kept. Used only to pre-fill the review form: the user can change
+// every value before saving.
 //
-// Each entry: [words that identify the food, storage, typical days until it should be used].
-// shelfDays is for the unopened product kept as described; it is an estimate, not a label date.
-// Entries are checked in order, so more specific ones (e.g. "frozen") come first.
+// Each entry: [canonical name, words that identify it, where it is usually kept].
+// Entries are checked IN ORDER and the first match wins, so specific entries (Soy Milk, Peanut
+// Butter, Orange Juice) must come before general ones (Milk, Butter, Orange).
 
-const FOOD_RULES = [
-  // Frozen things first, so "frozen chicken" is not treated as fresh chicken.
-  [['frozen', 'ice cream', 'gelato', 'popsicle'], 'freezer', 90],
+/** @type {Array<[string, string, 'fridge'|'freezer'|'pantry']>} */
+const FOODS = [
+  // Frozen
+  ['Ice Cream', 'ice cream,gelato,popsicle', 'freezer'],
+
+  // Drinks that contain other food words must come before those foods
+  ['Orange Juice', 'orange juice', 'fridge'],
+  ['Apple Juice', 'apple juice', 'fridge'],
+  ['Juice', 'juice,smoothie', 'fridge'],
+  ['Soy Milk', 'soy milk,soya milk,soymilk,soy bean milk', 'fridge'],
+  ['Oat Milk', 'oat milk', 'fridge'],
+  ['Almond Milk', 'almond milk', 'fridge'],
+  ['Milk', 'milk,fresh milk,full cream,low fat milk,skim milk', 'fridge'],
 
   // Dairy and eggs
-  [['milk', 'soy milk', 'soya milk', 'oat milk', 'almond milk'], 'fridge', 7],
-  [['yoghurt', 'yogurt', 'yakult'], 'fridge', 14],
-  [['cheese', 'mozzarella', 'cheddar', 'parmesan'], 'fridge', 30],
-  [['butter', 'margarine'], 'fridge', 60],
-  [['cream', 'creamer'], 'fridge', 10],
-  [['egg', 'eggs'], 'fridge', 28],
+  ['Yoghurt', 'yoghurt,yogurt', 'fridge'],
+  ['Cream Cheese', 'cream cheese', 'fridge'],
+  ['Cheese', 'cheese,mozzarella,cheddar,parmesan', 'fridge'],
+  ['Peanut Butter', 'peanut butter', 'pantry'],
+  ['Butter', 'butter,margarine', 'fridge'],
+  ['Cream', 'cream,creamer', 'fridge'],
+  ['Eggs', 'egg,eggs', 'fridge'],
 
-  // Meat, poultry, seafood
-  [['chicken', 'drumstick', 'wings'], 'fridge', 2],
-  [['beef', 'steak', 'mince', 'minced', 'pork', 'lamb', 'mutton', 'bacon', 'ham'], 'fridge', 3],
-  [['sausage', 'sausages', 'hotdog', 'hot dog', 'luncheon'], 'fridge', 7],
-  [['fish', 'salmon', 'tuna', 'prawn', 'prawns', 'shrimp', 'squid', 'crab', 'seabass', 'cod'], 'fridge', 2],
+  // Meat and fish
+  ['Chicken Breast', 'chicken breast', 'fridge'],
+  ['Chicken Thigh', 'chicken thigh', 'fridge'],
+  ['Chicken Wings', 'chicken wing,chicken wings,wings', 'fridge'],
+  ['Chicken', 'chicken,drumstick,drumsticks', 'fridge'],
+  ['Minced Meat', 'mince,minced,minced meat,ground beef', 'fridge'],
+  ['Steak', 'steak', 'fridge'],
+  ['Beef', 'beef', 'fridge'],
+  ['Pork', 'pork', 'fridge'],
+  ['Lamb', 'lamb,mutton', 'fridge'],
+  ['Bacon', 'bacon', 'fridge'],
+  ['Ham', 'ham', 'fridge'],
+  ['Sausage', 'sausage,sausages,luncheon meat,hotdog,hot dog', 'fridge'],
+  ['Salmon', 'salmon', 'fridge'],
+  ['Tuna', 'tuna', 'fridge'],
+  ['Prawn', 'prawn,prawns,shrimp,shrimps', 'fridge'],
+  ['Squid', 'squid', 'fridge'],
+  ['Crab', 'crab', 'fridge'],
+  ['Fish', 'fish,seabass,cod,barramundi,tilapia', 'fridge'],
 
-  // Fresh produce kept cold
-  [['spinach', 'lettuce', 'kangkong', 'kailan', 'xiao bai cai', 'bok choy', 'pak choi', 'cabbage', 'broccoli', 'cauliflower', 'celery', 'cucumber', 'salad'], 'fridge', 5],
-  [['tomato', 'tomatoes', 'carrot', 'carrots', 'capsicum', 'pepper', 'chilli', 'mushroom', 'mushrooms', 'beansprout', 'sprouts', 'corn', 'zucchini', 'eggplant', 'brinjal', 'beans'], 'fridge', 7],
-  [['apple', 'apples', 'pear', 'pears', 'orange', 'oranges', 'navel', 'lime', 'lemon', 'lemons', 'grapes', 'grape', 'strawberry', 'strawberries', 'blueberry', 'blueberries', 'kiwi', 'melon', 'watermelon', 'papaya', 'pineapple', 'mango', 'peach', 'plum'], 'fridge', 10],
-  [['avocado', 'avocados'], 'pantry', 4],
-  [['banana', 'bananas'], 'pantry', 5],
-  [['potato', 'potatoes', 'onion', 'onions', 'garlic', 'ginger', 'pumpkin', 'sweet potato', 'yam'], 'pantry', 21],
+  // Vegetables
+  ['Spinach', 'spinach', 'fridge'],
+  ['Lettuce', 'lettuce,salad,romaine', 'fridge'],
+  ['Cabbage', 'cabbage', 'fridge'],
+  ['Broccoli', 'broccoli', 'fridge'],
+  ['Cauliflower', 'cauliflower', 'fridge'],
+  ['Celery', 'celery', 'fridge'],
+  ['Cucumber', 'cucumber', 'fridge'],
+  ['Tomato', 'tomato,tomatoes,cherry tomato,cherry tomatoes', 'fridge'],
+  ['Carrot', 'carrot,carrots', 'fridge'],
+  ['Capsicum', 'capsicum,bell pepper', 'fridge'],
+  ['Chilli', 'chilli,chili,chillies', 'fridge'],
+  ['Mushroom', 'mushroom,mushrooms', 'fridge'],
+  ['Corn', 'corn,sweet corn', 'fridge'],
+  ['Zucchini', 'zucchini,courgette', 'fridge'],
+  ['Eggplant', 'eggplant,brinjal,aubergine', 'fridge'],
+  ['Beans', 'beans,green beans,long beans', 'fridge'],
+  ['Bok Choy', 'bok choy,pak choi,xiao bai cai', 'fridge'],
+  ['Kangkong', 'kangkong,water spinach', 'fridge'],
+  ['Kailan', 'kailan,gai lan', 'fridge'],
+  ['Beansprouts', 'beansprout,beansprouts,bean sprouts', 'fridge'],
+  ['Sweet Potato', 'sweet potato,sweet potatoes,yam', 'pantry'],
+  ['Potato', 'potato,potatoes', 'pantry'],
+  ['Onion', 'onion,onions', 'pantry'],
+  ['Garlic', 'garlic', 'pantry'],
+  ['Ginger', 'ginger', 'pantry'],
+  ['Pumpkin', 'pumpkin', 'pantry'],
 
-  // Ready to eat and chilled
-  [['tofu', 'tauhu', 'beancurd', 'tempeh'], 'fridge', 5],
-  [['kimchi', 'hummus', 'dip', 'sandwich', 'wrap', 'sushi', 'salad'], 'fridge', 3],
-  [['juice', 'smoothie'], 'fridge', 7],
-  [['dough', 'pastry', 'noodles fresh', 'fresh noodles', 'kway teow', 'hokkien'], 'fridge', 5],
+  // Fruit
+  ['Avocado', 'avocado,avocados', 'pantry'],
+  ['Banana', 'banana,bananas', 'pantry'],
+  ['Apple', 'apple,apples', 'fridge'],
+  ['Pear', 'pear,pears', 'fridge'],
+  ['Orange', 'orange,oranges,navel', 'fridge'],
+  ['Lime', 'lime,limes', 'fridge'],
+  ['Lemon', 'lemon,lemons', 'fridge'],
+  ['Grapefruit', 'grapefruit', 'fridge'],
+  ['Grapes', 'grape,grapes', 'fridge'],
+  ['Strawberry', 'strawberry,strawberries', 'fridge'],
+  ['Blueberry', 'blueberry,blueberries', 'fridge'],
+  ['Kiwi', 'kiwi,kiwifruit', 'fridge'],
+  ['Watermelon', 'watermelon', 'fridge'],
+  ['Melon', 'melon,rockmelon,honeydew', 'fridge'],
+  ['Papaya', 'papaya', 'fridge'],
+  ['Pineapple', 'pineapple', 'fridge'],
+  ['Mango', 'mango,mangoes', 'fridge'],
+  ['Peach', 'peach,peaches', 'fridge'],
+  ['Plum', 'plum,plums', 'fridge'],
+
+  // Chilled ready foods
+  ['Tofu', 'tofu,tauhu,beancurd', 'fridge'],
+  ['Tempeh', 'tempeh', 'fridge'],
+  ['Kimchi', 'kimchi', 'fridge'],
+  ['Hummus', 'hummus', 'fridge'],
+  ['Sandwich', 'sandwich', 'fridge'],
+  ['Sushi', 'sushi', 'fridge'],
 
   // Bakery
-  [['bread', 'loaf', 'bun', 'buns', 'bagel', 'croissant', 'toast', 'baguette', 'roll', 'rolls', 'muffin', 'pita'], 'pantry', 5],
-  [['cake', 'donut', 'doughnut', 'pastry', 'pie', 'tart'], 'pantry', 3],
+  ['Bread', 'bread,loaf,toast,baguette', 'pantry'],
+  ['Bun', 'bun,buns,roll,rolls', 'pantry'],
+  ['Bagel', 'bagel,bagels', 'pantry'],
+  ['Croissant', 'croissant,croissants', 'pantry'],
+  ['Muffin', 'muffin,muffins', 'pantry'],
+  ['Cake', 'cake,cakes', 'pantry'],
+  ['Donut', 'donut,donuts,doughnut,doughnuts', 'pantry'],
 
-  // Pantry staples
-  [['rice', 'pasta', 'spaghetti', 'macaroni', 'noodle', 'noodles', 'vermicelli', 'bee hoon', 'mee', 'oats', 'oatmeal', 'cereal', 'granola', 'flour', 'sugar', 'salt', 'quinoa', 'couscous'], 'pantry', 365],
-  [['can', 'canned', 'tin', 'sardine', 'sardines', 'baked beans', 'soup'], 'pantry', 540],
-  [['sauce', 'ketchup', 'mayonnaise', 'mayo', 'mustard', 'vinegar', 'soy sauce', 'oil', 'honey', 'jam', 'peanut butter', 'spread', 'seasoning', 'spice', 'curry', 'paste'], 'pantry', 365],
-  [['biscuit', 'biscuits', 'cookie', 'cookies', 'cracker', 'crackers', 'chips', 'crisps', 'snack', 'chocolate', 'candy', 'sweets', 'nuts', 'almond', 'almonds', 'peanut', 'peanuts', 'popcorn', 'seaweed'], 'pantry', 180],
-  [['coffee', 'tea', 'cocoa', 'milo', 'ovaltine'], 'pantry', 365],
-  [['water', 'soda', 'cola', 'coke', 'sprite', 'drink', 'beer', 'wine', 'juice box'], 'pantry', 365],
+  // Pantry
+  ['Rice', 'rice', 'pantry'],
+  ['Pasta', 'pasta,spaghetti,macaroni,penne', 'pantry'],
+  ['Noodles', 'noodle,noodles,vermicelli,bee hoon,mee', 'pantry'],
+  ['Oats', 'oats,oatmeal', 'pantry'],
+  ['Cereal', 'cereal,granola', 'pantry'],
+  ['Flour', 'flour', 'pantry'],
+  ['Sugar', 'sugar', 'pantry'],
+  ['Salt', 'salt', 'pantry'],
+  ['Soy Sauce', 'soy sauce,soya sauce', 'pantry'],
+  ['Ketchup', 'ketchup', 'pantry'],
+  ['Mayonnaise', 'mayonnaise,mayo', 'pantry'],
+  ['Olive Oil', 'olive oil', 'pantry'],
+  ['Cooking Oil', 'cooking oil,vegetable oil,sunflower oil,canola oil', 'pantry'],
+  ['Honey', 'honey', 'pantry'],
+  ['Jam', 'jam', 'pantry'],
+  ['Sauce', 'sauce', 'pantry'],
+  ['Canned Food', 'canned,tinned,baked beans,sardine,sardines', 'pantry'],
+  ['Biscuits', 'biscuit,biscuits,cookie,cookies,cracker,crackers', 'pantry'],
+  ['Chips', 'chips,crisps', 'pantry'],
+  ['Chocolate', 'chocolate', 'pantry'],
+  ['Nuts', 'nuts,almond,almonds,peanut,peanuts,cashew,cashews', 'pantry'],
+  ['Coffee', 'coffee', 'pantry'],
+  ['Tea', 'tea', 'pantry'],
+  ['Water', 'water', 'pantry'],
+  ['Soda', 'soda,cola,coke,sprite', 'pantry'],
+  ['Beer', 'beer', 'pantry'],
+  ['Wine', 'wine', 'pantry'],
 ]
 
 // Things people buy on the same receipt that are not food. They are listed in the review form
 // but start unticked, so they are not added to the food inventory by accident.
+// WORDS match whole words only; STEMS match anywhere (OCR often glues words together: "PETCOLLAR").
 const NON_FOOD_WORDS = [
-  'bag', 'bags', 'carrier', 'detergent', 'soap', 'shampoo', 'conditioner', 'toothpaste', 'toothbrush',
-  'tissue', 'tissues', 'toilet', 'paper towel', 'napkin', 'napkins', 'wipes', 'diaper', 'diapers',
-  'battery', 'batteries', 'bulb', 'candle', 'lighter', 'razor', 'deodorant', 'lotion', 'sunscreen',
-  'dishwash', 'dishwashing', 'cleaner', 'bleach', 'sponge', 'foil', 'cling', 'ziploc', 'zip lock',
-  'garbage', 'trash', 'finish', 'quantum', 'tylenol', 'panadol', 'paracetamol', 'ibuprofen', 'vitamin',
-  'plaster', 'bandage', 'mask', 'cigarette', 'cigarettes', 'newspaper', 'magazine', 'gift card', 'topup', 'top-up',
+  'pet', 'carrier bag', 'plastic bag', 'shopping bag', 'garbage bag', 'trash bag', 'bin bag', 'ziploc', 'zip lock',
+  'soap', 'tissues', 'tissue', 'toilet', 'paper towel', 'napkins', 'wipes', 'diaper', 'diapers', 'batteries',
+  'bulb', 'candle', 'lighter', 'razor', 'lotion', 'cleaner', 'bleach', 'sponge', 'foil', 'cling', 'finish',
+  'dog food', 'cat food', 'cat litter', 'leash', 'toy', 'toys', 'vitamin', 'vitamins', 'plaster', 'mask',
+  'cigarette', 'cigarettes', 'newspaper', 'magazine', 'gift card', 'topup', 'top-up', 'tylenol', 'panadol',
+]
+const NON_FOOD_STEMS = [
+  'collar', 'shampoo', 'conditioner', 'toothpaste', 'toothbrush', 'detergent', 'dishwash', 'tissue', 'napkin',
+  'battery', 'deodorant', 'sunscreen', 'cigarette', 'ziploc', 'paracetamol', 'ibuprofen', 'quantum',
 ]
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const toRegex = (words) => new RegExp(`(?:^|[^a-z])(?:${words.map(escapeRegex).join('|')})(?:[^a-z]|$)`, 'i')
+const wordsRx = (words) => new RegExp(`(?:^|[^a-z])(?:${words.map(escapeRegex).join('|')})(?:[^a-z]|$)`, 'i')
 
-const compiledFood = FOOD_RULES.map(([words, storage, shelfDays]) => ({
-  rx: toRegex(words),
+const compiledFoods = FOODS.map(([canonicalName, aliases, storage]) => ({
+  canonicalName,
   storage,
-  shelfDays,
-  label: words[0],
+  rx: wordsRx(aliases.split(',')),
 }))
-const nonFoodRx = toRegex(NON_FOOD_WORDS)
+const nonFoodWordsRx = wordsRx(NON_FOOD_WORDS)
+const nonFoodStemsRx = new RegExp(NON_FOOD_STEMS.map(escapeRegex).join('|'), 'i')
 
 /**
  * @param {string} name product name as printed on the receipt
- * @returns {{ known: boolean, likelyFood: boolean|null, storage: string, shelfDays: number|null, label: string|null }}
- *   likelyFood: true = recognised food, false = recognised non-food, null = unknown
+ * @returns {{ likelyFood: boolean|null, storage: 'fridge'|'freezer'|'pantry', canonicalName: string|null }}
+ *   likelyFood: true = recognised food, false = recognised non-food, null = unknown.
+ *   canonicalName is the one standard name for a recognised food (otherwise null).
  */
 export function classifyItem(name) {
   const text = ` ${String(name).toLowerCase()} `
-  if (nonFoodRx.test(text)) {
-    return { known: true, likelyFood: false, storage: 'pantry', shelfDays: null, label: null }
+  if (nonFoodWordsRx.test(text) || nonFoodStemsRx.test(text)) {
+    return { likelyFood: false, storage: 'pantry', canonicalName: null }
   }
-  for (const rule of compiledFood) {
-    if (rule.rx.test(text)) {
-      return { known: true, likelyFood: true, storage: rule.storage, shelfDays: rule.shelfDays, label: rule.label }
+  const frozen = /(?:^|[^a-z])frozen(?:[^a-z]|$)/.test(text)
+  for (const food of compiledFoods) {
+    if (food.rx.test(text)) {
+      return { likelyFood: true, storage: frozen ? 'freezer' : food.storage, canonicalName: food.canonicalName }
     }
   }
-  return { known: false, likelyFood: null, storage: 'pantry', shelfDays: null, label: null }
+  return { likelyFood: null, storage: frozen ? 'freezer' : 'pantry', canonicalName: null }
 }
