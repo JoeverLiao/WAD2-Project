@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, RouterLinkStub } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import AnalyticsView from '../views/analytics/AnalyticsView.vue'
 import { sampleAnalyticsEvents } from '../data/analyticsDemo.js'
 
 function mountChart() {
-  const wrapper = mount(AnalyticsView)
+  const wrapper = mount(AnalyticsView, { global: { stubs: { RouterLink: RouterLinkStub } } })
   const svg = wrapper.get('.impact-chart')
   // jsdom has no SVG coordinate transforms or pointer capture.
   svg.element.createSVGPoint = () => ({
@@ -200,6 +200,41 @@ describe('Analytics demo', () => {
     await wrapper.get('dialog').trigger('cancel')
     expect(wrapper.find('dialog').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Cancelled food')
+    wrapper.unmount()
+  })
+  it('shows discarded value, compares equal periods and filters ranked food activity', async () => {
+    const { wrapper } = mountChart()
+    expect(wrapper.get('.discarded-cost').attributes('aria-label')).toContain('29.80')
+    expect(wrapper.get('.comparison-note').text()).toContain('Not enough earlier history')
+    const firstFood = wrapper.get('.ranking-row .ranking-food-heading b').text()
+    await wrapper.get('.ranking-row').trigger('click')
+    expect(wrapper.get('.waste-insight').text()).toContain(firstFood)
+    expect(
+      wrapper.findAll('tbody tr').every((row) => row.findAll('td')[1].text().includes(firstFood)),
+    ).toBe(true)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Clear food filter')
+      .trigger('click')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Last 7 days')
+      .trigger('click')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(7)
+    expect(wrapper.get('.comparison-note').text()).toContain('7 days each')
+    expect(wrapper.findAll('.period-change')).toHaveLength(4)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Weight')
+      .trigger('click')
+    expect(wrapper.get('.ranking-controls button[aria-pressed="true"]').text()).toBe('Weight')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'All dates')
+      .trigger('click')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.get('.comparison-note').text()).toContain('Not enough earlier history')
     wrapper.unmount()
   })
 })

@@ -1,6 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
+import {
+  foodKey,
+  summarizeFoodEvents,
+  previousFoodPeriod,
+  rankWastedFoods,
+  foodPeriodChange,
+} from '../../utils/analyticsUtils.js'
 
 const actionLabels = {
   consumed: 'Consumed',
@@ -42,20 +50,69 @@ const visibleEvents = computed(() =>
       event.occurredAt.slice(0, 10) <= visibleDays.value.at(-1),
   ),
 )
-const totals = computed(() =>
-  visibleEvents.value.reduce(
-    (sum, event) => {
-      if (event.action === 'discarded') sum.discarded += event.weightKg
-      else {
-        sum.saved += event.weightKg
-        sum.value += event.valueSgd
-      }
-      if (event.action === 'shared' || event.action === 'rescued') sum.community += 1
-      return sum
-    },
-    { saved: 0, discarded: 0, value: 0, community: 0 },
+const totals = computed(() => summarizeFoodEvents(visibleEvents.value))
+const comparison = computed(() =>
+  previousFoodPeriod(visibleDays.value[0], visibleDays.value.at(-1), days[0]),
+)
+const previousTotals = computed(() =>
+  summarizeFoodEvents(
+    events.value.filter((event) => {
+      const date = event.occurredAt.slice(0, 10)
+      return date >= comparison.value.start && date <= comparison.value.end
+    }),
   ),
 )
+function periodChange(key) {
+  return foodPeriodChange(
+    totals.value[key],
+    previousTotals.value[key],
+    ['discarded', 'discardedValue'].includes(key),
+  )
+}
+const rankingMetric = ref('value')
+const rankingOptions = [
+  { key: 'value', label: 'Cost' },
+  { key: 'weight', label: 'Weight' },
+  { key: 'frequency', label: 'Frequency' },
+]
+const wasteRanking = computed(() => rankWastedFoods(visibleEvents.value, rankingMetric.value))
+const topWastedFoods = computed(() => wasteRanking.value.slice(0, 5))
+const selectedFood = ref(null)
+const selectedWaste = computed(() =>
+  wasteRanking.value.find((food) => food.key === selectedFood.value),
+)
+const rankingMax = computed(() =>
+  Math.max(1e-9, ...topWastedFoods.value.map((food) => food[rankingMetric.value])),
+)
+function rankingValue(food) {
+  if (rankingMetric.value === 'value') return currency.format(food.value)
+  if (rankingMetric.value === 'weight') return `${food.weight.toFixed(2)} kg`
+  return `${food.frequency} ${food.frequency === 1 ? 'occasion' : 'occasions'}`
+}
+function selectFood(key) {
+  selectedFood.value = selectedFood.value === key ? null : key
+}
+watch(wasteRanking, (foods) => {
+  if (selectedFood.value && !foods.some((food) => food.key === selectedFood.value))
+    selectedFood.value = null
+})
+const periodPresets = [
+  { label: 'All dates', count: null },
+  { label: 'Last 7 days', count: 7 },
+  { label: 'Last 14 days', count: 14 },
+  { label: 'Last 30 days', count: 30 },
+]
+function choosePeriod(count) {
+  selectedFood.value = null
+  cancelDrag()
+  setRange(count ? [Math.max(0, days.length - count), days.length - 1] : [0, days.length - 1], true)
+}
+function isPreset(count) {
+  return (
+    range.value[1] === days.length - 1 &&
+    range.value[0] === (count ? Math.max(0, days.length - count) : 0)
+  )
+}
 const animatedTotals = ref({ ...totals.value })
 let numberFrame
 let motionPreference
@@ -186,7 +243,12 @@ const xTicks = computed(() => {
   ]
 })
 const hoverDay = computed(() => (hover.value === null ? null : fullDaily.value[hover.value]))
-const recentEvents = computed(() => [...visibleEvents.value].reverse())
+const recentEvents = computed(() =>
+  visibleEvents.value
+    .filter((event) => !selectedFood.value || foodKey(event.name) === selectedFood.value)
+    .slice()
+    .reverse(),
+)
 
 function chartPoint(event) {
   // Account for responsive SVG scaling and letterboxing.
@@ -410,6 +472,14 @@ function saveDay() {
               ><span aria-hidden="true">{{ animatedTotals.saved.toFixed(2) }} kg</span></strong
             >
             <p class="metric-note">Consumed, shared and rescued</p>
+            <p
+              v-if="comparison.complete"
+              :key="periodChange('saved').text"
+              class="period-change"
+              :class="`change-${periodChange('saved').tone}`"
+            >
+              {{ periodChange('saved').text }}
+            </p>
           </article>
         </div>
         <div class="col-6 col-lg-3">
@@ -422,7 +492,22 @@ function saveDay() {
             <strong class="metric-value" :aria-label="`${totals.discarded.toFixed(2)} kg`"
               ><span aria-hidden="true">{{ animatedTotals.discarded.toFixed(2) }} kg</span></strong
             >
+            <p
+              class="discarded-cost"
+              :aria-label="`${currency.format(totals.discardedValue)} discarded food value`"
+            >
+              <span aria-hidden="true">{{ currency.format(animatedTotals.discardedValue) }}</span>
+              in food value
+            </p>
             <p class="metric-note">Opportunities to reduce waste</p>
+            <p
+              v-if="comparison.complete"
+              :key="periodChange('discarded').text"
+              class="period-change"
+              :class="`change-${periodChange('discarded').tone}`"
+            >
+              {{ periodChange('discarded').text }}
+            </p>
           </article>
         </div>
         <div class="col-6 col-lg-3">
@@ -437,6 +522,14 @@ function saveDay() {
               ><span aria-hidden="true">{{ currency.format(animatedTotals.value) }}</span></strong
             >
             <p class="metric-note">Demo value of food kept from waste</p>
+            <p
+              v-if="comparison.complete"
+              :key="periodChange('value').text"
+              class="period-change"
+              :class="`change-${periodChange('value').tone}`"
+            >
+              {{ periodChange('value').text }}
+            </p>
           </article>
         </div>
         <div class="col-6 col-lg-3">
@@ -452,10 +545,35 @@ function saveDay() {
               ><span aria-hidden="true">{{ Math.round(animatedTotals.community) }}</span></strong
             >
             <p class="metric-note">Sharing and rescue events</p>
+            <p
+              v-if="comparison.complete"
+              :key="periodChange('community').text"
+              class="period-change"
+              :class="`change-${periodChange('community').tone}`"
+            >
+              {{ periodChange('community').text }}
+            </p>
           </article>
         </div>
       </div>
     </section>
+    <div class="comparison-note" aria-live="polite">
+      <template v-if="comparison.complete"
+        >Comparing {{ formatDate(visibleDays[0]) }}–{{ formatDate(visibleDays.at(-1)) }} with
+        {{ formatDate(comparison.start) }}–{{ formatDate(comparison.end) }} ·
+        {{ comparison.length }} days each.
+        <span :class="`change-${periodChange('discardedValue').tone}`"
+          >Discarded value: {{ periodChange('discardedValue').text.toLowerCase() }}.</span
+        ></template
+      >
+      <template v-else
+        >Not enough earlier history to compare this {{ comparison.length }}-day period. Try Last 7
+        days or Last 14 days. Demo history: {{ formatDate(days[0]) }}–{{
+          formatDate(days.at(-1))
+        }}
+        2026.</template
+      >
+    </div>
     <section class="panel chart-panel mb-5" aria-labelledby="impact-chart-heading">
       <div>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -469,6 +587,18 @@ function saveDay() {
           </div>
           <button class="btn-paper btn-paper-secondary" :disabled="!isZoomed" @click="resetZoom">
             Reset zoom
+          </button>
+        </div>
+        <div class="period-presets" role="group" aria-label="Date presets">
+          <button
+            v-for="preset in periodPresets"
+            :key="preset.label"
+            type="button"
+            class="filter-chip"
+            :aria-pressed="isPreset(preset.count)"
+            @click="choosePeriod(preset.count)"
+          >
+            {{ preset.label }}
           </button>
         </div>
         <div class="range-panel mb-3">
@@ -633,6 +763,91 @@ function saveDay() {
         </p>
       </div>
     </section>
+    <section class="panel waste-panel mb-5" aria-labelledby="waste-ranking-heading">
+      <div class="ranking-heading">
+        <div>
+          <h2 id="waste-ranking-heading" class="panel-title">What keeps going to waste?</h2>
+          <p class="panel-sub">
+            Your top five foods, based on recorded discards in the selected dates.
+          </p>
+        </div>
+        <div class="ranking-controls" role="group" aria-label="Rank wasted foods by">
+          <button
+            v-for="option in rankingOptions"
+            :key="option.key"
+            type="button"
+            class="filter-chip"
+            :aria-pressed="rankingMetric === option.key"
+            @click="rankingMetric = option.key"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
+      <p class="ranking-hint">
+        Select a food to explore its activity below. Frequency counts discard records, not
+        quantities.
+      </p>
+      <div v-if="topWastedFoods.length" class="ranking-layout">
+        <TransitionGroup tag="ol" name="ranking" class="waste-ranking">
+          <li v-for="(food, index) in topWastedFoods" :key="food.key">
+            <button
+              type="button"
+              class="ranking-row"
+              :aria-pressed="selectedFood === food.key"
+              :aria-label="`${food.name}: ${rankingValue(food)}. Filter food activity`"
+              @click="selectFood(food.key)"
+            >
+              <span class="ranking-position" aria-hidden="true">{{ index + 1 }}</span>
+              <span class="ranking-food"
+                ><span class="ranking-food-heading"
+                  ><b>{{ food.name }}</b
+                  ><span class="ranking-amount">{{ rankingValue(food) }}</span></span
+                ><span class="ranking-track" aria-hidden="true"
+                  ><span
+                    :style="{ width: `${(food[rankingMetric] / rankingMax) * 100}%` }"
+                  ></span></span
+                ><span class="ranking-meta"
+                  >{{ currency.format(food.value) }} · {{ food.weight.toFixed(2) }} kg ·
+                  {{ food.frequency }} {{ food.frequency === 1 ? 'discard' : 'discards' }}</span
+                ></span
+              >
+            </button>
+          </li>
+        </TransitionGroup>
+        <aside class="waste-insight" aria-live="polite">
+          <template v-if="selectedWaste"
+            ><span class="pill pill-discarded">A little less next time?</span>
+            <h3>{{ selectedWaste.name }}</h3>
+            <p>
+              {{
+                selectedWaste.frequency > 1
+                  ? `Discarded on ${selectedWaste.frequency} occasions. Try buying a smaller quantity next time.`
+                  : 'Plan a meal around this food before your next shop.'
+              }}
+            </p>
+            <p class="insight-value">
+              {{ currency.format(selectedWaste.value) }} of recorded food value discarded.
+            </p>
+            <RouterLink :to="{ name: 'freshness-recipes' }" class="insight-link"
+              >Explore recipes <span aria-hidden="true">→</span></RouterLink
+            ></template
+          >
+          <template v-else
+            ><h3>Spot a pattern. Make a small change.</h3>
+            <p>
+              Choose Cost to see the biggest financial loss, Weight for volume, or Frequency for
+              recurring habits.
+            </p>
+            <p>Select a bar to see a suggestion and filter the activity table.</p></template
+          >
+        </aside>
+      </div>
+      <p v-else class="waste-empty" role="status">
+        No discarded food recorded in these dates. Choose a wider date range to explore more
+        activity.
+      </p>
+    </section>
     <section class="panel activity-panel" aria-labelledby="activity-heading">
       <div>
         <div class="activity-heading">
@@ -640,12 +855,20 @@ function saveDay() {
             <h2 id="activity-heading" class="panel-title">Food activity</h2>
             <p class="panel-sub">The little details behind your impact.</p>
           </div>
-          <span class="pill pill-aqua">{{ visibleEvents.length }} records</span>
+          <span class="pill pill-aqua">{{ recentEvents.length }} records</span>
         </div>
+        <p v-if="selectedWaste" class="activity-filter" role="status">
+          Showing all actions for <b>{{ selectedWaste.name }}</b> in these dates.
+          <button type="button" class="date-link" @click="selectedFood = null">
+            Clear food filter
+          </button>
+        </p>
         <div class="table-responsive" role="region" aria-label="Food activity table" tabindex="0">
           <table class="activity-table">
             <caption>
-              Sample activity for the selected dates, newest first.
+              Sample activity for the selected dates{{
+                selectedWaste ? `, filtered to ${selectedWaste.name}` : ''
+              }}, newest first.
             </caption>
             <thead>
               <tr>
@@ -1268,7 +1491,271 @@ function saveDay() {
     padding: 18px;
   }
 }
+
+.discarded-cost {
+  margin: 0.35rem 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #9a3a2e;
+}
+.period-change {
+  display: inline-block;
+  margin: 0.8rem 0 0;
+  padding: 4px 9px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  animation: comparison-in 240ms ease;
+}
+.change-good {
+  color: #24633f;
+  background: #e5f3df;
+}
+.change-bad {
+  color: #9a3a2e;
+  background: #fde0dc;
+}
+.change-neutral {
+  color: var(--muted);
+  background: #eef4f2;
+}
+.comparison-note {
+  margin: -24px 0 28px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.comparison-note > span {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 8px;
+}
+.period-presets,
+.ranking-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.period-presets {
+  margin-top: 1rem;
+}
+.filter-chip {
+  padding: 7px 13px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.95rem;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+.filter-chip[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+.filter-chip:hover {
+  transform: translateY(-1px);
+  border-color: #3e9a8e;
+}
+.filter-chip:focus-visible,
+.ranking-row:focus-visible {
+  outline: 3px solid var(--aqua);
+  outline-offset: 3px;
+}
+.ranking-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+}
+.ranking-hint {
+  margin: 0.75rem 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.ranking-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.waste-ranking {
+  position: relative;
+  display: grid;
+  gap: 9px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.ranking-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 12px;
+  border: 1.5px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+.ranking-row:hover {
+  background: #f4fbf9;
+}
+.ranking-row[aria-pressed='true'] {
+  border-color: #3e9a8e;
+  background: var(--aqua-soft);
+}
+.ranking-position {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fff2dd;
+  font-family: var(--font-display);
+}
+.ranking-food {
+  flex: 1;
+  min-width: 0;
+}
+.ranking-food-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ranking-amount {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.ranking-track {
+  display: block;
+  height: 12px;
+  overflow: hidden;
+  margin: 8px 0 4px;
+  border-radius: 8px;
+  background: #f6e9e5;
+}
+.ranking-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #d68070;
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ranking-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.waste-insight {
+  padding: 1.3rem;
+  border: 1.5px dashed var(--line);
+  border-radius: 18px;
+  background: var(--yellow-sticky);
+}
+.waste-insight h3 {
+  margin: 0.6rem 0;
+  font-size: 1.6rem;
+}
+.waste-insight p {
+  margin: 0.7rem 0;
+  color: var(--muted);
+}
+.waste-insight .insight-value {
+  color: var(--ink);
+  font-weight: 700;
+}
+.insight-link {
+  color: #1f7d74;
+  font-weight: 700;
+  text-underline-offset: 4px;
+}
+.waste-empty {
+  padding: 24px;
+  border: 1.5px dashed var(--line);
+  border-radius: 14px;
+  background: var(--paper-bright);
+  color: var(--muted);
+}
+.activity-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 1.5rem 1rem;
+  margin: 0;
+  color: var(--muted);
+}
+.activity-filter .date-link {
+  margin-left: auto;
+}
+.ranking-move,
+.ranking-enter-active,
+.ranking-leave-active {
+  transition:
+    transform 500ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 280ms ease;
+}
+.ranking-enter-from,
+.ranking-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.ranking-leave-active {
+  position: absolute;
+  width: 100%;
+}
+@keyframes comparison-in {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@media (max-width: 767.98px) {
+  .ranking-layout {
+    grid-template-columns: 1fr;
+  }
+  .ranking-row {
+    padding: 10px 4px;
+    gap: 9px;
+  }
+  .ranking-food-heading {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .ranking-amount {
+    margin-left: auto;
+  }
+  .ranking-meta {
+    font-size: 0.8rem;
+  }
+  .activity-filter {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
+  .filter-chip,
+  .ranking-row,
+  .ranking-track > span,
+  .ranking-move,
+  .ranking-enter-active,
+  .ranking-leave-active {
+    transition: none;
+  }
+  .period-change {
+    animation: none;
+  }
+
   .btn-paper {
     transition: none;
   }
