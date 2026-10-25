@@ -2,9 +2,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import NavIcon from './NavIcon.vue'
+import { useAuthStore } from '../stores/auth.js'
 
 const route = useRoute()
-const routes = useRouter().getRoutes()
+const router = useRouter()
+const auth = useAuthStore()
+const routes = router.getRoutes()
 const entries = [
   ...routes
     .filter((item) => item.meta.navLabel && !item.meta.navGroup)
@@ -26,21 +29,58 @@ const accountOpen = ref(false)
 const hovered = ref(false)
 const tooltip = ref(null)
 const glows = ref([])
+const loggingOut = ref(false)
+const logoutError = ref('')
 const angles = ref(entries.map((_, index) => slotAngle(index, 0)))
 let frame
 let glowId = 0
 let motionPreference
 let previousIndex = 0
 let autoCloseTimer
+let hoverCloseTimer
 let rotating = false
+
+function cancelHoverClose() {
+  clearTimeout(hoverCloseTimer)
+  hoverCloseTimer = undefined
+}
+function openMenu() {
+  cancelHoverClose()
+  if (opened.value) return
+  opened.value = true
+  rotateTo(selectedIndex.value, false)
+}
+function openOnHover(event) {
+  if (event.pointerType === 'mouse') openMenu()
+}
+function trackHover(event) {
+  if (event.pointerType !== 'mouse' || !opened.value) return
+  const rect = navbar.value.getBoundingClientRect()
+  // Include the center opening so moving from the toggle to the ring is safe.
+  const x = (event.clientX - rect.left - rect.width / 2) / (rect.width / 2)
+  const insideDonut = event.clientY >= 0 && x * x + (event.clientY / 215) ** 2 <= 1
+  const accountRect = navbar.value.querySelector('.account-menu')?.getBoundingClientRect()
+  const insideAccount =
+    accountRect &&
+    event.clientX >= accountRect.left - 12 &&
+    event.clientX <= accountRect.right + 12 &&
+    event.clientY >= 195 &&
+    event.clientY <= accountRect.bottom + 12
+  if (insideDonut || insideAccount) return cancelHoverClose()
+  if (hoverCloseTimer) return
+  hoverCloseTimer = setTimeout(() => {
+    closeMenu(navbar.value?.contains(document.activeElement))
+  }, 180)
+}
 
 function cancelAutoClose() {
   clearTimeout(autoCloseTimer)
 }
-function selectDestination(event) {
+function selectDestination(event, key) {
   tooltip.value = null
   // Leave modified link clicks to the browser (for example, opening a new tab).
   if (event?.ctrlKey || event?.metaKey || event?.shiftKey || event?.altKey) return
+  selectedKey.value = key
   accountOpen.value = false
   cancelAutoClose()
   function finishSelection() {
@@ -54,7 +94,9 @@ function selectDestination(event) {
 }
 function selectEntry(item, event) {
   tooltip.value = null
-  if (!item.children) return selectDestination(event)
+  if (!item.children) return selectDestination(event, item.key)
+  logoutError.value = ''
+  selectedKey.value = item.key
   cancelAutoClose()
   accountOpen.value = !accountOpen.value
 }
@@ -64,7 +106,9 @@ const routeKey = computed(
     route.meta.navGroup?.toLowerCase() ||
     (route.name === 'recipe-detail' ? 'freshness-recipes' : String(route.name)),
 )
-const selectedKey = computed(() => (accountOpen.value ? 'profile' : routeKey.value))
+// Selection persists independently of whether the account dropdown is open.
+// Closing it must not briefly rotate back to the previous page before routing.
+const selectedKey = ref(routeKey.value)
 const selectedIndex = computed(() =>
   Math.max(
     0,
@@ -72,6 +116,28 @@ const selectedIndex = computed(() =>
   ),
 )
 const account = entries.find((item) => item.children)
+const accountLinks = computed(
+  () =>
+    account?.children.filter((item) =>
+      auth.isAuthenticated ? item.name === 'profile' : ['login', 'register'].includes(item.name),
+    ) || [],
+)
+
+async function logout(event) {
+  if (loggingOut.value) return
+  loggingOut.value = true
+  logoutError.value = ''
+  cancelAutoClose()
+  try {
+    await auth.logout()
+    selectDestination(event, account.key)
+    await router.push({ name: 'login' })
+  } catch (error) {
+    logoutError.value = error.message || 'Could not log out. Please try again.'
+  } finally {
+    loggingOut.value = false
+  }
+}
 
 // All destinations remain on the visible lower arc. Wrapped items travel around
 // the upper side of the ellipse, like chambers rotating through a revolver.
@@ -118,17 +184,16 @@ function position(index) {
   return { '--orbit-x': Math.sin(radians), '--orbit-y': Math.cos(radians) }
 }
 function closeMenu(restoreFocus = false) {
+  cancelHoverClose()
   tooltip.value = null
   cancelAutoClose()
   opened.value = false
   accountOpen.value = false
   if (restoreFocus) toggle.value?.focus()
 }
-async function toggleMenu() {
+function toggleMenu() {
   if (opened.value) return closeMenu(true)
-  opened.value = true
-  rotateTo(selectedIndex.value, false)
-  await nextTick()
+  openMenu()
 }
 function moveLight(event) {
   if (event.pointerType === 'touch') return
@@ -170,6 +235,7 @@ function escapeMenu(event) {
 async function focusAccount(event) {
   event.preventDefault()
   cancelAutoClose()
+  selectedKey.value = account.key
   accountOpen.value = true
   await nextTick()
   navbar.value?.querySelector('.account-menu a')?.focus()
@@ -185,6 +251,9 @@ function moveFocus(event, index) {
   navbar.value?.querySelectorAll('.orbit-option')[next]?.focus()
 }
 watch(selectedIndex, (index) => rotateTo(index, opened.value))
+watch(routeKey, (key) => {
+  selectedKey.value = key
+})
 watch(
   () => route.fullPath,
   () => {
@@ -200,13 +269,16 @@ onMounted(() => {
   rotateTo(selectedIndex.value, false)
   document.addEventListener('click', handlePageClick, true)
   document.addEventListener('keydown', escapeMenu)
+  document.addEventListener('pointermove', trackHover, { passive: true })
 })
 onBeforeUnmount(() => {
+  cancelHoverClose()
   cancelAutoClose()
   cancelAnimationFrame(frame)
   motionPreference?.removeEventListener('change', motionChanged)
   document.removeEventListener('click', handlePageClick, true)
   document.removeEventListener('keydown', escapeMenu)
+  document.removeEventListener('pointermove', trackHover)
 })
 </script>
 
@@ -264,11 +336,17 @@ onBeforeUnmount(() => {
       </ul>
       <Transition name="account">
         <ul v-if="accountOpen && account" id="account-navigation" class="account-menu">
-          <li v-for="child in account.children" :key="child.name">
-            <RouterLink :to="{ name: child.name }" @click="selectDestination"
+          <li v-for="child in accountLinks" :key="child.name">
+            <RouterLink :to="{ name: child.name }" @click="selectDestination($event, account.key)"
               ><NavIcon :name="String(child.name)" />{{ child.meta.navLabel }}</RouterLink
             >
           </li>
+          <li v-if="auth.isAuthenticated">
+            <button type="button" :disabled="loggingOut" @click="logout">
+              <NavIcon name="logout" />{{ loggingOut ? 'Logging out…' : 'Logout' }}
+            </button>
+          </li>
+          <li v-if="logoutError" class="logout-error" role="alert">{{ logoutError }}</li>
         </ul>
       </Transition>
     </div>
@@ -279,6 +357,7 @@ onBeforeUnmount(() => {
       :aria-label="opened ? 'Close navigation' : 'Open navigation'"
       :aria-expanded="opened"
       aria-controls="radial-navigation"
+      @pointerenter="openOnHover"
       @click="toggleMenu"
     >
       <span class="toggle-lines" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -503,7 +582,8 @@ onBeforeUnmount(() => {
 }
 .orbit-option:focus-visible,
 .nav-toggle:focus-visible,
-.account-menu a:focus-visible {
+.account-menu a:focus-visible,
+.account-menu button:focus-visible {
   outline: 2px solid #b3e9c4;
   outline-offset: 4px;
 }
@@ -522,7 +602,8 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 26px rgb(10 42 29 / 22%);
   pointer-events: auto;
 }
-.account-menu a {
+.account-menu a,
+.account-menu button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -530,9 +611,24 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   color: #fff;
   text-decoration: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
 }
-.account-menu a:hover {
+.account-menu a:hover,
+.account-menu button:hover {
   background: #103b2a;
+}
+.account-menu button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.logout-error {
+  padding: 8px 12px;
+  color: #ffd2ca;
+  font-size: 12px;
 }
 .account-menu a.router-link-exact-active {
   background: #d9f1de;

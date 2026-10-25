@@ -12,6 +12,7 @@ const icons = {
   analytics: 'M3 3v18h18 M7 16v-4 M12 16V8 M17 16V5',
   profile: 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M4 21v-2a8 6 0 0 1 16 0v2',
   login: 'M14 3h6v18h-6 M3 12h12 M10 7l5 5-5 5',
+  logout: 'M10 3H4v18h6 M9 12h12 M16 7l5 5-5 5',
   register: 'M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M2 21v-2a7 6 0 0 1 12-4 M19 13v8 M15 17h8',
 }
 </script>

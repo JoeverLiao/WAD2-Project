@@ -12,7 +12,9 @@ test.beforeEach(async ({ page }) => {
 })
 
 async function openMenu(page) {
-  await page.getByRole('button', { name: 'Open navigation', exact: true }).click()
+  await page.mouse.move(20, 400)
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).focus()
+  await page.keyboard.press('Enter')
   await expect(page.locator('.radial-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
 }
 
@@ -110,7 +112,7 @@ test('hover follows the pointer; page clicks glow without blocking clicks', asyn
   await page.evaluate(() => {
     const button = document.createElement('button')
     button.textContent = 'Page click target'
-    button.style.cssText = 'position:fixed;left:20px;top:400px'
+    button.style.cssText = 'position:fixed;left:20px;top:400px;z-index:10'
     button.onclick = () => {
       button.textContent = 'Page click received'
     }
@@ -156,6 +158,8 @@ test('unselected icons show animated tooltips on hover and keyboard focus', asyn
   await expect(rescue).not.toHaveAttribute('title')
   await page.mouse.move(20, 400)
   await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await expect(page.locator('.radial-panel')).toBeHidden()
+  await openMenu(page)
   await page.getByRole('button', { name: 'Close navigation', exact: true }).focus()
   await page.keyboard.press('Shift+Tab')
   await expect(page.getByRole('tooltip')).toHaveText('Profile')
@@ -171,4 +175,116 @@ test('unselected icons show animated tooltips on hover and keyboard focus', asyn
   await page.getByRole('link', { name: 'Freshness & Recipes', exact: true }).click()
   await expect(page.getByRole('tooltip')).toHaveCount(0)
   await expect(page.locator('.radial-panel')).toBeHidden()
+})
+
+test('hover opens the donut and leaving its curved boundary closes it', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).hover()
+  await expect(page.locator('.radial-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
+  const nav = await page.getByRole('navigation').boundingBox()
+  // Crossing the transparent center must not close the menu on the way to an icon.
+  await page.mouse.move(nav.x + nav.width / 2, 80)
+  await page.mouse.move(nav.x + nav.width / 2, 151, { steps: 6 })
+  await expect(page.getByRole('button', { name: 'Close navigation', exact: true })).toBeVisible()
+  // This point is inside the rectangular bounds but outside the actual donut.
+  await page.mouse.move(nav.x + 4, 200)
+  await expect(page.locator('.radial-panel')).toBeHidden()
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).hover()
+  await expect(page.getByRole('button', { name: 'Close navigation', exact: true })).toBeVisible()
+})
+
+test('Profile remains selected when closing its dropdown and choosing account pages', async ({
+  page,
+}) => {
+  for (const name of ['Login', 'Register', 'Profile']) {
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: name === 'Profile' ? 200 : 401,
+        contentType: 'application/json',
+        body: name === 'Profile' ? '{"id":"preview","username":"Demo"}' : '{}',
+      }),
+    )
+    await page.goto('/analytics')
+    await openMenu(page)
+    const profile = page.getByRole('button', { name: 'Profile', exact: true })
+    await profile.click()
+    await centered(page, 'profile')
+    await profile.click()
+    await expect(profile).toHaveAttribute('aria-expanded', 'false')
+    await centered(page, 'profile')
+    await profile.click()
+    // Record every rendered selection, including the frame before routing finishes.
+    await page.evaluate(() => {
+      window.accountSelections = []
+      let frames = 0
+      function sample() {
+        const nav = document.querySelector('.orbit-navbar')
+        if (!nav?.classList.contains('is-open') || frames++ > 100) return
+        window.accountSelections.push(nav.querySelector('.is-selected')?.dataset.navKey)
+        requestAnimationFrame(sample)
+      }
+      sample()
+    })
+    await page.getByRole('navigation').getByRole('link', { name, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/${name.toLowerCase()}$`))
+    await centered(page, 'profile')
+    await expect(page.locator('.radial-panel')).toBeHidden()
+    const selections = await page.evaluate(() => window.accountSelections)
+    expect(selections.length).toBeGreaterThan(0)
+    expect(selections.every((key) => key === 'profile')).toBe(true)
+    await openMenu(page)
+    await centered(page, 'profile')
+  }
+})
+
+test('account links react to login and logout, including a failed logout retry', async ({
+  page,
+}) => {
+  const nav = page.getByRole('navigation')
+  async function showAccount() {
+    await openMenu(page)
+    await nav.getByRole('button', { name: 'Profile', exact: true }).click()
+    await centered(page, 'profile')
+  }
+  await showAccount()
+  await expect(nav.locator('.account-menu a')).toHaveText(['Login', 'Register'])
+  await expect(nav.getByRole('link', { name: 'Profile', exact: true })).toHaveCount(0)
+  await expect(nav.getByRole('button', { name: 'Logout', exact: true })).toHaveCount(0)
+  await page.route('**/api/auth/login', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '{"id":"preview","username":"Demo","email":"preview@example.test"}',
+    }),
+  )
+  await nav.getByRole('link', { name: 'Login', exact: true }).click()
+  await page.getByLabel('Email', { exact: true }).fill('preview@example.test')
+  await page.getByLabel('Password', { exact: true }).fill('test-password')
+  await page.getByRole('button', { name: 'Login', exact: true }).click()
+  await expect(page).toHaveURL(/dashboard$/)
+  await expect(page.locator('.radial-panel')).toBeHidden()
+  await showAccount()
+  await expect(nav.locator('.account-menu a')).toHaveText(['Profile'])
+  await expect(nav.getByRole('button', { name: 'Logout', exact: true })).toBeVisible()
+  await expect(nav.getByRole('link', { name: 'Login', exact: true })).toHaveCount(0)
+  await expect(nav.getByRole('link', { name: 'Register', exact: true })).toHaveCount(0)
+  let attempts = 0
+  await page.route('**/api/auth/logout', (route) => {
+    attempts++
+    expect(route.request().method()).toBe('POST')
+    return route.fulfill({
+      status: attempts === 1 ? 500 : 200,
+      contentType: 'application/json',
+      body: attempts === 1 ? '{"error":"Try again"}' : '{}',
+    })
+  })
+  await nav.getByRole('button', { name: 'Logout', exact: true }).click()
+  await expect(nav.getByRole('alert')).toHaveText('Try again')
+  await expect(nav.getByRole('link', { name: 'Profile', exact: true })).toBeVisible()
+  await nav.getByRole('button', { name: 'Logout', exact: true }).click()
+  await expect(page).toHaveURL(/login$/)
+  await expect(page.locator('.radial-panel')).toBeHidden()
+  await showAccount()
+  await expect(nav.locator('.account-menu a')).toHaveText(['Login', 'Register'])
+  await expect(nav.getByRole('button', { name: 'Logout', exact: true })).toHaveCount(0)
+  expect(attempts).toBe(2)
 })
