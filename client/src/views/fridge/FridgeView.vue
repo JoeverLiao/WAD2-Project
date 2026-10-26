@@ -1,50 +1,194 @@
 <script setup>
 // ============================================================
-// SMART FRIDGE - MAIN VIEW
+// SMART FRIDGE - MAIN VIEW (CONNECTED TO MONGODB)
+// ============================================================
+// This file is the parent component for the Smart Fridge page.
 //
-// Responsibilities:
-// 1. Store the sample inventory.
-// 2. Display the four visual storage areas.
-// 3. Filter items by search.
-// 4. Handle adding, editing and removing items.
-// 5. Handle drag-and-drop between storage areas.
+// The page still handles the visual layout, search, storage areas,
+// recommendations, and drag-and-drop. The important difference is
+// that food items now come from the backend instead of hardcoded
+// sample data.
 //
-// IMPORTANT:
-// This version uses temporary sample data.
-// It does not save items to MongoDB or the backend yet.
+// The browser talks to the Express API at /api/inventory.
+// Express uses MongoDB to load/save the signed-in user's items.
+//
+// API actions used here:
+// GET    /api/inventory      Load the user's inventory
+// POST   /api/inventory      Add a new food item
+// PATCH  /api/inventory/:id  Edit/move an existing item
+// DELETE /api/inventory/:id  Remove an item
+//
+// `credentials: 'include'` tells fetch to send the login cookie.
+// The backend uses that cookie to identify which user's items to use.
 // ============================================================
 
-import { ref, computed } from 'vue'
-import { storeToRefs } from 'pinia'
+import { ref, computed, onMounted } from 'vue'
 
-import { useInventoryStore, storageAreas, isInArea } from '../../stores/inventory.js'
-
-// Import the reusable food card component.
+// Reusable card for displaying one food item.
 import FoodItemCard from '../../components/fridge/FoodItemCard.vue'
-
-// Import the reusable add/edit form component.
 import FoodItemForm from '../../components/fridge/FoodItemForm.vue'
 
 // ============================================================
-// 1-2. INVENTORY + STORAGE AREAS
+// 1. INVENTORY DATA AND PAGE STATUS
 // ============================================================
 
-// The sample inventory and the four storage areas live in a
-// shared Pinia store, so the Dashboard shows the same items.
-// storeToRefs keeps `items` reactive like a normal ref.
+// Start with an empty list. We will fill it using GET /api/inventory.
+// Each MongoDB document has an `_id`; we also create an `id` property
+// because the existing FoodItemCard/template uses `item.id`.
+const items = ref([])
 
-const inventory = useInventoryStore()
-const { items } = storeToRefs(inventory)
+// These values let the page show progress and useful error messages.
+const loading = ref(false)
+const saving = ref(false)
+const errorMessage = ref('')
+const successMessage = ref('')
+
+// Convert a date from the API into YYYY-MM-DD for <input type="date">.
+// Returning an empty string for a missing date keeps the form happy.
+function toDateInputValue(value) {
+    if (!value) return ''
+
+    // MongoDB dates often arrive as ISO strings. Taking the first ten
+    // characters avoids changing the calendar day due to time zones.
+    return String(value).slice(0, 10)
+}
+
+// Convert the API's item shape into the shape used by this Vue page.
+function normaliseItem(apiItem) {
+    return {
+        ...apiItem,
+        // MongoDB uses _id; our existing Vue template uses id.
+        id: String(apiItem._id || apiItem.id),
+        // Date inputs need YYYY-MM-DD rather than a full ISO timestamp.
+        expiresAt: toDateInputValue(apiItem.expiresAt),
+        purchasedAt: toDateInputValue(apiItem.purchasedAt),
+        // Keep storageZone available even for older records that lack it.
+        storageZone: apiItem.storageZone || defaultZoneFor(apiItem.storage)
+    }
+}
+
+// Choose a reasonable compartment if an older record has no zone saved.
+function defaultZoneFor(storage) {
+    if (storage === 'freezer') return 'freezer-main'
+    if (storage === 'pantry') return 'dry-storage'
+    return 'middle-shelf'
+}
+
+// Turn the form's date fields into values that can safely be sent to the API.
+// Sending null for an empty date avoids trying to save an empty string as a date.
+function prepareItemForApi(formData) {
+    return {
+        name: formData.name,
+        quantity: Number(formData.quantity),
+        unit: formData.unit,
+        storage: formData.storage,
+        storageZone: formData.storageZone || defaultZoneFor(formData.storage),
+        expiresAt: formData.expiresAt || null,
+        // This form does not currently ask for a purchase date or price.
+        // Do not invent values for those optional fields.
+    }
+}
 
 // ============================================================
-// 3. SEARCH
+// 2. LOAD INVENTORY FROM THE BACKEND
 // ============================================================
 
-// The search box filters items by name.
-// An empty search query displays all items.
+async function loadInventory() {
+    loading.value = true
+    errorMessage.value = ''
+    successMessage.value = ''
 
+    try {
+        // GET asks the backend for the signed-in user's inventory.
+        const response = await fetch('/api/inventory', {
+            method: 'GET',
+            credentials: 'include'
+        })
+
+        // A non-2xx response means the request failed.
+        if (!response.ok) {
+            throw new Error(`Could not load inventory (HTTP ${response.status}).`)
+        }
+
+        const data = await response.json()
+
+        // Support either a plain array or an object containing `items`.
+        // This makes the page tolerant of either common API response shape.
+        const apiItems = Array.isArray(data) ? data : (data.items || [])
+
+        // Convert MongoDB records to the shape expected by the template.
+        items.value = apiItems.map(normaliseItem)
+    } catch (error) {
+        console.error('Failed to load inventory:', error)
+        errorMessage.value = 'Unable to load your inventory. Check that you are logged in and the backend is running, then retry.'
+    } finally {
+        // `finally` runs whether the request succeeds or fails.
+        loading.value = false
+    }
+}
+
+// Automatically load inventory when this page first appears.
+onMounted(loadInventory)
+
+// ============================================================
+// 3. STORAGE AREA DEFINITIONS
+// ============================================================
+
+// These objects describe the four visual areas on the page.
+// The database still uses only three main storage values:
+// fridge, freezer and pantry. `storageZone` identifies a compartment.
+const storageAreas = [
+    {
+        id: 'freezer',
+        title: 'Freezer',
+        subtitle: 'Frozen food and long-term storage',
+        icon: '❄️',
+        description: 'Frozen vegetables, meat and frozen meals.',
+        temperature: 'Typically -18°C or below',
+        storage: 'freezer',
+        storageZone: 'freezer-main'
+    },
+    {
+        id: 'fridge',
+        title: 'Main Fridge',
+        subtitle: 'Refrigerated food',
+        icon: '🧊',
+        description: 'Dairy, leftovers and other refrigerated foods.',
+        temperature: 'Keep at 4°C or below',
+        storage: 'fridge',
+        storageZone: null
+    },
+    {
+        id: 'crisper',
+        title: 'Crisper Drawer',
+        subtitle: 'Fruits and vegetables',
+        icon: '🥬',
+        description: 'Produce suitable for refrigerator storage.',
+        temperature: 'Follow food-specific storage guidance',
+        storage: 'fridge',
+        storageZone: 'crisper'
+    },
+    {
+        id: 'pantry',
+        title: 'Pantry',
+        subtitle: 'Dry and shelf-stable food',
+        icon: '🥫',
+        description: 'Rice, pasta, cereal and other suitable dry goods.',
+        temperature: 'Cool and dry',
+        storage: 'pantry',
+        storageZone: 'dry-storage'
+    }
+]
+
+// ============================================================
+// 4. SEARCH AND STORAGE FILTERING
+// ============================================================
+
+// v-model connects this value to the search input in the template.
 const searchQuery = ref('')
 
+// `computed` updates this list automatically when the inventory or
+// search text changes. An empty query matches every item.
 const filteredItems = computed(() => {
     const query = searchQuery.value.trim().toLowerCase()
 
@@ -57,134 +201,290 @@ const filteredItems = computed(() => {
 // 4. GET ITEMS FOR EACH STORAGE AREA
 // ============================================================
 
-// Apply the shared area rule (see stores/inventory.js) to the
-// search results, so each area only shows matching items.
-
+// Return only the filtered items belonging to a particular area.
 function getItemsForArea(area) {
-    return filteredItems.value.filter(item => isInArea(item, area))
+    return filteredItems.value.filter(item => {
+        if (item.storage !== area.storage) return false
+
+        // Main Fridge contains all fridge items except the crisper.
+        if (area.id === 'fridge') {
+            return item.storageZone !== 'crisper'
+        }
+
+        // Other areas match their exact compartment.
+        return item.storageZone === area.storageZone
+    })
 }
 
-// ============================================================
-// 5. INVENTORY SUMMARY
-// ============================================================
-
-// Count the items in each main storage location.
-// These counts are based on the complete inventory, not search.
-
+// Count items by main storage location for the summary cards.
 function countItems(storage) {
-    return items.value.filter(item => {
-        return item.storage === storage
-    }).length
+    return items.value.filter(item => item.storage === storage).length
 }
 
-// The total number of tracked inventory entries.
+// Vue updates this number whenever the inventory changes.
 const totalItems = computed(() => items.value.length)
 
 // ============================================================
-// 6. ADD / EDIT FORM STATE
+// 5. ADD / EDIT FORM STATE
 // ============================================================
 
-// formVisible determines whether the modal is displayed.
-//
-// editingItem stores the item currently being edited.
-// If it is null, the user is adding a new item.
-
+// `formVisible` controls whether the modal form is displayed.
+// `editingItem` is null when adding, and contains an item when editing.
 const formVisible = ref(false)
 const editingItem = ref(null)
-
-// Remember which storage area the user was viewing when
-// they clicked Add Food.
 const defaultStorage = ref('fridge')
+// Remember the exact area where the user clicked Add Food. For example,
+// this is 'crisper' when they open the form from the Crisper Drawer.
+const defaultStorageZone = ref('middle-shelf')
 
-// Open the form to create a new item.
 function openAddForm(storage = 'fridge', storageZone = null) {
-    // Clear the selected item so the form knows this is an add.
+    // Null tells FoodItemForm to start a new item rather than edit one.
     editingItem.value = null
-
-    // Remember the selected storage location.
     defaultStorage.value = storage
 
-    // Open the form.
+    // Use the selected area when it supplies a zone. If not, choose a
+    // sensible default based on the main storage location.
+    defaultStorageZone.value = storageZone || defaultZoneFor(storage)
     formVisible.value = true
 }
 
-// Open the form to edit an existing item.
 function openEditForm(item) {
+    // Pass the selected item to the form so it can pre-fill the fields.
     editingItem.value = item
-
-    // This value is used only if the form needs a default.
     defaultStorage.value = item.storage
-
+    // Editing should preserve the item's current compartment.
+    defaultStorageZone.value = item.storageZone || defaultZoneFor(item.storage)
     formVisible.value = true
 }
 
-// Close the form without saving changes.
 function closeForm() {
     formVisible.value = false
     editingItem.value = null
 }
 
 // ============================================================
-// 7. SAVE FOOD
+// 6. ADD OR EDIT AN ITEM (POST / PATCH)
 // ============================================================
 
-// The form emits its data here.
-//
-// If editingItem contains an item, update that item.
-// Otherwise, create a new inventory entry.
-//
-// These changes exist only in Vue memory for now.
+async function saveItem(formData) {
+    // Avoid duplicate submissions if the user clicks Save repeatedly.
+    if (saving.value) return
 
-function saveItem(formData) {
-    if (editingItem.value) {
-        // Find the existing item in the inventory.
-        const existingItem = items.value.find(item => {
-            return item.id === editingItem.value.id
+    saving.value = true
+    errorMessage.value = ''
+    successMessage.value = ''
+
+    const isEditing = Boolean(editingItem.value)
+    const itemId = editingItem.value?.id
+    const payload = prepareItemForApi(formData)
+
+    try {
+        // Editing uses PATCH; adding uses POST.
+        const url = isEditing
+            ? `/api/inventory/${encodeURIComponent(itemId)}`
+            : '/api/inventory'
+
+        const response = await fetch(url, {
+            method: isEditing ? 'PATCH' : 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
         })
 
-        // Update its fields.
-        if (existingItem) {
-            Object.assign(existingItem, formData)
-        }
-    } else {
-        // Create a new item with a unique temporary ID.
-        const newItem = {
-            id: Date.now(),
-            ...formData
+        if (!response.ok) {
+            // Include the HTTP status to make debugging easier.
+            throw new Error(`Could not save item (HTTP ${response.status}).`)
         }
 
-        items.value.push(newItem)
+        const responseData = await response.json()
+        // Support either a direct item response or { item: ... }.
+        const savedApiItem = responseData.item || responseData
+        const savedItem = normaliseItem(savedApiItem)
+
+        if (isEditing) {
+            // Replace the old version with the version returned by MongoDB.
+            const index = items.value.findIndex(item => item.id === String(itemId))
+            if (index !== -1) items.value.splice(index, 1, savedItem)
+        } else {
+            // Show a newly created item at the top of the inventory.
+            items.value.unshift(savedItem)
+        }
+
+        closeForm()
+        successMessage.value = isEditing ? 'Food item updated successfully.' : 'Food item added successfully.'
+    } catch (error) {
+        console.error('Failed to save inventory item:', error)
+        errorMessage.value = 'Unable to save this food item. Please check the backend and try again.'
+    } finally {
+        saving.value = false
     }
-
-    // Close the form after saving.
-    closeForm()
 }
 
 // ============================================================
-// 8. REMOVE FOOD
+// 7. REMOVE AN ITEM (DELETE)
 // ============================================================
 
-// Remove the item only after the user confirms.
-
-function removeItem(item) {
-    const confirmed = window.confirm(
-        `Are you sure you want to remove ${item.name}?`
-    )
-
+async function removeItem(item) {
+    // Ask before deleting, so a click does not immediately remove food.
+    const confirmed = window.confirm(`Are you sure you want to remove ${item.name}?`)
     if (!confirmed) return
 
-    // Keep all items except the one being removed.
-    items.value = items.value.filter(existingItem => {
-        return existingItem.id !== item.id
-    })
+    errorMessage.value = ''
+    successMessage.value = ''
+
+    try {
+        const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        })
+
+        if (!response.ok) {
+            throw new Error(`Could not remove item (HTTP ${response.status}).`)
+        }
+
+        // Only update the screen after the backend confirms deletion.
+        items.value = items.value.filter(existingItem => existingItem.id !== item.id)
+        successMessage.value = `${item.name} removed from your inventory.`
+    } catch (error) {
+        console.error('Failed to remove inventory item:', error)
+        errorMessage.value = `Unable to remove ${item.name}. Please try again.`
+    }
 }
 
 // ============================================================
-// 9. DRAG AND DROP
+// CONSUME OR DISCARD FOOD
 // ============================================================
 
-// draggedItemId identifies the item currently being dragged.
+// Consume or discard some or all of an item's quantity.
+// Partial changes use PATCH; removing the entire item uses DELETE.
+async function changeFoodQuantity(item, action) {
+    const actionLabel = action === 'consume' ? 'consume' : 'discard'
 
+    const input = window.prompt(
+        `How many ${item.unit} of ${item.name} would you like to ${actionLabel}?\n` +
+        `Current quantity: ${item.quantity}`,
+        String(item.quantity)
+    )
+
+    // Cancel was clicked.
+    if (input === null) return
+
+    const amount = Number(input)
+
+    // Validate the quantity.
+    if (
+        !Number.isFinite(amount) ||
+        amount <= 0 ||
+        amount > item.quantity
+    ) {
+        window.alert(
+            `Please enter a quantity greater than 0 and no more than ${item.quantity}.`
+        )
+        return
+    }
+
+    const remainingQuantity = Number(item.quantity) - amount
+
+    // Confirm before discarding food.
+    if (action === 'discard') {
+        const confirmed = window.confirm(
+            remainingQuantity === 0
+                ? `Discard all ${item.name}? This will remove it from your inventory.`
+                : `Discard ${amount} ${item.unit} of ${item.name}? ${remainingQuantity} will remain.`
+        )
+
+        if (!confirmed) return
+    }
+
+    errorMessage.value = ''
+    successMessage.value = ''
+
+    try {
+        let response
+
+        if (remainingQuantity === 0) {
+            // No quantity remains, so remove the item from active inventory.
+            response = await fetch(
+                `/api/inventory/${encodeURIComponent(item.id)}`,
+                {
+                    method: 'DELETE',
+                    credentials: 'include'
+                }
+            )
+        } else {
+            // Keep the item but update its remaining quantity in MongoDB.
+            response = await fetch(
+                `/api/inventory/${encodeURIComponent(item.id)}`,
+                {
+                    method: 'PATCH',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        quantity: remainingQuantity
+                    })
+                }
+            )
+        }
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+
+            throw new Error(
+                errorData.error ||
+                `Could not ${actionLabel} food (HTTP ${response.status}).`
+            )
+        }
+
+        if (remainingQuantity === 0) {
+            items.value = items.value.filter(
+                existingItem => existingItem.id !== item.id
+            )
+        } else {
+            const index = items.value.findIndex(
+                existingItem => existingItem.id === item.id
+            )
+
+            if (index !== -1) {
+                items.value[index] = {
+                    ...items.value[index],
+                    quantity: remainingQuantity
+                }
+            }
+        }
+
+        successMessage.value =
+            remainingQuantity === 0
+                ? `${item.name} ${action === 'consume' ? 'consumed' : 'discarded'} completely.`
+                : `${amount} ${item.unit} of ${item.name} ${action === 'consume' ? 'consumed' : 'discarded'}. ${remainingQuantity} remain.`
+
+    } catch (error) {
+        console.error(`Failed to ${actionLabel} food:`, error)
+        errorMessage.value = error.message ||
+            `Unable to ${actionLabel} ${item.name}. Please try again.`
+    }
+}
+
+function consumeItem(item) {
+    return changeFoodQuantity(item, 'consume')
+}
+
+function discardItem(item) {
+    return changeFoodQuantity(item, 'discard')
+}
+
+
+    
+
+// ============================================================
+// 8. DRAG AND DROP (PATCH)
+// ============================================================
+
+// This remembers the ID while an item is being dragged.
+// MongoDB IDs are strings, not numbers, so do not convert them to Number.
 const draggedItemId = ref(null)
 
 function startDrag(item) {
@@ -195,77 +495,90 @@ function finishDrag() {
     draggedItemId.value = null
 }
 
-// Move an item into the selected visual storage area.
-//
-// IMPORTANT:
-// We update both storage and storageZone.
-// This keeps the item's location consistent with the shared
-// InventoryItem model and our frontend compartment design.
+async function dropOnArea(area, event) {
+    // The card may put its ID into the browser's drag data.
+    // Fall back to draggedItemId if the browser data is empty.
+    const transferredId = event.dataTransfer?.getData('text/plain')
+    const itemId = transferredId || draggedItemId.value
 
-// Handles moving food items into a storage area or fridge shelf.
-function dropOnArea(area, event) {
-    // Get the ID of the item being dragged.
-    const transferredId = event.dataTransfer.getData('text/plain');
+    if (!itemId) return
 
-    // Use the ID from the drag event, or fall back to our saved ID.
-    const itemId = transferredId
-        ? Number(transferredId)
-        : draggedItemId.value;
+    const item = items.value.find(food => food.id === String(itemId))
+    if (!item) return
 
-    // Stop if we don't have a valid item ID.
-    if (itemId == null || !Number.isFinite(itemId)) {
-        return;
-    }
+    // Decide the exact main storage and compartment for the destination.
+    const newStorage = area.storage
+    let newStorageZone
 
-    // Find the food item being moved.
-    const item = items.value.find((food) => food.id === itemId);
-
-    // Stop if the item doesn't exist.
-    if (!item) {
-        return;
-    }
-
-    // Update the item's storage location.
-    item.storage = area.storage;
-
-    // Update its specific shelf or storage zone.
-    if (area.storage === 'fridge') {
-        // Keep the item in the exact fridge section it was dropped into.
-        item.storageZone = area.storageZone || 'middle-shelf';
-    } else if (area.storage === 'freezer') {
-        item.storageZone = 'freezer-main';
+    if (newStorage === 'fridge') {
+        // Dropping onto the main fridge area (not a shelf) uses middle shelf.
+        newStorageZone = area.storageZone || 'middle-shelf'
+    } else if (newStorage === 'freezer') {
+        newStorageZone = 'freezer-main'
     } else {
-        item.storageZone = 'dry-storage';
+        newStorageZone = 'dry-storage'
     }
 
-    // Clear the saved drag ID.
-    draggedItemId.value = null;
+    // Do not make a network request if the item is already in that location.
+    if (item.storage === newStorage && item.storageZone === newStorageZone) {
+        draggedItemId.value = null
+        return
+    }
+
+    errorMessage.value = ''
+    successMessage.value = ''
+
+    try {
+        // Persist the move first. The backend controller must allow
+        // `storageZone` in its PATCH allowed-fields list.
+        const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                storage: newStorage,
+                storageZone: newStorageZone
+            })
+        })
+
+        if (!response.ok) {
+            throw new Error(`Could not move item (HTTP ${response.status}).`)
+        }
+
+        const responseData = await response.json()
+        const movedApiItem = responseData.item || responseData
+        const movedItem = normaliseItem(movedApiItem)
+
+        // Replace the local item with the backend's saved version.
+        const index = items.value.findIndex(food => food.id === item.id)
+        if (index !== -1) items.value.splice(index, 1, movedItem)
+    } catch (error) {
+        console.error('Failed to move inventory item:', error)
+        errorMessage.value = `Unable to move ${item.name}. Please try again.`
+        // Reload to ensure the screen matches what is saved in the database.
+        await loadInventory()
+    } finally {
+        draggedItemId.value = null
+    }
 }
 
 // ============================================================
-// 10. STORAGE RECOMMENDATIONS
+// 9. SIMPLE STORAGE RECOMMENDATIONS
 // ============================================================
 
-// Simple keyword-based recommendations for demonstration.
-//
-// This is not a complete food-safety system.
-// Later, these rules can be improved or replaced with a more
-// reliable recommendation service.
-
+// These are basic keyword suggestions for the prototype, not a
+// complete food-safety system. Packaging instructions should take priority.
 function getRecommendation(item) {
     const name = item.name.toLowerCase()
 
-    // Basic examples of foods commonly stored frozen.
-    if (
-        name.includes('frozen') ||
-        name.includes('ice cream')
-    ) {
+    if (name.includes('frozen') || name.includes('ice cream')) {
         if (item.storage !== 'freezer') {
             return 'Consider whether this product needs freezer storage.'
         }
     }
 
-    // Examples of common dry pantry staples.
     if (
         name.includes('rice') ||
         name.includes('pasta') ||
@@ -283,6 +596,20 @@ function getRecommendation(item) {
 
 <template>
     <main class="smart-fridge-page">
+
+        <!-- API status messages: loading, errors, and successful changes. -->
+        <p v-if="loading" class="status-message" role="status">
+            Loading your saved inventory from MongoDB...
+        </p>
+
+        <div v-if="errorMessage" class="status-message error-message" role="alert">
+            <span>{{ errorMessage }}</span>
+            <button type="button" @click="loadInventory">Retry loading inventory</button>
+        </div>
+
+        <p v-if="successMessage" class="status-message success-message" role="status">
+            {{ successMessage }}
+        </p>
 
         <!-- ==================================================
              PAGE HEADER
@@ -457,6 +784,8 @@ function getRecommendation(item) {
                                     :item="item"
                                     @edit="openEditForm"
                                     @remove="removeItem"
+                                    @consume="consumeItem"
+                                    @discard="discardItem"
                                     @drag-start="startDrag"
                                     @drag-end="finishDrag"
                                 />
@@ -489,6 +818,8 @@ function getRecommendation(item) {
                                     :item="item"
                                     @edit="openEditForm"
                                     @remove="removeItem"
+                                    @consume="consumeItem"
+                                    @discard="discardItem"
                                     @drag-start="startDrag"
                                     @drag-end="finishDrag"
                                 />
@@ -521,6 +852,8 @@ function getRecommendation(item) {
                                     :item="item"
                                     @edit="openEditForm"
                                     @remove="removeItem"
+                                    @consume="consumeItem"
+                                    @discard="discardItem"
                                     @drag-start="startDrag"
                                     @drag-end="finishDrag"
                                 />
@@ -553,6 +886,8 @@ function getRecommendation(item) {
                                     :item="item"
                                     @edit="openEditForm"
                                     @remove="removeItem"
+                                    @consume="consumeItem"
+                                    @discard="discardItem"
                                     @drag-start="startDrag"
                                     @drag-end="finishDrag"
                                 />
@@ -584,6 +919,8 @@ function getRecommendation(item) {
                             :item="item"
                             @edit="openEditForm"
                             @remove="removeItem"
+                            @consume="consumeItem"
+                            @discard="discardItem"
                             @drag-start="startDrag"
                             @drag-end="finishDrag"
                         />
@@ -665,6 +1002,7 @@ function getRecommendation(item) {
             :visible="formVisible"
             :item="editingItem"
             :default-storage="defaultStorage"
+            :default-storage-zone="defaultStorageZone"
             @save="saveItem"
             @close="closeForm"
         />
@@ -674,8 +1012,7 @@ function getRecommendation(item) {
             <p>Full Circle · Interactive Smart Fridge</p>
 
             <p>
-                Demonstration inventory — data is not yet saved
-                to the backend.
+                Your inventory is loaded from and saved to the backend.
             </p>
         </footer>
 
@@ -1144,6 +1481,45 @@ function getRecommendation(item) {
 .no-recommendations {
     color: var(--muted);
     font-size: 12px;
+}
+
+/* ============================================================
+   API STATUS MESSAGES
+   ============================================================ */
+
+.status-message {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: white;
+    font-size: 13px;
+}
+
+.error-message {
+    border-color: #e9b8b8;
+    background: #fff3f3;
+    color: #8d2525;
+}
+
+.error-message button {
+    padding: 7px 10px;
+    border: 1px solid #d99b9b;
+    border-radius: 6px;
+    background: white;
+    color: #8d2525;
+    cursor: pointer;
+}
+
+.success-message {
+    border-color: #b8ddc5;
+    background: #effaf2;
+    color: #17623d;
 }
 
 /* ============================================================

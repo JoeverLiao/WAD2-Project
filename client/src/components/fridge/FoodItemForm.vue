@@ -32,6 +32,13 @@ const props = defineProps({
     defaultStorage: {
         type: String,
         default: 'fridge'
+    },
+
+    // Optional exact compartment passed by FridgeView. This lets the form
+    // default to the Crisper Drawer or a specific shelf when opened there.
+    defaultStorageZone: {
+        type: String,
+        default: ''
     }
 })
 
@@ -94,7 +101,8 @@ watch(
     () => [
         props.visible,
         props.item,
-        props.defaultStorage
+        props.defaultStorage,
+        props.defaultStorageZone
     ],
     () => {
         if (!props.visible) return
@@ -113,7 +121,9 @@ watch(
             form.quantity = 1
             form.unit = 'pieces'
             form.storage = props.defaultStorage
-            form.storageZone = getDefaultZone(props.defaultStorage)
+            // Prefer the exact area the user clicked. Otherwise use the
+            // standard default for fridge, freezer or pantry.
+            form.storageZone = props.defaultStorageZone || getDefaultZone(props.defaultStorage)
             form.expiresAt = ''
         }
     },
