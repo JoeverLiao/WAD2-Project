@@ -1019,35 +1019,48 @@ function getRecommendation(item) {
     </main>
 </template>
 
+
 <style scoped>
 /* ============================================================
-   PAGE
+   FULL CIRCLE — PLAYFUL SMART FRIDGE THEME
+   Keeps the existing HTML and functionality intact.
    ============================================================ */
 
 .smart-fridge-page {
-    --primary: #167d68;
-    --primary-dark: #105c4d;
-    --text: #24352f;
-    --muted: #78867f;
-    --border: #e1e9e3;
+    --primary: #0fa89c;
+    --primary-dark: #087d73;
+    --text: #123f3b;
+    --muted: #557b77;
+    --border: #9bcac5;
+    --paper: #fdfaf3;
+    --paper-bright: #fbfffd;
+    --yellow: #ffdd69;
+    --yellow-sticky: #fff9df;
+    --coral: #ff9587;
+    --lime: #dff09c;
+    --ink: #123f3b;
+    --shadow-paper: 5px 6px 0 var(--ink);
+    --shadow-small: 3px 4px 0 var(--ink);
 
     max-width: 1500px;
     min-height: 100vh;
     margin: 0 auto;
     padding: 32px;
 
-    background: #f5f8f5;
+    background-color: var(--paper);
+    background-image:
+        radial-gradient(rgba(15, 168, 156, 0.09) 1px, transparent 1px);
+    background-size: 14px 14px;
+
     color: var(--text);
+    font-family: var(--font-sans, "Patrick Hand", cursive, sans-serif);
 }
 
-/* Apply consistent box sizing to everything in this page. */
 .smart-fridge-page * {
     box-sizing: border-box;
 }
 
-/* ============================================================
-   PAGE HEADER
-   ============================================================ */
+/* HEADER */
 
 .page-header {
     display: flex;
@@ -1059,7 +1072,7 @@ function getRecommendation(item) {
 
 .eyebrow {
     margin: 0 0 8px;
-    color: var(--primary);
+    color: var(--primary-dark);
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 1.4px;
@@ -1067,9 +1080,11 @@ function getRecommendation(item) {
 
 .page-header h1 {
     margin: 0;
-    font-size: clamp(26px, 3vw, 36px);
+    color: var(--ink);
+    font-family: var(--font-display, "Kalam", cursive, sans-serif);
+    font-size: clamp(28px, 3vw, 40px);
     font-weight: 800;
-    letter-spacing: -1px;
+    letter-spacing: -0.5px;
 }
 
 .page-description {
@@ -1079,43 +1094,51 @@ function getRecommendation(item) {
     line-height: 1.6;
 }
 
-/* Main Add Food button. */
+/* BUTTONS */
+
 .primary-button {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-
     padding: 12px 20px;
-    border: none;
-    border-radius: 9px;
 
+    border: 2px solid var(--ink);
+    border-radius: 10px;
     background: var(--primary);
     color: white;
+    box-shadow: var(--shadow-small);
 
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
     white-space: nowrap;
-
     cursor: pointer;
+
+    transition: transform 0.18s ease, box-shadow 0.18s ease,
+        background 0.18s ease;
 }
 
 .primary-button:hover {
     background: var(--primary-dark);
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 6px 0 var(--ink);
+}
+
+.primary-button:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 2px 0 var(--ink);
 }
 
 .primary-button span {
     font-size: 20px;
 }
 
-/* ============================================================
-   SUMMARY CARDS
-   ============================================================ */
+/* SUMMARY CARDS */
 
 .summary-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
+    gap: 16px;
     margin-bottom: 30px;
 }
 
@@ -1123,13 +1146,36 @@ function getRecommendation(item) {
     display: flex;
     align-items: center;
     gap: 14px;
+    min-width: 0;
+    padding: 19px;
 
-    padding: 20px;
-    border: 1px solid var(--border);
-    border-radius: 13px;
+    border: 2px solid var(--ink);
+    border-radius: 12px;
+    background: var(--paper-bright);
+    box-shadow: var(--shadow-small);
 
-    background: white;
-    box-shadow: 0 2px 8px rgb(0 0 0 / 3%);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.summary-card:nth-child(1) {
+    background: #e0f7f1;
+}
+
+.summary-card:nth-child(2) {
+    background: #e8f5ff;
+}
+
+.summary-card:nth-child(3) {
+    background: #eff7d9;
+}
+
+.summary-card:nth-child(4) {
+    background: #fff1d7;
+}
+
+.summary-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 3px 7px 0 var(--ink);
 }
 
 .summary-icon {
@@ -1140,9 +1186,10 @@ function getRecommendation(item) {
 
     width: 45px;
     height: 45px;
-    border-radius: 11px;
+    border: 2px solid var(--ink);
+    border-radius: 10px;
 
-    background: #e8f4ed;
+    background: var(--paper-bright);
     font-size: 23px;
 }
 
@@ -1154,7 +1201,8 @@ function getRecommendation(item) {
 
 .summary-card strong {
     display: block;
-    font-size: 25px;
+    color: var(--ink);
+    font-size: 27px;
 }
 
 .summary-card small {
@@ -1164,9 +1212,7 @@ function getRecommendation(item) {
     font-size: 10px;
 }
 
-/* ============================================================
-   SEARCH
-   ============================================================ */
+/* SEARCH */
 
 .search-section {
     display: flex;
@@ -1177,7 +1223,8 @@ function getRecommendation(item) {
 
 .search-section label {
     flex-shrink: 0;
-    font-size: 13px;
+    color: var(--ink);
+    font-size: 14px;
     font-weight: 700;
 }
 
@@ -1186,21 +1233,24 @@ function getRecommendation(item) {
     max-width: 430px;
     padding: 11px 13px;
 
-    border: 1px solid var(--border);
+    border: 2px solid var(--border);
     border-radius: 9px;
     outline: none;
 
-    background: white;
+    background: var(--paper-bright);
+    color: var(--ink);
+    font-family: inherit;
     font-size: 13px;
+
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .search-section input:focus {
     border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(15, 168, 156, 0.15);
 }
 
-/* ============================================================
-   SECTION HEADINGS
-   ============================================================ */
+/* SECTION HEADINGS */
 
 .section-heading {
     display: flex;
@@ -1212,7 +1262,9 @@ function getRecommendation(item) {
 .section-heading h2,
 .recommendation-section h2 {
     margin: 0;
-    font-size: 22px;
+    color: var(--ink);
+    font-family: var(--font-display, "Kalam", cursive, sans-serif);
+    font-size: 25px;
     font-weight: 800;
 }
 
@@ -1224,65 +1276,54 @@ function getRecommendation(item) {
     line-height: 1.6;
 }
 
-/* ============================================================
-   FOUR STORAGE AREAS
-   ============================================================ */
-
-/*
-    The four areas appear in a two-column grid on wide screens.
-    Each area is an independent drop target.
-*/
+/* STORAGE AREAS */
 
 .storage-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
-    gap: 18px;
+    gap: 20px;
 }
 
 .storage-area {
     min-width: 0;
     padding: 20px;
 
-    border: 1px solid var(--border);
-    border-radius: 15px;
+    border: 2px solid var(--ink);
+    border-radius: 14px;
 
-    background: white;
-    box-shadow: 0 3px 10px rgb(0 0 0 / 3%);
+    background: var(--paper-bright);
+    box-shadow: var(--shadow-paper);
 
-    transition:
-        border-color 0.2s,
-        background 0.2s;
+    transition: border-color 0.2s ease, background 0.2s ease,
+        box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-/* Give the user a visual cue when dragging over a storage area. */
+.storage-area.area-freezer {
+    background: #eaf7ff;
+    border-color: #285e78;
+}
+
+.storage-area.area-fridge {
+    background: #f0fbf5;
+}
+
+.storage-area.area-crisper {
+    background: #eff8dc;
+    border-color: #48633b;
+}
+
+.storage-area.area-pantry {
+    background: #fff3dc;
+    border-color: #76552e;
+}
+
+/* Clear drag-and-drop feedback without relying on :has(). */
 .storage-area:has(.food-card:hover) {
-    border-color: #cbded1;
+    border-color: var(--primary);
 }
 
-/* A different subtle background for each storage type. */
-.area-freezer {
-    background: #f5fbff;
-    border-color: #d8e8f1;
-}
-
-.area-fridge {
-    background: #ffffff;
-}
-
-.area-crisper {
-    background: #f7fcf5;
-    border-color: #dcebd5;
-}
-
-.area-pantry {
-    background: #fffaf1;
-    border-color: #ebdfc7;
-}
-
-/* ============================================================
-   STORAGE AREA HEADER
-   ============================================================ */
+/* STORAGE AREA HEADERS */
 
 .area-header {
     display: flex;
@@ -1299,154 +1340,166 @@ function getRecommendation(item) {
 
     width: 48px;
     height: 48px;
-    border-radius: 12px;
+    border: 2px solid var(--ink);
+    border-radius: 11px;
 
-    background: white;
-    border: 1px solid var(--border);
+    background: var(--paper-bright);
+    box-shadow: 2px 3px 0 rgba(18, 63, 59, 0.15);
     font-size: 25px;
 }
 
 .area-header h3 {
     margin: 0;
-    font-size: 18px;
+    color: var(--ink);
+    font-family: var(--font-display, "Kalam", cursive, sans-serif);
+    font-size: 21px;
     font-weight: 800;
 }
 
 .area-header p {
     margin: 5px 0 0;
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
 }
 
-/* Storage description and temperature information. */
+/* STORAGE INFORMATION */
+
 .area-information {
     margin-bottom: 15px;
     padding: 11px 12px;
 
-    border-radius: 8px;
-    background: rgb(255 255 255 / 75%);
+    border: 1px dashed var(--border);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.65);
 }
 
 .area-information p {
     margin: 0 0 7px;
-    color: #617067;
-    font-size: 11px;
+    color: #526b61;
+    font-size: 12px;
     line-height: 1.5;
 }
 
 .area-information span {
     color: var(--primary-dark);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
 }
 
-/* ============================================================
-   MAIN FRIDGE SHELVES
-   ============================================================ */
+/* MAIN FRIDGE SHELVES */
 
 .fridge-shelves {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 13px;
 }
 
-/* Each shelf has its own background and border. */
 .fridge-shelf {
     min-width: 0;
-    padding: 12px;
+    padding: 13px;
 
-    border: 1px solid #dfe8e1;
+    border: 2px solid #9bcac5;
     border-radius: 10px;
 
-    background: #f8fbf8;
+    background: rgba(255, 255, 255, 0.75);
+    box-shadow: 0 3px 0 rgba(18, 63, 59, 0.08);
+
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.fridge-shelf:hover {
+    border-color: var(--primary);
+    background: var(--paper-bright);
 }
 
 .fridge-shelf h4 {
     margin: 0 0 11px;
     padding-bottom: 8px;
-    border-bottom: 2px solid #dfe8e1;
+    border-bottom: 2px solid #c4e2dc;
 
-    color: #52665a;
-    font-size: 12px;
+    color: var(--ink);
+    font-family: var(--font-display, "Kalam", cursive, sans-serif);
+    font-size: 15px;
     font-weight: 800;
 }
 
-/* ============================================================
-   FOOD CARD GRID
-   ============================================================ */
+/* FOOD CARD GRID */
 
 .item-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-content: start;
-    gap: 10px;
+    gap: 12px;
     min-width: 0;
 }
 
-/* ============================================================
-   EMPTY STATES
-   ============================================================ */
+/* EMPTY STATES */
 
 .empty-message,
 .area-empty-message {
     margin: 10px 0;
-    padding: 14px 8px;
+    padding: 16px 8px;
 
-    color: #93a49a;
-    font-size: 11px;
+    color: var(--muted);
+    font-size: 12px;
     text-align: center;
-    line-height: 1.5;
+    line-height: 1.6;
 }
 
 .area-empty-message {
     margin-top: 15px;
 }
 
-/* ============================================================
-   ADD FOOD BUTTONS
-   ============================================================ */
+/* ADD FOOD BUTTONS */
 
 .area-add-button {
     width: 100%;
     margin-top: 16px;
     padding: 11px;
 
-    border: 1px dashed #b8d2c0;
-    border-radius: 8px;
+    border: 2px dashed #78b8aa;
+    border-radius: 9px;
 
-    background: rgb(255 255 255 / 70%);
+    background: rgba(255, 255, 255, 0.7);
     color: var(--primary-dark);
 
-    font-size: 12px;
+    font-family: inherit;
+    font-size: 13px;
     font-weight: 700;
 
     cursor: pointer;
+    transition: transform 0.18s ease, background 0.18s ease,
+        border-color 0.18s ease;
 }
 
 .area-add-button:hover {
-    border-color: var(--primary);
-    background: #edf7f0;
+    border-color: var(--ink);
+    background: #dff7ed;
+    transform: translateY(-2px);
 }
 
-/* ============================================================
-   STORAGE RECOMMENDATIONS
-   ============================================================ */
+.area-add-button:active {
+    transform: translateY(1px);
+}
+
+/* STORAGE RECOMMENDATIONS */
 
 .recommendation-section {
-    margin-top: 30px;
-    padding: 23px;
+    margin-top: 32px;
+    padding: 24px;
 
-    border: 1px solid var(--border);
-    border-radius: 14px;
+    border: 2px solid var(--ink);
+    border-radius: 13px;
 
-    background: white;
+    background: var(--paper-bright);
+    box-shadow: var(--shadow-paper);
 }
 
 .recommendation-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     margin-top: 18px;
 }
 
@@ -1455,26 +1508,26 @@ function getRecommendation(item) {
     align-items: flex-start;
     gap: 12px;
 
-    padding: 13px;
-    border: 1px solid #f0dfb9;
-    border-radius: 9px;
+    padding: 14px;
+    border: 2px solid #d7b96c;
+    border-radius: 10px;
 
-    background: #fff9ec;
+    background: var(--yellow-sticky);
 }
 
 .recommendation-card > span {
-    font-size: 20px;
+    font-size: 22px;
 }
 
 .recommendation-card strong {
     color: #614d27;
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .recommendation-card p {
     margin: 5px 0 0;
     color: #816d48;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
 }
 
@@ -1483,9 +1536,7 @@ function getRecommendation(item) {
     font-size: 12px;
 }
 
-/* ============================================================
-   API STATUS MESSAGES
-   ============================================================ */
+/* API STATUS MESSAGES */
 
 .status-message {
     display: flex;
@@ -1495,36 +1546,36 @@ function getRecommendation(item) {
     gap: 10px;
     margin: 0 0 16px;
     padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    background: white;
+
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    background: var(--paper-bright);
+
     font-size: 13px;
 }
 
 .error-message {
-    border-color: #e9b8b8;
-    background: #fff3f3;
+    border-color: #bd554b;
+    background: #fff0ed;
     color: #8d2525;
 }
 
 .error-message button {
     padding: 7px 10px;
-    border: 1px solid #d99b9b;
-    border-radius: 6px;
+    border: 2px solid #8d2525;
+    border-radius: 7px;
     background: white;
     color: #8d2525;
     cursor: pointer;
 }
 
 .success-message {
-    border-color: #b8ddc5;
-    background: #effaf2;
-    color: #17623d;
+    border-color: #7cae66;
+    background: #eff9df;
+    color: #285b30;
 }
 
-/* ============================================================
-   FOOTER
-   ============================================================ */
+/* FOOTER */
 
 .page-footer {
     display: flex;
@@ -1534,19 +1585,39 @@ function getRecommendation(item) {
     margin-top: 25px;
     padding: 10px 0;
 
-    color: #849188;
-    font-size: 10px;
+    color: var(--muted);
+    font-size: 11px;
 }
 
 .page-footer p {
     margin: 0;
 }
 
-/* ============================================================
-   RESPONSIVE DESIGN
-   ============================================================ */
+/* KEYBOARD ACCESSIBILITY */
 
-/* Medium screens: reduce the number of columns in summaries. */
+.primary-button:focus-visible,
+.area-add-button:focus-visible,
+.search-section input:focus-visible,
+.error-message button:focus-visible {
+    outline: 3px solid #f0b93d;
+    outline-offset: 3px;
+}
+
+/* REDUCED MOTION */
+
+@media (prefers-reduced-motion: reduce) {
+    .smart-fridge-page *,
+    .smart-fridge-page *::before,
+    .smart-fridge-page *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* MEDIUM SCREENS */
+
 @media (max-width: 1000px) {
     .summary-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1557,7 +1628,8 @@ function getRecommendation(item) {
     }
 }
 
-/* Mobile screens: stack controls and simplify spacing. */
+/* MOBILE */
+
 @media (max-width: 600px) {
     .smart-fridge-page {
         padding: 18px 12px;
@@ -1595,7 +1667,8 @@ function getRecommendation(item) {
     }
 }
 
-/* Very narrow screens: show one food card per row. */
+/* VERY NARROW SCREENS */
+
 @media (max-width: 380px) {
     .summary-card {
         align-items: flex-start;
@@ -1607,3 +1680,4 @@ function getRecommendation(item) {
     }
 }
 </style>
+
