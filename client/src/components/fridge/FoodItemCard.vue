@@ -1,12 +1,7 @@
-
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onBeforeUnmount } from 'vue'
 
-// ============================================================
-// 1. PROPS
-// ============================================================
-
-// The parent component supplies the food item to display.
+// The parent provides the food item.
 const props = defineProps({
     item: {
         type: Object,
@@ -14,11 +9,7 @@ const props = defineProps({
     }
 })
 
-// ============================================================
-// 2. EVENTS
-// ============================================================
-
-// The parent handles all inventory changes and API requests.
+// The parent still handles inventory changes and API requests.
 const emit = defineEmits([
     'edit',
     'remove',
@@ -28,10 +19,15 @@ const emit = defineEmits([
     'drag-end'
 ])
 
-// ============================================================
-// 3. FOOD EMOJI
-// ============================================================
+// Reactions start only after the parent confirms the inventory update succeeded.
+const animation = ref('')
+const chompCount = ref(0)
+const currentChomp = ref(0)
+const busy = ref(false)
+let animationTimer = null
+let chompInterval = null
 
+// Food emoji.
 const foodEmoji = computed(() => {
     const name = props.item.name.toLowerCase()
 
@@ -50,35 +46,24 @@ const foodEmoji = computed(() => {
     return '🍱'
 })
 
-// ============================================================
-// 4. EXPIRY STATUS
-// ============================================================
-
+// Expiry status.
 const expiryStatus = computed(() => {
-    if (!props.item.expiresAt) {
-        return 'No expiry date'
-    }
+    if (!props.item.expiresAt) return 'No expiry date'
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
     const expiry = new Date(`${props.item.expiresAt}T00:00:00`)
 
-    if (Number.isNaN(expiry.getTime())) {
-        return 'Invalid expiry date'
-    }
+    if (Number.isNaN(expiry.getTime())) return 'Invalid expiry date'
 
     const daysRemaining = Math.round(
-        (expiry.getTime() - today.getTime()) /
-        (1000 * 60 * 60 * 24)
+        (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
     )
 
     if (daysRemaining < 0) return 'Expired'
     if (daysRemaining === 0) return 'Expires today'
-
-    if (daysRemaining <= 3) {
-        return `Expires in ${daysRemaining} day(s)`
-    }
+    if (daysRemaining <= 3) return `Expires in ${daysRemaining} day(s)`
 
     return `Expires ${expiry.toLocaleDateString()}`
 })
@@ -98,24 +83,73 @@ const expiryClass = computed(() => {
     return 'expiry-normal'
 })
 
-// ============================================================
-// 5. DRAG AND DROP
-// ============================================================
+// Run the reaction on the button after a successful inventory update.
+function startReaction(type, details = {}) {
+    clearTimeout(animationTimer)
+    clearInterval(chompInterval)
 
+    busy.value = true
+
+    if (type === 'consume') {
+        animation.value = 'consume'
+        const amount = Number(details.amount) || 1
+        chompCount.value = Math.max(1, Math.min(5, Math.ceil(amount / 2)))
+        currentChomp.value = 0
+
+        chompInterval = setInterval(() => {
+            currentChomp.value += 1
+            if (currentChomp.value >= chompCount.value) {
+                clearInterval(chompInterval)
+                chompInterval = null
+            }
+        }, 220)
+
+        animationTimer = setTimeout(finishReaction, 700 + chompCount.value * 220)
+    } else {
+        const proportion = Number(details.proportion) || 0
+        const level = proportion >= 0.75 ? 'strong' : proportion >= 0.35 ? 'medium' : 'gentle'
+        animation.value = `discard-${level}`
+        animationTimer = setTimeout(finishReaction, level === 'strong' ? 850 : 650)
+    }
+}
+
+function finishReaction() {
+    clearTimeout(animationTimer)
+    clearInterval(chompInterval)
+    animationTimer = null
+    chompInterval = null
+    animation.value = ''
+    chompCount.value = 0
+    currentChomp.value = 0
+    busy.value = false
+}
+
+// The parent calls the callback only after confirmation and a successful API update.
+function handleConsume() {
+    if (busy.value) return
+    emit('consume', props.item, details => startReaction('consume', details))
+}
+
+function handleDiscard() {
+    if (busy.value) return
+    emit('discard', props.item, details => startReaction('discard', details))
+}
+
+// Drag-and-drop remains unchanged.
 function handleDragStart(event) {
-    event.dataTransfer.setData(
-        'text/plain',
-        String(props.item.id)
-    )
-
+    event.dataTransfer.setData('text/plain', String(props.item.id))
     event.dataTransfer.effectAllowed = 'move'
-
     emit('drag-start', props.item)
 }
 
 function handleDragEnd() {
     emit('drag-end')
 }
+
+onBeforeUnmount(() => {
+    clearTimeout(animationTimer)
+    clearInterval(chompInterval)
+})
 </script>
 
 <template>
@@ -125,11 +159,8 @@ function handleDragEnd() {
         @dragstart="handleDragStart"
         @dragend="handleDragEnd"
     >
-        <!-- Card header -->
         <div class="card-top">
-            <span class="food-emoji">
-                {{ foodEmoji }}
-            </span>
+            <span class="food-emoji">{{ foodEmoji }}</span>
 
             <button
                 type="button"
@@ -142,52 +173,57 @@ function handleDragEnd() {
             </button>
         </div>
 
-        <!-- Food details -->
         <h4>{{ item.name }}</h4>
 
         <p class="quantity">
             {{ item.quantity }} {{ item.unit }}
         </p>
 
-        <!-- Expiry status -->
-        <span
-            class="expiry-badge"
-            :class="expiryClass"
-        >
+        <span class="expiry-badge" :class="expiryClass">
             {{ expiryStatus }}
         </span>
 
-        <!-- Inventory actions -->
         <div class="food-actions">
             <button
                 type="button"
                 class="action-button consume-button"
+                :class="{ 'button-consuming': animation === 'consume' }"
                 title="Record food consumed"
-                @click.stop="emit('consume', item)"
+                :disabled="busy"
+                @click.stop="handleConsume"
             >
-                🍽️ Consume
+                <span class="button-emoji consume-emoji" aria-hidden="true">
+                    {{ animation === 'consume' ? (currentChomp % 2 ? '🤤' : '😋') : '😋' }}
+                </span>
+                <span>{{ animation === 'consume' ? 'Nom nom!' : 'Consume' }}</span>
+                <span v-if="animation === 'consume'" class="mini-sparkle" aria-hidden="true">✨</span>
             </button>
 
             <button
                 type="button"
                 class="action-button discard-button"
+                :class="{
+                    'bin-gentle': animation === 'discard-gentle',
+                    'bin-medium': animation === 'discard-medium',
+                    'bin-strong': animation === 'discard-strong'
+                }"
                 title="Discard food"
-                @click.stop="emit('discard', item)"
+                :disabled="busy"
+                @click.stop="handleDiscard"
             >
-                🗑️ Discard
+                <span class="button-emoji bin-emoji" aria-hidden="true">🗑️</span>
+                <span>{{ animation.startsWith('discard-') ? 'Discarding…' : 'Discard' }}</span>
             </button>
         </div>
     </article>
 </template>
 
 <style scoped>
-/* ============================================================
-   FOOD CARD — SHARED FULL CIRCLE DESIGN
-   ============================================================ */
-
 .food-card {
+    position: relative;
     min-width: 0;
     padding: 14px;
+    overflow: visible;
 
     background: var(--paper-bright);
     color: var(--ink);
@@ -199,8 +235,9 @@ function handleDragEnd() {
     cursor: grab;
 
     transition:
-        transform 0.15s ease,
-        box-shadow 0.15s ease;
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        background 0.25s ease;
 }
 
 .food-card:hover {
@@ -212,7 +249,81 @@ function handleDragEnd() {
     cursor: grabbing;
 }
 
-/* Emoji and edit button */
+/* Button animations: reactions stay on the button itself. */
+.button-emoji {
+    display: inline-block;
+    font-size: 18px;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.button-consuming {
+    background: #c8f4d5;
+    animation: consume-button-bounce 0.22s ease-in-out infinite alternate;
+}
+
+.button-consuming .consume-emoji {
+    animation: face-chomp 0.22s ease-in-out infinite alternate;
+}
+
+
+.mini-sparkle {
+    display: inline-block;
+    margin-left: 2px;
+    animation: sparkle-tiny 0.45s ease-in-out infinite alternate;
+}
+
+@keyframes consume-button-bounce {
+    from { transform: translateY(0) scale(1); }
+    to { transform: translateY(-2px) scale(1.025); }
+}
+
+@keyframes face-chomp {
+    from { transform: scale(1) rotate(-4deg); }
+    to { transform: scale(1.18) rotate(4deg); }
+}
+
+
+@keyframes sparkle-tiny {
+    from { transform: scale(0.7) rotate(-12deg); opacity: 0.45; }
+    to { transform: scale(1.15) rotate(12deg); opacity: 1; }
+}
+
+/* Discard is slower and deliberately less celebratory. */
+.bin-emoji { transform-origin: 50% 80%; }
+
+.bin-gentle .bin-emoji {
+    animation: bin-wobble-gentle 0.28s ease-in-out 2;
+}
+
+.bin-medium .bin-emoji {
+    animation: bin-wobble-medium 0.22s ease-in-out 3;
+}
+
+.bin-strong .bin-emoji {
+    animation: bin-wobble-strong 0.18s ease-in-out 4;
+}
+
+@keyframes bin-wobble-gentle {
+    0%, 100% { transform: rotate(0); }
+    35% { transform: rotate(-5deg) translateY(1px); }
+    70% { transform: rotate(5deg) translateY(1px); }
+}
+
+@keyframes bin-wobble-medium {
+    0%, 100% { transform: rotate(0); }
+    30% { transform: rotate(-10deg) translateY(1px); }
+    65% { transform: rotate(10deg) translateY(2px); }
+}
+
+@keyframes bin-wobble-strong {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-13deg) translateY(2px); }
+    55% { transform: rotate(13deg) translateY(2px); }
+    80% { transform: rotate(-7deg); }
+}
+
+/* Card header */
 .card-top {
     display: flex;
     align-items: center;
@@ -225,14 +336,11 @@ function handleDragEnd() {
     display: flex;
     align-items: center;
     justify-content: center;
-
     width: 42px;
     height: 42px;
     flex-shrink: 0;
-
     border: 2px solid var(--ink);
     border-radius: 12px;
-
     background: var(--aqua-soft);
     font-size: 24px;
 }
@@ -241,17 +349,13 @@ function handleDragEnd() {
     display: flex;
     align-items: center;
     justify-content: center;
-
     width: 34px;
     height: 34px;
     padding: 0;
-
     border: 2px solid var(--ink);
     border-radius: 9px;
-
     background: var(--yellow-sticky);
     box-shadow: 2px 3px 0 var(--ink);
-
     cursor: pointer;
 }
 
@@ -259,38 +363,30 @@ function handleDragEnd() {
     background: var(--yellow);
 }
 
-/* Food name */
 h4 {
     margin: 0 0 5px;
-
     color: var(--ink);
     font-family: var(--font-display);
     font-size: 18px;
     font-weight: 700;
-
     overflow-wrap: anywhere;
 }
 
 .quantity {
     margin: 0 0 10px;
-
     color: var(--muted);
     font-size: 15px;
 }
 
-/* Expiry label */
 .expiry-badge {
     display: inline-block;
     max-width: 100%;
     padding: 4px 8px;
-
     border: 2px solid var(--ink);
     border-radius: 8px;
-
     font-size: 13px;
     font-weight: 700;
     line-height: 1.4;
-
     overflow-wrap: anywhere;
 }
 
@@ -309,7 +405,7 @@ h4 {
     color: var(--ink);
 }
 
-/* Consume and discard buttons */
+/* Action buttons */
 .food-actions {
     display: flex;
     flex-wrap: wrap;
@@ -319,41 +415,39 @@ h4 {
 
 .action-button {
     flex: 1 1 90px;
-
     min-height: 36px;
     padding: 6px 8px;
-
     border: 2px solid var(--ink);
     border-radius: 9px;
     box-shadow: 2px 3px 0 var(--ink);
-
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 14px;
     font-weight: 700;
-
     cursor: pointer;
-
-    transition:
-        transform 0.1s ease,
-        box-shadow 0.1s ease;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
-.action-button:hover {
+.action-button:hover:not(:disabled) {
     transform: translate(-1px, -1px);
     box-shadow: 3px 4px 0 var(--ink);
 }
 
-.action-button:active {
+.action-button:active:not(:disabled) {
     transform: translate(1px, 1px);
     box-shadow: 1px 1px 0 var(--ink);
+}
+
+.action-button:disabled {
+    cursor: wait;
+    opacity: 0.7;
 }
 
 .consume-button {
     background: var(--aqua-soft);
 }
 
-.consume-button:hover {
+.consume-button:hover:not(:disabled) {
     background: var(--lime);
 }
 
@@ -361,15 +455,23 @@ h4 {
     background: var(--coral);
 }
 
-.discard-button:hover {
+.discard-button:hover:not(:disabled) {
     background: #ff8170;
 }
 
-/* Keyboard accessibility */
 .icon-button:focus-visible,
 .action-button:focus-visible {
     outline: 3px dashed var(--aqua);
     outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .food-card,
+    .button-emoji,
+    .mini-sparkle {
+        animation: none !important;
+        transition: none !important;
+    }
 }
 </style>
 

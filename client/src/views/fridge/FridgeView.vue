@@ -359,7 +359,7 @@ async function removeItem(item) {
 
 // Consume or discard some or all of an item's quantity.
 // Partial changes use PATCH; removing the entire item uses DELETE.
-async function changeFoodQuantity(item, action) {
+async function changeFoodQuantity(item, action, onAnimationSuccess) {
     const actionLabel = action === 'consume' ? 'consume' : 'discard'
 
     const input = window.prompt(
@@ -385,7 +385,8 @@ async function changeFoodQuantity(item, action) {
         return
     }
 
-    const remainingQuantity = Number(item.quantity) - amount
+    const originalQuantity = Number(item.quantity)
+    const remainingQuantity = originalQuantity - amount
 
     // Confirm before discarding food.
     if (action === 'discard') {
@@ -461,6 +462,18 @@ async function changeFoodQuantity(item, action) {
                 ? `${item.name} ${action === 'consume' ? 'consumed' : 'discarded'} completely.`
                 : `${amount} ${item.unit} of ${item.name} ${action === 'consume' ? 'consumed' : 'discarded'}. ${remainingQuantity} remain.`
 
+        // Play the card animation only after the server update succeeds.
+        // If the user cancels, validation fails, or the request fails,
+        // this callback is never reached.
+        if (typeof onAnimationSuccess === 'function') {
+            onAnimationSuccess({
+                amount,
+                originalQuantity,
+                remainingQuantity,
+                proportion: amount / originalQuantity
+            })
+        }
+
     } catch (error) {
         console.error(`Failed to ${actionLabel} food:`, error)
         errorMessage.value = error.message ||
@@ -468,12 +481,12 @@ async function changeFoodQuantity(item, action) {
     }
 }
 
-function consumeItem(item) {
-    return changeFoodQuantity(item, 'consume')
+function consumeItem(item, onAnimationSuccess) {
+    return changeFoodQuantity(item, 'consume', onAnimationSuccess)
 }
 
-function discardItem(item) {
-    return changeFoodQuantity(item, 'discard')
+function discardItem(item, onAnimationSuccess) {
+    return changeFoodQuantity(item, 'discard', onAnimationSuccess)
 }
 
 
