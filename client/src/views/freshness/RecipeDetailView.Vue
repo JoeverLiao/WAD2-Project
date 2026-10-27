@@ -1,506 +1,362 @@
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
 
+const API = 'http://localhost:3000'
+
 const recipe = ref(null)
 const loading = ref(true)
 const error = ref('')
 
-async function loadRecipe() {
+async function loadRecipe(id) {
+  recipe.value = null
   loading.value = true
   error.value = ''
-  recipe.value = null
 
   try {
+    if (!/^\d+$/.test(String(id))) {
+      throw new Error(
+        'This is an old demo recipe. Please select a recipe from TheMealDB.'
+      )
+    }
+
     const response = await fetch(
-      `/api/freshness/recipes/${route.params.id}`,
+      `${API}/api/freshness/recipes/${encodeURIComponent(id)}`,
       { credentials: 'include' }
     )
 
     if (!response.ok) {
-      throw new Error(`Unable to load recipe (${response.status})`)
+      throw new Error(`Unable to load recipe (HTTP ${response.status})`)
     }
 
     const data = await response.json()
 
     if (!data || !data.id) {
-      throw new Error('Recipe details are unavailable')
+      throw new Error('Recipe details were not found.')
     }
 
     recipe.value = data
   } catch (err) {
-    console.error('Recipe details error:', err)
-    error.value = err.message
+    error.value = err.message || 'Unable to load recipe.'
   } finally {
     loading.value = false
   }
 }
 
-function goBack() {
-  router.push({ name: 'freshness-recipes' })
-}
-
-onMounted(loadRecipe)
-
+// Fetch whenever the recipe ID changes.
 watch(
   () => route.params.id,
-  (newId, oldId) => {
-    if (newId !== oldId) loadRecipe()
-  }
+  id => loadRecipe(id),
+  { immediate: true }
 )
+
+function goBack() {
+  router.push({ name: 'freshness-recipes', hash: '#recipes' })
+}
 </script>
 
 <template>
-  <main class="recipe-page">
-    <div class="recipe-container">
+  <main class="recipe-detail container py-4">
+    <button
+      type="button"
+      class="btn btn-outline-success mb-4"
+      @click="goBack"
+    >
+      ← Back to Recipes
+    </button>
 
-      <!-- BACK -->
-      <button class="back-button" @click="goBack">
-        ← Back to Recipes
-      </button>
+    <div v-if="loading" class="alert alert-info">
+      Loading recipe details...
+    </div>
 
-      <!-- LOADING -->
-      <div v-if="loading" class="paper-card status-card">
-        <div class="spinner-border text-success mb-3"></div>
-        <p>Finding your recipe...</p>
-      </div>
+    <div v-else-if="error" class="alert alert-danger">
+      {{ error }}
+    </div>
 
-      <!-- ERROR -->
-      <div v-else-if="error" class="paper-card status-card">
-        <h2>Oops! Something went wrong.</h2>
-        <p>{{ error }}</p>
-        <button class="action-button" @click="loadRecipe">
-          Try Again
-        </button>
-      </div>
+    <article v-else-if="recipe" class="recipe-paper">
+      <div class="recipe-hero">
+        <img
+          v-if="recipe.image"
+          :src="recipe.image"
+          :alt="recipe.name"
+          class="recipe-photo"
+        />
 
-      <!-- RECIPE -->
-      <template v-else-if="recipe">
+        <div class="recipe-intro">
+          <p class="eyebrow">LET'S GET COOKING!</p>
 
-        <!-- HERO -->
-        <section class="recipe-hero paper-card">
-          <div class="hero-text">
-            <span class="eyebrow">
-              ✿ THE FULL CIRCLE COOKBOOK
+          <h1>{{ recipe.name }}</h1>
+
+          <div class="recipe-tags">
+            <span v-if="recipe.category" class="recipe-tag">
+              {{ recipe.category }}
             </span>
 
-            <h1>{{ recipe.title }}</h1>
-
-            <p class="hero-description">
-              A little inspiration for turning your groceries
-              into something delicious.
-            </p>
-
-            <div class="recipe-tags">
-              <span
-                v-if="recipe.category"
-                class="tag tag-coral"
-              >
-                {{ recipe.category }}
-              </span>
-
-              <span
-                v-if="recipe.area"
-                class="tag tag-yellow"
-              >
-                {{ recipe.area }} Cuisine
-              </span>
-            </div>
-          </div>
-
-          <img
-            v-if="recipe.image"
-            :src="recipe.image"
-            :alt="recipe.title"
-            class="hero-image"
-          />
-        </section>
-
-        <!-- MAIN CONTENT -->
-        <div class="recipe-grid">
-
-          <!-- INGREDIENTS -->
-          <section class="paper-card ingredients-card">
-            <div class="section-heading">
-              <span class="section-icon">🥕</span>
-              <h2>What you'll need</h2>
-            </div>
-
-            <p class="section-subtitle">
-              Gather these ingredients before you begin.
-            </p>
-
-            <ul
-              v-if="recipe.ingredients?.length"
-              class="ingredient-list"
-            >
-              <li
-                v-for="(item, index) in recipe.ingredients"
-                :key="index"
-              >
-                <span class="ingredient-dot">✓</span>
-                <span>
-                  <strong v-if="item.amount">
-                    {{ item.amount }}
-                  </strong>
-                  {{ item.name }}
-                </span>
-              </li>
-            </ul>
-
-            <p v-else>
-              Ingredient information is unavailable.
-            </p>
-          </section>
-
-          <!-- INSTRUCTIONS -->
-          <section class="paper-card instructions-card">
-            <div class="section-heading">
-              <span class="section-icon">🍳</span>
-              <h2>Let's get cooking!</h2>
-            </div>
-
-            <p class="section-subtitle">
-              Follow along and make something wonderful.
-            </p>
-
-            <div
-              v-if="recipe.instructions"
-              class="instructions-content"
-            >
-              {{ recipe.instructions }}
-            </div>
-
-            <p v-else>
-              Cooking instructions are unavailable.
-            </p>
-          </section>
-        </div>
-
-        <!-- EXTERNAL LINKS -->
-        <section class="paper-card links-card">
-          <div>
-            <h2>Want a little extra help?</h2>
-            <p>
-              Explore the original recipe or watch a cooking video.
-            </p>
-          </div>
-
-          <div class="link-buttons">
-            <a
-              v-if="recipe.sourceUrl?.startsWith('https://')"
-              :href="recipe.sourceUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="action-button"
-            >
-              Original Recipe ↗
-            </a>
-
-            <a
-              v-if="recipe.youtubeUrl?.startsWith('https://')"
-              :href="recipe.youtubeUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="action-button video-button"
-            >
-              Watch Video ▶
-            </a>
+            <span v-if="recipe.area" class="recipe-tag">
+              {{ recipe.area }} cuisine
+            </span>
 
             <span
-              v-if="
-                !recipe.sourceUrl?.startsWith('https://') &&
-                !recipe.youtubeUrl?.startsWith('https://')
-              "
-              class="muted-text"
+              v-for="tag in recipe.dietaryTags || []"
+              :key="tag"
+              class="recipe-tag"
             >
-              No external links available for this recipe.
+              {{ tag }}
             </span>
           </div>
+
+          <p v-if="recipe.prepTime" class="recipe-meta">
+            ⏱ {{ recipe.prepTime }} minutes
+          </p>
+
+          <p v-if="recipe.servings" class="recipe-meta">
+            🍽 {{ recipe.servings }} servings
+          </p>
+        </div>
+      </div>
+
+      <div class="recipe-content">
+        <section class="ingredients-panel">
+          <h2>🧺 Ingredients</h2>
+
+          <p class="section-description">
+            Everything you'll need for this recipe.
+          </p>
+
+          <ul v-if="recipe.ingredientDetails?.length">
+            <li
+              v-for="(ingredient, index) in recipe.ingredientDetails"
+              :key="index"
+            >
+              <span class="ingredient-name">
+                {{ ingredient.name }}
+              </span>
+
+              <span class="ingredient-amount">
+                {{ ingredient.amount || 'As needed' }}
+              </span>
+            </li>
+          </ul>
+
+          <p v-else>No ingredient information available.</p>
         </section>
 
-      </template>
-    </div>
+        <section class="instructions-panel">
+          <h2>👩‍🍳 Cooking Instructions</h2>
+
+          <p class="section-description">
+            Follow these steps to prepare your meal.
+          </p>
+
+          <ol v-if="recipe.instructions?.length">
+            <li
+              v-for="(instruction, index) in recipe.instructions"
+              :key="index"
+            >
+              <span class="step-number">{{ index + 1 }}</span>
+              <p>{{ instruction }}</p>
+            </li>
+          </ol>
+
+          <p v-else>No cooking instructions available.</p>
+        </section>
+      </div>
+
+      <div v-if="recipe.sourceUrl" class="recipe-footer">
+        <a
+          :href="recipe.sourceUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn btn-success"
+        >
+          View Original Recipe ↗
+        </a>
+      </div>
+    </article>
   </main>
 </template>
 
 <style scoped>
-.recipe-page {
-  min-height: 100vh;
-  background: transparent;
-  padding: 32px 20px 80px;
-  color: var(--ink);
-  font-family: inherit;
+.recipe-detail {
+  max-width: 1150px;
+  color: var(--ink, #123f3b);
 }
 
-.recipe-container {
-  max-width: 1120px;
-  margin: 0 auto;
-}
-
-.back-button {
-  border: 2px solid #194b39;
-  border-radius: 12px;
-  background: #fffdf5;
-  color: #194b39;
-  padding: 10px 20px;
-  font-weight: 700;
-  margin-bottom: 24px;
-  cursor: pointer;
-}
-
-.back-button:hover {
-  background: #e6f4e7;
-}
-
-.paper-card {
-  background: var(--paper);
-  border: 3px solid var(--ink);
-  border-radius: 24px;
-  box-shadow: var(--shadow-paper);
+.recipe-paper {
+  background: var(--paper, #fdfaf3);
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 6px 8px 0 var(--ink, #123f3b);
 }
 
 .recipe-hero {
   display: grid;
-  grid-template-columns: 1fr 0.9fr;
-  gap: 32px;
-  padding: 36px;
-  align-items: center;
-  margin-bottom: 32px;
+  grid-template-columns: 45% 55%;
+  border-bottom: 2px solid var(--ink, #123f3b);
+}
+
+.recipe-photo {
+  width: 100%;
+  height: 340px;
+  object-fit: cover;
+}
+
+.recipe-intro {
+  padding: 35px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .eyebrow {
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: bold;
   letter-spacing: 2px;
-  color: #119c91;
+  color: var(--aqua, #0fa89c);
+  margin-bottom: 12px;
 }
 
-.hero-text h1 {
-  font-family: var(--font-display);
-  font-size: clamp(32px, 4vw, 52px);
+.recipe-intro h1 {
+  font-family: var(--font-display, 'Kalam', cursive);
+  font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1.2;
-  margin: 20px 0;
-  font-weight: 800;
-} 
-
-.hero-description {
-  color: #64746b;
-  line-height: 1.7;
-  font-size: 16px;
-}
-
-.hero-image {
-  width: 100%;
-  height: 320px;
-  object-fit: cover;
-  border: 2px solid #194b39;
-  border-radius: 16px;
+  margin-bottom: 20px;
 }
 
 .recipe-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 24px;
+  gap: 9px;
+  margin-bottom: 15px;
 }
 
-.tag {
-  padding: 9px 16px;
-  border: 2px solid #194b39;
-  border-radius: 30px;
-  font-weight: 700;
-  font-size: 13px;
+.recipe-tag {
+  background: var(--aqua-soft, #d9f4ef);
+  border: 1px solid var(--ink, #123f3b);
+  border-radius: 20px;
+  padding: 6px 13px;
+  font-size: 14px;
 }
 
-.tag-coral {
-  background: #ffb8a7;
+.recipe-meta {
+  color: var(--muted, #557b77);
+  margin-bottom: 8px;
 }
 
-.tag-yellow {
-  background: #ffe5a3;
-}
-
-.recipe-grid {
+.recipe-content {
   display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
-  gap: 28px;
-  margin-bottom: 32px;
-  align-items: start;
+  grid-template-columns: 36% 64%;
 }
 
-.ingredients-card,
-.instructions-card {
+.ingredients-panel,
+.instructions-panel {
   padding: 30px;
 }
 
-.section-heading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.ingredients-panel {
+  background: var(--aqua-soft, #d9f4ef);
+  border-right: 2px solid var(--ink, #123f3b);
 }
 
-.section-icon {
-  font-size: 28px;
+.recipe-content h2 {
+  font-family: var(--font-display, 'Kalam', cursive);
+  font-size: 1.8rem;
+  margin-bottom: 10px;
 }
 
-.section-heading h2,
-.links-card h2 {
-  font-family: var(--font-display); 
-  font-size: 28px;
-  margin: 0;
-  font-weight: 800;
+.section-description {
+  color: var(--muted, #557b77);
+  font-size: 14px;
+  margin-bottom: 22px;
 }
 
-.section-subtitle {
-  color: #64746b;
-  margin: 12px 0 24px;
-}
-
-.ingredient-list {
+.ingredients-panel ul {
+  list-style: none;
   padding: 0;
   margin: 0;
-  list-style: none;
 }
 
-.ingredient-list li {
+.ingredients-panel li {
   display: flex;
+  justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 14px 0;
-  border-bottom: 1px dashed #b5c9b8;
-  line-height: 1.5;
+  padding: 13px 0;
+  border-bottom: 1px dashed #9bcac5;
 }
 
-.ingredient-list li:last-child {
-  border-bottom: none;
+.ingredient-name {
+  font-weight: 600;
 }
 
-.ingredient-dot {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #d8f2df;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.ingredient-amount {
+  color: var(--muted, #557b77);
+  text-align: right;
+  font-size: 14px;
+}
+
+.instructions-panel ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.instructions-panel li {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  margin-bottom: 22px;
+}
+
+.step-number {
   flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.instructions-content {
-  white-space: pre-line;
-  line-height: 2;
-  color: #334e42;
-}
-
-.links-card {
-  padding: 30px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--yellow, #ffdd69);
+  border: 2px solid var(--ink, #123f3b);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.links-card p {
-  margin: 10px 0 0;
-  color: #64746b;
-}
-
-.link-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.action-button {
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  padding: 13px 26px;
-  border: 2px solid var(--ink);
-  border-radius: 14px 11px 16px 10px;
-  background: var(--aqua);
-  color: white;
-  font-size: 17px;
-  font-weight: 800;
-  box-shadow: var(--shadow-small);
-  transition: transform 150ms ease, box-shadow 150ms ease;
-  cursor: pointer;
-  text-decoration: none;
+  font-weight: bold;
 }
 
-.action-button:hover:not(:disabled) {
-  box-shadow: 1px 2px 0 var(--ink);
-  transform: translate(2px, 2px);
-  background: #0d968b;
-  color: white;
+.instructions-panel li p {
+  margin: 4px 0 0;
+  line-height: 1.7;
+  white-space: pre-line;
 }
 
-.video-button {
-  background: #ffb8a7;
-  color: #194b39;
-}
-
-.video-button:hover {
-  background: #ff9f89;
-  color: #194b39;
-}
-
-.status-card {
-  padding: 50px;
-  text-align: center;
-}
-
-.muted-text {
-  color: #64746b;
+.recipe-footer {
+  padding: 24px 30px;
+  border-top: 2px solid var(--ink, #123f3b);
+  text-align: right;
 }
 
 @media (max-width: 768px) {
   .recipe-hero,
-  .recipe-grid {
+  .recipe-content {
     grid-template-columns: 1fr;
   }
 
-  .recipe-hero {
-    padding: 24px;
-  }
-
-  .hero-image {
+  .recipe-photo {
     height: 250px;
   }
 
-  .links-card {
-    flex-direction: column;
-    align-items: flex-start;
+  .recipe-intro,
+  .ingredients-panel,
+  .instructions-panel {
+    padding: 22px;
   }
-}
 
-/* Full Circle typography */
-.recipe-page,
-.freshness-page {
-  font-family: var(--font-sans);
-  font-size: 18px;
-}
-
-.recipe-page h1,
-.recipe-page h2,
-.recipe-page h3,
-.freshness-page h1,
-.freshness-page h2,
-.freshness-page h3 {
-  font-family: var(--font-display);
-}
-
-.recipe-page button,
-.recipe-page input,
-.freshness-page button,
-.freshness-page input {
-  font-family: var(--font-sans);
+  .ingredients-panel {
+    border-right: 0;
+    border-bottom: 2px solid var(--ink, #123f3b);
+  }
 }
 </style>
