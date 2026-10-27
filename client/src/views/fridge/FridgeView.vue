@@ -221,6 +221,23 @@ function countItems(storage) {
     return items.value.filter(item => item.storage === storage).length
 }
 
+// Smoothly jump from a summary card to its matching storage compartment.
+function scrollToCompartment(areaId) {
+    const target = document.getElementById(`storage-area-${areaId}`)
+
+    if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+}
+
+// Let keyboard users activate summary cards with Enter or Space too.
+function handleSummaryCardKeydown(event, areaId) {
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        scrollToCompartment(areaId)
+    }
+}
+
 // Vue updates this number whenever the inventory changes.
 const totalItems = computed(() => items.value.length)
 
@@ -359,7 +376,7 @@ async function removeItem(item) {
 
 // Consume or discard some or all of an item's quantity.
 // Partial changes use PATCH; removing the entire item uses DELETE.
-async function changeFoodQuantity(item, action, onAnimationSuccess) {
+async function changeFoodQuantity(item, action) {
     const actionLabel = action === 'consume' ? 'consume' : 'discard'
 
     const input = window.prompt(
@@ -385,8 +402,7 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
         return
     }
 
-    const originalQuantity = Number(item.quantity)
-    const remainingQuantity = originalQuantity - amount
+    const remainingQuantity = Number(item.quantity) - amount
 
     // Confirm before discarding food.
     if (action === 'discard') {
@@ -462,18 +478,6 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
                 ? `${item.name} ${action === 'consume' ? 'consumed' : 'discarded'} completely.`
                 : `${amount} ${item.unit} of ${item.name} ${action === 'consume' ? 'consumed' : 'discarded'}. ${remainingQuantity} remain.`
 
-        // Play the card animation only after the server update succeeds.
-        // If the user cancels, validation fails, or the request fails,
-        // this callback is never reached.
-        if (typeof onAnimationSuccess === 'function') {
-            onAnimationSuccess({
-                amount,
-                originalQuantity,
-                remainingQuantity,
-                proportion: amount / originalQuantity
-            })
-        }
-
     } catch (error) {
         console.error(`Failed to ${actionLabel} food:`, error)
         errorMessage.value = error.message ||
@@ -481,12 +485,12 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
     }
 }
 
-function consumeItem(item, onAnimationSuccess) {
-    return changeFoodQuantity(item, 'consume', onAnimationSuccess)
+function consumeItem(item) {
+    return changeFoodQuantity(item, 'consume')
 }
 
-function discardItem(item, onAnimationSuccess) {
-    return changeFoodQuantity(item, 'discard', onAnimationSuccess)
+function discardItem(item) {
+    return changeFoodQuantity(item, 'discard')
 }
 
 
@@ -656,7 +660,14 @@ function getRecommendation(item) {
 
         <section class="summary-grid">
 
-            <article class="summary-card">
+            <article
+                class="summary-card summary-card-clickable"
+                role="button"
+                tabindex="0"
+                aria-label="Jump to Main Fridge compartment"
+                @click="scrollToCompartment('fridge')"
+                @keydown="handleSummaryCardKeydown($event, 'fridge')"
+            >
                 <span class="summary-icon">🧊</span>
 
                 <div>
@@ -666,7 +677,14 @@ function getRecommendation(item) {
                 </div>
             </article>
 
-            <article class="summary-card">
+            <article
+                class="summary-card summary-card-clickable"
+                role="button"
+                tabindex="0"
+                aria-label="Jump to Freezer compartment"
+                @click="scrollToCompartment('freezer')"
+                @keydown="handleSummaryCardKeydown($event, 'freezer')"
+            >
                 <span class="summary-icon">❄️</span>
 
                 <div>
@@ -676,7 +694,14 @@ function getRecommendation(item) {
                 </div>
             </article>
 
-            <article class="summary-card">
+            <article
+                class="summary-card summary-card-clickable"
+                role="button"
+                tabindex="0"
+                aria-label="Jump to Pantry compartment"
+                @click="scrollToCompartment('pantry')"
+                @keydown="handleSummaryCardKeydown($event, 'pantry')"
+            >
                 <span class="summary-icon">🥫</span>
 
                 <div>
@@ -743,6 +768,7 @@ function getRecommendation(item) {
                 <section
                     v-for="area in storageAreas"
                     :key="area.id"
+                    :id="`storage-area-${area.id}`"
                     class="storage-area"
                     :class="`area-${area.id}`"
                     @dragover.prevent
@@ -1189,6 +1215,21 @@ function getRecommendation(item) {
 .summary-card:hover {
     transform: translateY(-3px);
     box-shadow: 3px 7px 0 var(--ink);
+}
+
+/* Summary cards for real compartments act as jump links. */
+.summary-card-clickable {
+    cursor: pointer;
+}
+
+.summary-card-clickable:focus-visible {
+    outline: 3px solid var(--primary-dark);
+    outline-offset: 4px;
+}
+
+/* Leave breathing room when scrolling a compartment into view. */
+.storage-area {
+    scroll-margin-top: 24px;
 }
 
 .summary-icon {
