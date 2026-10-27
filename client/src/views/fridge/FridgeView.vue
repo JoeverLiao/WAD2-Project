@@ -376,7 +376,7 @@ async function removeItem(item) {
 
 // Consume or discard some or all of an item's quantity.
 // Partial changes use PATCH; removing the entire item uses DELETE.
-async function changeFoodQuantity(item, action) {
+async function changeFoodQuantity(item, action, onAnimationSuccess) {
     const actionLabel = action === 'consume' ? 'consume' : 'discard'
 
     const input = window.prompt(
@@ -477,6 +477,15 @@ async function changeFoodQuantity(item, action) {
             remainingQuantity === 0
                 ? `${item.name} ${action === 'consume' ? 'consumed' : 'discarded'} completely.`
                 : `${amount} ${item.unit} of ${item.name} ${action === 'consume' ? 'consumed' : 'discarded'}. ${remainingQuantity} remain.`
+        // Start the animation only after the backend update succeeds.
+        if (typeof onAnimationSuccess === 'function') {
+            onAnimationSuccess({
+                amount,
+                originalQuantity: Number(item.quantity),
+                remainingQuantity,
+                proportion: amount / Number(item.quantity)
+            })
+        }
 
     } catch (error) {
         console.error(`Failed to ${actionLabel} food:`, error)
@@ -485,12 +494,12 @@ async function changeFoodQuantity(item, action) {
     }
 }
 
-function consumeItem(item) {
-    return changeFoodQuantity(item, 'consume')
+function consumeItem(item, onAnimationSuccess) {
+    return changeFoodQuantity(item, 'consume', onAnimationSuccess)
 }
 
-function discardItem(item) {
-    return changeFoodQuantity(item, 'discard')
+function discardItem(item, onAnimationSuccess) {
+    return changeFoodQuantity(item, 'discard', onAnimationSuccess)
 }
 
 
