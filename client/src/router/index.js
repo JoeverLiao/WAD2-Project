@@ -9,6 +9,7 @@ export const routes = [
     component: () => import('../views/HomeView.vue'),
     meta: { navLabel: 'Home', public: true },
   },
+  
   {
     path: '/dashboard',
     name: 'dashboard',

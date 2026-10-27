@@ -1,947 +1,1203 @@
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { sampleInventory } from '../../data/freshnessDemo.js'
-import {
-  getDaysRemaining,
-  getExpiryStatus,
-  getExpiryLabel,
-} from '../../utils/expiryUtils.js'
 
 const router = useRouter()
 
-// Temporary demo inventory until MongoDB API is ready.
+const USE_API = true
+const API = 'http://localhost:3000'
+
 const inventory = ref(sampleInventory)
-
 const recipes = ref([])
-const recipesLoading = ref(false)
-const recipesError = ref('')
-const ingredientSearch = ref('')
+const loading = ref(false)
+const error = ref('')
 
-const inventoryWithExpiry = computed(() =>
+const tab = ref('mine')
+const inventorySearch = ref('')
+const statusFilter = ref('all')
+const recipeSearch = ref('')
+const maxTime = ref('')
+const diet = ref('')
+
+function readSaved() {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem('fullcircle-saved-recipes') || '[]'
+    )
+    return Array.isArray(value) ? value.map(String) : []
+  } catch {
+    return []
+  }
+}
+
+const savedIds = ref(readSaved())
+
+function isSaved(id) {
+  return savedIds.value.includes(String(id))
+}
+
+function toggleSave(id) {
+  const key = String(id)
+
+  savedIds.value = isSaved(key)
+    ? savedIds.value.filter(x => x !== key)
+    : [...savedIds.value, key]
+
+  localStorage.setItem(
+    'fullcircle-saved-recipes',
+    JSON.stringify(savedIds.value)
+  )
+}
+
+function daysLeft(dateString) {
+  if (!dateString) return null
+
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return null
+
+  const now = new Date()
+
+  const todayUTC = Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  )
+
+  const expiryUTC = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate()
+  )
+
+  return Math.round((expiryUTC - todayUTC) / 86400000)
+}
+
+const inventoryItems = computed(() =>
   inventory.value.map(item => {
-    const daysRemaining = getDaysRemaining(item.expiresAt)
+    const days = daysLeft(item.expiresAt)
+
+    const status =
+      days === null ? 'unknown' :
+      days < 0 ? 'expired' :
+      days <= 3 ? 'soon' : 'fresh'
+
+    const label =
+      days === null ? 'Unknown' :
+      days < 0 ? `Expired ${-days}d ago` :
+      days === 0 ? 'Expires today' :
+      days === 1 ? 'Tomorrow' :
+      `${days} days left`
+
+    return { ...item, days, status, label }
+  })
+)
+
+const usableItems = computed(() =>
+  inventoryItems.value.filter(item =>
+    Number(item.quantity) > 0 &&
+    item.days !== null &&
+    item.days >= 0
+  )
+)
+
+const usableNames = computed(() =>
+  usableItems.value.map(item => item.name.toLowerCase())
+)
+
+const stats = computed(() => ({
+  total: inventoryItems.value.length,
+  fresh: inventoryItems.value.filter(i => i.status === 'fresh').length,
+  soon: inventoryItems.value.filter(i => i.status === 'soon').length,
+  expired: inventoryItems.value.filter(i => i.status === 'expired').length,
+}))
+
+const filteredInventory = computed(() =>
+  inventoryItems.value.filter(item =>
+    item.name.toLowerCase().includes(
+      inventorySearch.value.toLowerCase()
+    ) &&
+    (
+      statusFilter.value === 'all' ||
+      item.status === statusFilter.value
+    )
+  )
+)
+
+const eatSoon = computed(() =>
+  inventoryItems.value
+    .filter(item => item.days !== null && item.days <= 3)
+    .sort((a, b) => a.days - b.days)
+)
+
+function ingredientMatch(name) {
+  const key = name.toLowerCase().trim()
+
+  return usableNames.value.some(owned =>
+    owned === key ||
+    key.includes(owned) ||
+    owned.includes(key)
+  )
+}
+
+const preparedRecipes = computed(() =>
+  recipes.value.map(recipe => {
+    const ingredients = Array.isArray(recipe.ingredients)
+      ? recipe.ingredients
+      : []
+
+    const matched = ingredients.filter(ingredientMatch)
+    const missing = ingredients.filter(
+      name => !ingredientMatch(name)
+    )
+
+    const matchPercentage = ingredients.length
+      ? Math.round(100 * matched.length / ingredients.length)
+      : 0
+
+    const rescueCount = matched.filter(name =>
+      usableItems.value.some(item =>
+        item.days >= 0 &&
+        item.days <= 3 &&
+        (
+          item.name.toLowerCase() === name.toLowerCase() ||
+          name.toLowerCase().includes(item.name.toLowerCase())
+        )
+      )
+    ).length
 
     return {
-      ...item,
-      daysRemaining,
-      status: getExpiryStatus(daysRemaining),
-      expiryLabel: getExpiryLabel(daysRemaining),
+      ...recipe,
+      matched,
+      missing,
+      matchPercentage,
+      rescueCount,
     }
   })
 )
 
-const eatSoonItems = computed(() =>
-  inventoryWithExpiry.value
-    .filter(item =>
-      item.daysRemaining !== null &&
-      item.daysRemaining >= 0 &&
-      item.daysRemaining <= 3 &&
-      Number(item.quantity) > 0
-    )
-    .sort((a, b) => a.daysRemaining - b.daysRemaining)
-)
+const visibleRecipes = computed(() =>
+  preparedRecipes.value
+    .filter(recipe => {
+      if (tab.value === 'saved' && !isSaved(recipe.id)) {
+        return false
+      }
 
-const expiredItems = computed(() =>
-  inventoryWithExpiry.value.filter(item =>
-    item.daysRemaining !== null &&
-    item.daysRemaining < 0 &&
-    Number(item.quantity) > 0
-  )
-)
+      const searchText = (
+        recipe.name + ' ' + recipe.ingredients.join(' ')
+      ).toLowerCase()
 
-const availableIngredients = computed(() =>
-  [
-    ...new Set(
-      inventoryWithExpiry.value
-        .filter(item =>
-          Number(item.quantity) > 0 &&
-          (item.daysRemaining === null || item.daysRemaining >= 0)
+      if (
+        recipeSearch.value &&
+        !searchText.includes(recipeSearch.value.toLowerCase())
+      ) {
+        return false
+      }
+
+      if (
+        maxTime.value &&
+        (
+          recipe.prepTime == null ||
+          recipe.prepTime > Number(maxTime.value)
         )
-        .map(item => String(item.name || '').trim().toLowerCase())
-        .filter(Boolean)
-    ),
-  ]
-)
+      ) {
+        return false
+      }
 
-const recommendedRecipes = computed(() =>
-  [...recipes.value].sort(
-    (a, b) =>
-      b.matchPercentage - a.matchPercentage ||
-      a.missingIngredients.length - b.missingIngredients.length
-  )
-)
+      if (
+        diet.value &&
+        !(recipe.dietaryTags || []).includes(diet.value)
+      ) {
+        return false
+      }
 
-const displayedRecipes = computed(() => {
-  const search = ingredientSearch.value.trim().toLowerCase()
-
-  if (!search) return recommendedRecipes.value
-
-  return recommendedRecipes.value.filter(recipe =>
-    [
-      recipe.title,
-      ...recipe.matchedIngredients,
-      ...recipe.missingIngredients,
-    ].some(value => String(value).toLowerCase().includes(search))
-  )
-})
-
-function expiryClass(days) {
-  if (days === null) return 'expiry-neutral'
-  if (days < 0) return 'expiry-expired'
-  if (days <= 1) return 'expiry-urgent'
-  if (days <= 3) return 'expiry-soon'
-  return 'expiry-fresh'
-}
-
-function expiryHeading(days) {
-  if (days === 0) return 'TODAY'
-  if (days === 1) return 'TOMORROW'
-  return `IN ${days} DAYS`
-}
-
-async function loadRecipes() {
-  recipesLoading.value = true
-  recipesError.value = ''
-
-  try {
-    if (!availableIngredients.value.length) {
-      recipes.value = []
-      return
-    }
-
-    const params = new URLSearchParams({
-      ingredients: availableIngredients.value.join(','),
+      return true
     })
-
-    const response = await fetch(
-      `/api/freshness/recipes?${params.toString()}`,
-      { credentials: 'include' }
+    .sort((a, b) =>
+      tab.value === 'mine'
+        ? b.rescueCount - a.rescueCount ||
+          b.matchPercentage - a.matchPercentage
+        : 0
     )
-
-    if (!response.ok) {
-      throw new Error(`Recipe request failed (${response.status})`)
-    }
-
-    const data = await response.json()
-
-    if (!Array.isArray(data)) {
-      throw new Error('Unexpected recipe response')
-    }
-
-    recipes.value = data.map(recipe => ({
-      ...recipe,
-      name: recipe.title,
-      matchedIngredients: (recipe.usedIngredients || [])
-        .map(item => item.name),
-      missingIngredients: (recipe.missedIngredients || [])
-        .map(item => item.name),
-      matchPercentage: Number(recipe.matchPercentage) || 0,
-    }))
-  } catch (error) {
-    console.error('Recipe loading error:', error)
-    recipesError.value = error.message
-    recipes.value = []
-  } finally {
-    recipesLoading.value = false
-  }
-}
+)
 
 function openRecipe(recipe) {
   router.push({
     name: 'recipe-detail',
-    params: { id: recipe.id },
+    params: { id: String(recipe.id) },
   })
 }
 
 function clearFilters() {
-  ingredientSearch.value = ''
+  recipeSearch.value = ''
+  maxTime.value = ''
+  diet.value = ''
 }
 
-onMounted(loadRecipes)
+async function loadRecipes() {
+  if (!USE_API) return
+
+  loading.value = true
+  error.value = ''
+
+  try {
+    const ingredients = [...new Set(usableNames.value)]
+      .slice(0, 8)
+      .join(',')
+
+    const endpoint = tab.value === 'mine'
+      ? `/api/freshness/recipes?ingredients=${encodeURIComponent(ingredients)}`
+      : `/api/freshness/recipes/explore?search=${encodeURIComponent(recipeSearch.value)}`
+
+    const response = await fetch(`${API}${endpoint}`, {
+      credentials: 'include',
+    })
+
+    if (!response.ok) {
+      throw new Error(`Recipes HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    recipes.value = Array.isArray(data) ? data : []
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+// async function loadApi() {
+//   if (!USE_API) return
+
+//   loading.value = true
+//   error.value = ''
+
+//   try {
+//     const response = await fetch(`${API}/api/inventory`, {
+//       credentials: 'include',
+//     })
+
+//     if (!response.ok) {
+//       throw new Error(`Inventory HTTP ${response.status}`)
+//     }
+
+//     const data = await response.json()
+
+//     inventory.value = Array.isArray(data)
+//       ? data
+//       : data.items || data.inventory || []
+
+//     await loadRecipes()
+//   } catch (err) {
+//     error.value = err.message
+//   } finally {
+//     loading.value = false
+//   }
+// }
+
+
+async function loadApi() {
+  if (!USE_API) return
+
+  // Temporarily use demo inventory.
+  // Recipe data will come from the real API.
+  inventory.value = sampleInventory
+
+  await loadRecipes()
+}
+
+watch(tab, () => {
+  if (USE_API && tab.value !== 'saved') loadRecipes()
+})
+
+let searchTimer
+
+watch(recipeSearch, () => {
+  if (!USE_API || tab.value !== 'explore') return
+
+  clearTimeout(searchTimer)
+
+  searchTimer = setTimeout(() => {
+    loadRecipes()
+  }, 400)
+})
+
+
+onMounted(loadApi)
 </script>
 
 <template>
-  <main class="freshness-page">
-    <div class="page-container">
+  <main class="freshness-page container py-4">
 
-      <!-- HERO -->
-      <section class="hero-card paper-card">
-        <div>
-          <span class="eyebrow">✿ THE FULL CIRCLE FOOD JOURNAL</span>
+    <!-- HEADER -->
+    <header class="paper hero mb-4">
+      <div>
+        <p class="eyebrow">
+          FULL CIRCLE · YOUR KITCHEN COMPANION
+        </p>
 
-          <h1>Fresh today,<br />delicious tomorrow!</h1>
+        <h1>Freshness & Recipes ✿</h1>
 
-          <p class="hero-description">
-            Keep track of your groceries, use them before they expire,
-            and turn what you have into something wonderful.
-          </p>
-
-          <a href="#recipes" class="action-button">
-            Explore Recipes ↓
-          </a>
-        </div>
-
-        <div class="hero-decoration" aria-hidden="true">
-          <span>🥬</span>
-          <span>🍅</span>
-          <span>🥕</span>
-          <span>🍋</span>
-        </div>
-      </section>
-
-      <!-- SUMMARY -->
-      <div class="summary-grid">
-        <div class="summary-card">
-          <span class="summary-icon">🧺</span>
-          <div>
-            <strong>{{ inventoryWithExpiry.length }}</strong>
-            <span>Inventory Items</span>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <span class="summary-icon">⏰</span>
-          <div>
-            <strong>{{ eatSoonItems.length }}</strong>
-            <span>Eat Soon</span>
-          </div>
-        </div>
-
-        <div class="summary-card">
-          <span class="summary-icon">🍳</span>
-          <div>
-            <strong>{{ recipes.length }}</strong>
-            <span>Recipe Ideas</span>
-          </div>
-        </div>
+        <p class="mb-0">
+          Less food waste, more delicious ideas.
+          Let's use what you've got!
+        </p>
       </div>
 
-      <!-- INVENTORY -->
-      <section class="paper-card section-card">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">YOUR KITCHEN</span>
-            <h2>What's in your fridge?</h2>
-          </div>
-          <span class="section-emoji">🥑</span>
+      <span class="hero-doodle" aria-hidden="true">🥬</span>
+    </header>
+
+    <div v-if="!USE_API" class="demo-note mb-4">
+      ✎ UI preview mode · Using fresh demo ingredients and recipes
+    </div>
+
+    <div v-if="error" class="alert alert-danger">
+      {{ error }}
+    </div>
+
+    <!-- SUMMARY -->
+    <section class="mb-5">
+      <div class="stats-grid">
+        <div class="stat paper stat-total">
+          <span>📦 Total food</span>
+          <strong>{{ stats.total }}</strong>
         </div>
 
-        <p class="section-description">
-          A little overview of everything you have at home.
-        </p>
-
-        <div v-if="inventoryWithExpiry.length" class="table-wrap">
-          <table class="inventory-table">
-            <thead>
-              <tr>
-                <th>Ingredient</th>
-                <th>Quantity</th>
-                <th>Storage</th>
-                <th>Freshness</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr
-                v-for="(item, index) in inventoryWithExpiry"
-                :key="item._id || item.id || index"
-              >
-                <td class="ingredient-name">
-                  {{ item.name }}
-                </td>
-
-                <td>
-                  {{ item.quantity }}
-                  {{ item.unit || '' }}
-                </td>
-
-                <td class="storage-cell">
-                  {{ item.storage || 'Not specified' }}
-                </td>
-
-                <td>
-                  <span
-                    class="expiry-badge"
-                    :class="expiryClass(item.daysRemaining)"
-                  >
-                    {{ item.expiryLabel }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="stat paper stat-fresh">
+          <span>🌱 Fresh</span>
+          <strong>{{ stats.fresh }}</strong>
         </div>
 
-        <p v-else class="empty-message">
-          Your inventory is empty.
-        </p>
-      </section>
-
-      <!-- EAT SOON -->
-      <section class="paper-card section-card eat-soon-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">DON'T LET GOOD FOOD GO TO WASTE</span>
-            <h2>Eat Soon! ⏰</h2>
-          </div>
-          <span class="section-emoji">🥦</span>
+        <div class="stat paper stat-soon">
+          <span>⏰ Eat soon</span>
+          <strong>{{ stats.soon }}</strong>
         </div>
 
-        <p class="section-description">
-          These ingredients are approaching their expiry dates.
-          Give them a little extra love!
-        </p>
+        <div class="stat paper stat-expired">
+          <span>⚠ Expired</span>
+          <strong>{{ stats.expired }}</strong>
+        </div>
+      </div>
+    </section>
 
-        <div v-if="eatSoonItems.length" class="timeline">
+    <!-- INVENTORY -->
+    <section id="inventory" class="paper section-card mb-5">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">WHAT'S IN YOUR KITCHEN?</p>
+          <h2>My Food Inventory</h2>
+        </div>
+
+        <span class="sticker">Keep it fresh!</span>
+      </div>
+
+      <div class="toolbar mb-3">
+        <input
+          v-model="inventorySearch"
+          class="hand-input"
+          placeholder="🔎 Search your food..."
+          aria-label="Search inventory"
+        />
+
+        <select
+          v-model="statusFilter"
+          class="hand-input"
+          aria-label="Filter inventory by freshness"
+        >
+          <option value="all">All items</option>
+          <option value="fresh">Fresh</option>
+          <option value="soon">Eat soon</option>
+          <option value="expired">Expired</option>
+          <option value="unknown">Unknown expiry</option>
+        </select>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table inventory-table align-middle">
+          <thead>
+            <tr>
+              <th>Food</th>
+              <th>Quantity</th>
+              <th>Storage</th>
+              <th>Freshness</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr
+              v-for="item in filteredInventory"
+              :key="item._id || item.id"
+            >
+              <td class="food-name">{{ item.name }}</td>
+              <td>{{ item.quantity }} {{ item.unit }}</td>
+              <td class="text-capitalize">{{ item.storage }}</td>
+              <td>
+                <span
+                  class="status-tag"
+                  :class="`status-${item.status}`"
+                >
+                  {{ item.label }}
+                </span>
+              </td>
+            </tr>
+
+            <tr v-if="filteredInventory.length === 0">
+              <td colspan="4" class="text-center py-4">
+                No food matches your filters.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- EAT SOON -->
+    <section id="eat-soon" class="paper section-card mb-5">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">DON'T LET IT GO TO WASTE</p>
+          <h2>Eat Soon Timeline ⏳</h2>
+        </div>
+
+        <span class="sticker coral">Use me first!</span>
+      </div>
+
+      <p class="section-subtitle">
+        Ingredients expiring in the next three days,
+        plus anything already expired.
+      </p>
+
+      <p v-if="!eatSoon.length" class="empty-state">
+        🎉 Nothing expiring soon!
+      </p>
+
+      <TransitionGroup
+        v-else
+        name="pop"
+        tag="div"
+        class="timeline"
+      >
+        <div
+          v-for="item in eatSoon"
+          :key="item._id || item.id"
+          class="timeline-item"
+        >
+          <span
+            class="timeline-dot"
+            :class="item.status"
+          ></span>
+
           <div
-            v-for="(item, index) in eatSoonItems"
-            :key="item._id || item.id || index"
-            class="timeline-item"
+            class="timeline-note"
+            :class="{ overdue: item.status === 'expired' }"
           >
-            <div
-              class="timeline-marker"
-              :class="expiryClass(item.daysRemaining)"
-            ></div>
-
-            <div class="timeline-content">
-              <div>
-                <strong>{{ item.name }}</strong>
-                <p>
-                  {{ item.quantity }} {{ item.unit || '' }}
-                  · {{ item.storage || 'Storage unknown' }}
-                </p>
-              </div>
-
-              <span
-                class="timeline-label"
-                :class="expiryClass(item.daysRemaining)"
-              >
-                {{ expiryHeading(item.daysRemaining) }}
-              </span>
+            <div>
+              <strong>{{ item.name }}</strong>
+              <small>
+                {{ item.quantity }} {{ item.unit }}
+                · {{ item.storage }}
+              </small>
             </div>
+
+            <span
+              class="status-tag"
+              :class="`status-${item.status}`"
+            >
+              {{ item.label }}
+            </span>
           </div>
         </div>
+      </TransitionGroup>
+    </section>
 
-        <div v-else class="empty-message">
-          Nothing needs urgent attention right now!
+    <!-- RECIPES -->
+    <section id="recipes" class="paper section-card mb-5">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">COOK SOMETHING GOOD</p>
+          <h2>Recipe Discovery 🍳</h2>
         </div>
 
-        <p v-if="expiredItems.length" class="expired-note">
-          ⚠ {{ expiredItems.length }} item(s) have passed their
-          recorded expiry dates and are excluded from recipe matching.
-          Check them before deciding whether to use or discard them.
-        </p>
-      </section>
+        <span class="sticker lime">Let's cook!</span>
+      </div>
 
-      <!-- RECIPES -->
-      <section id="recipes" class="paper-card section-card">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">MADE WITH WHAT YOU HAVE</span>
-            <h2>What can we cook? 🍳</h2>
-          </div>
-        </div>
-
-        <p class="section-description">
-          Discover recipes using ingredients already in your kitchen.
-          Recommendations are powered by TheMealDB.
-        </p>
-
-        <!-- FILTER -->
-        <div class="filter-bar">
-          <div class="filter-input-group">
-            <label for="ingredient-search">
-              Search by recipe or ingredient
-            </label>
-
-            <input
-              id="ingredient-search"
-              v-model="ingredientSearch"
-              type="text"
-              placeholder="Try chicken, egg, rice..."
-              class="filter-input"
-            />
-          </div>
-
-          <button
-            type="button"
-            class="clear-button"
-            @click="clearFilters"
-          >
-            Clear Filters
-          </button>
-        </div>
-
-        <!-- LOADING -->
-        <div v-if="recipesLoading" class="status-message">
-          <div class="spinner-border text-success mb-3"></div>
-          <p>Finding delicious recipes for you...</p>
-        </div>
-
-        <!-- ERROR -->
-        <div v-else-if="recipesError" class="status-message">
-          <h3>Oops! We couldn't load recipes.</h3>
-          <p>{{ recipesError }}</p>
-
-          <button
-            type="button"
-            class="action-button"
-            @click="loadRecipes"
-          >
-            Try Again
-          </button>
-        </div>
-
-        <!-- NO INVENTORY -->
-        <div
-          v-else-if="!availableIngredients.length"
-          class="status-message"
+      <div class="recipe-tabs" role="group" aria-label="Recipe modes">
+        <button
+          type="button"
+          :class="{ active: tab === 'mine' }"
+          :aria-pressed="tab === 'mine'"
+          @click="tab = 'mine'"
         >
-          <h3>No available ingredients yet</h3>
-          <p>
-            Add some non-expired groceries to your inventory
-            to discover recipe recommendations.
-          </p>
-        </div>
+          🧺 My Ingredients
+        </button>
 
-        <!-- NO MATCHES -->
-        <div
-          v-else-if="!displayedRecipes.length"
-          class="status-message"
+        <button
+          type="button"
+          :class="{ active: tab === 'explore' }"
+          :aria-pressed="tab === 'explore'"
+          @click="tab = 'explore'"
         >
-          <h3>No recipes found</h3>
-          <p>
-            Try a different search or check your inventory ingredients.
-          </p>
-        </div>
+          ✨ Explore
+        </button>
 
-        <!-- RECIPE GRID -->
-        <div v-else class="recipe-grid">
-          <article
-            v-for="recipe in displayedRecipes"
-            :key="recipe.id"
-            class="recipe-card"
-          >
+        <button
+          type="button"
+          :class="{ active: tab === 'saved' }"
+          :aria-pressed="tab === 'saved'"
+          @click="tab = 'saved'"
+        >
+          ♥ Saved ({{ savedIds.length }})
+        </button>
+      </div>
+
+      <p class="section-subtitle mt-3">
+        <template v-if="tab === 'mine'">
+          Recipes ranked by ingredients you have,
+          prioritising food that expires soon.
+        </template>
+
+        <template v-else-if="tab === 'explore'">
+          Discover recipes beyond your current inventory.
+        </template>
+
+        <template v-else>
+          Your bookmarked recipes, saved in this browser.
+        </template>
+      </p>
+
+      <div class="toolbar mb-4">
+        <input
+          v-model="recipeSearch"
+          class="hand-input"
+          placeholder="🔎 Search recipe or ingredient..."
+          aria-label="Search recipes"
+        />
+
+        <select
+          v-model="maxTime"
+          class="hand-input"
+          aria-label="Maximum cooking time"
+        >
+          <option value="">Any time</option>
+          <option value="10">10 min</option>
+          <option value="20">20 min</option>
+          <option value="30">30 min</option>
+        </select>
+
+        <select
+          v-model="diet"
+          class="hand-input"
+          aria-label="Dietary preference"
+        >
+          <option value="">All diets</option>
+          <option value="Vegetarian">Vegetarian</option>
+          <option value="Vegan">Vegan</option>
+        </select>
+
+        <button
+          type="button"
+          class="hand-button secondary"
+          @click="clearFilters"
+        >
+          Clear
+        </button>
+      </div>
+
+      <p v-if="loading">Finding recipes...</p>
+
+      <p
+        v-if="!loading && !visibleRecipes.length"
+        class="empty-state"
+      >
+        No recipes here yet. Try another tab or clear the filters!
+      </p>
+
+      <TransitionGroup name="pop" tag="div" class="recipe-grid">
+        <article
+          v-for="recipe in visibleRecipes"
+          :key="recipe.id"
+          class="recipe-card"
+          tabindex="0"
+          role="button"
+          :aria-label="`Open ${recipe.name} recipe`"
+          @click="openRecipe(recipe)"
+          @keydown.enter="openRecipe(recipe)"
+          @keydown.space.prevent="openRecipe(recipe)"
+        >
+          <div class="recipe-visual">
             <img
               v-if="recipe.image"
               :src="recipe.image"
-              :alt="recipe.title"
-              class="recipe-image"
+              :alt="recipe.name"
+              loading="lazy"
             />
 
-            <div class="recipe-content">
-              <span class="match-badge">
-                {{ recipe.matchPercentage }}% INGREDIENT MATCH
+            <span v-else aria-hidden="true">🍽️</span>
+
+            <span
+              v-if="recipe.rescueCount && tab === 'mine'"
+              class="rescue-stamp"
+            >
+              ♻ Rescue pick
+            </span>
+          </div>
+
+          <div class="recipe-content">
+            <h3>{{ recipe.name }}</h3>
+
+            <p class="recipe-meta">
+              <span v-if="recipe.prepTime">
+                ⏱ {{ recipe.prepTime }} min
               </span>
 
-              <h3>{{ recipe.title }}</h3>
+              <span
+                v-for="tag in recipe.dietaryTags || []"
+                :key="tag"
+                class="diet-pill"
+              >
+                {{ tag }}
+              </span>
+            </p>
 
-              <p class="recipe-category">
-                {{ recipe.category || 'Recipe Idea' }}
-                <span v-if="recipe.area">
-                  · {{ recipe.area }}
-                </span>
-              </p>
+            <div class="match-line">
+              <span>Ingredient match</span>
+              <strong>{{ recipe.matchPercentage }}%</strong>
+            </div>
 
-              <div class="ingredient-info">
-                <p>
-                  <strong>✓ You have:</strong>
-                  {{ recipe.matchedIngredients.join(', ') || 'None yet' }}
-                </p>
+            <div class="match-track">
+              <div
+                class="match-fill"
+                :style="{ width: `${recipe.matchPercentage}%` }"
+              ></div>
+            </div>
 
-                <p>
-                  <strong>+ Still need:</strong>
-                  {{ recipe.missingIngredients.join(', ') || 'Nothing!' }}
-                </p>
-              </div>
+            <p class="ingredient-line">
+              <strong>✓ Have:</strong>
+              {{ recipe.matched.join(', ') || 'None' }}
+            </p>
 
+            <p class="ingredient-line">
+              <strong>+ Need:</strong>
+              {{ recipe.missing.join(', ') || 'Nothing else!' }}
+            </p>
+
+            <div class="recipe-actions">
               <button
                 type="button"
-                class="action-button recipe-button"
-                @click="openRecipe(recipe)"
+                class="hand-button save"
+                :aria-pressed="isSaved(recipe.id)"
+                @click.stop="toggleSave(recipe.id)"
               >
-                View Full Recipe →
+                {{ isSaved(recipe.id) ? '♥ Saved' : '♡ Save' }}
               </button>
-            </div>
-          </article>
-        </div>
-      </section>
 
-      <p class="footer-note">
-        ✿ Small steps, less waste, a happier kitchen.
-      </p>
-    </div>
+              <span class="view-link">View recipe →</span>
+            </div>
+          </div>
+        </article>
+      </TransitionGroup>
+    </section>
   </main>
 </template>
 
 <style scoped>
 .freshness-page {
-  min-height: 100vh;
-  background: transparent;
-  padding: 32px 20px 70px;
-  color: var(--ink);
-  font-family: inherit;
+  max-width: 1220px;
+  font-family: var(--font-sans, 'Patrick Hand', cursive);
+  color: var(--ink, #123f3b);
+  font-size: 18px;
 }
 
-.page-container {
-  max-width: 1160px;
-  margin: 0 auto;
+.freshness-page h1,
+.freshness-page h2,
+.freshness-page h3 {
+  font-family: var(--font-display, 'Kalam', cursive);
+  color: var(--ink, #123f3b);
+  margin: 0;
 }
 
-.paper-card {
-  background: var(--paper);
-  border: 3px solid var(--ink);
-  border-radius: 24px;
-  box-shadow: var(--shadow-paper);
+.freshness-page h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
 }
 
-.hero-card {
-  display: grid;
-  grid-template-columns: 1.3fr 0.7fr;
+.freshness-page h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.paper {
+  background: var(--paper, #fdfaf3);
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 17px;
+  box-shadow: var(--shadow-paper, 6px 8px 0 #123f3b);
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 24px;
-  padding: 40px;
-  margin-bottom: 30px;
+  gap: 16px;
+  padding: 28px;
+  background: var(--paper-bright, #fbfffd);
+  animation: rise .45s ease both;
+}
+
+.hero-doodle {
+  font-size: 4rem;
+  transform: rotate(-12deg);
 }
 
 .eyebrow {
-  color: #109e91;
-  font-size: 12px;
-  letter-spacing: 2px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 1.6px;
+  color: var(--aqua, #0fa89c);
+  margin: 0 0 6px;
 }
 
-.hero-card h1,
-.section-heading h2,
-.status-message h3 {
-  font-family: var(--font-display);
-  font-weight: 800;
+.demo-note {
+  padding: 9px 14px;
+  background: var(--yellow-sticky, #fff9df);
+  border: 2px dashed var(--line, #9bcac5);
+  border-radius: 12px;
 }
 
-.hero-card h1 {
-  font-size: clamp(36px, 5vw, 58px);
-  line-height: 1.1;
-  margin: 18px 0;
-}
-
-.hero-description {
-  max-width: 590px;
-  line-height: 1.8;
-  color: #64746b;
-  margin-bottom: 25px;
-}
-
-.hero-decoration {
+.stats-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  justify-items: center;
-  font-size: clamp(55px, 7vw, 90px);
-}
-
-.hero-decoration span {
-  display: inline-block;
-  transform: rotate(-10deg);
-}
-
-.hero-decoration span:nth-child(even) {
-  transform: rotate(12deg);
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 22px;
-  margin-bottom: 30px;
-}
-
-.summary-card {
-  display: flex;
-  align-items: center;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
-  background: #e1f3e6;
-  border: 2px solid #194b39;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 4px 4px 0 #194b39;
 }
 
-.summary-card:nth-child(2) {
-  background: #fff0bf;
-}
-
-.summary-card:nth-child(3) {
-  background: #fbd7cc;
-}
-
-.summary-icon {
-  font-size: 34px;
-}
-
-.summary-card div {
+.stat {
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  animation: rise .5s ease both;
 }
 
-.summary-card strong {
-  font-size: 30px;
+.stat strong {
+  font: 700 2.5rem var(--font-display, 'Kalam', cursive);
+  line-height: 1;
 }
 
-.summary-card div span {
-  font-size: 13px;
-  font-weight: 700;
+.stat-total {
+  background: var(--aqua-soft, #d9f4ef);
 }
+
+.stat-fresh {
+  background: var(--lime, #dff09c);
+}
+
+.stat-soon {
+  background: var(--yellow-sticky, #fff9df);
+}
+
+.stat-expired {
+  background: #ffe1dc;
+}
+
+.stat:nth-child(2) { animation-delay: .08s; }
+.stat:nth-child(3) { animation-delay: .16s; }
+.stat:nth-child(4) { animation-delay: .24s; }
 
 .section-card {
-  padding: 34px;
-  margin-bottom: 30px;
+  padding: 26px;
 }
 
 .section-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  margin-bottom: 18px;
 }
 
-.section-heading h2 {
-  font-size: clamp(26px, 3vw, 36px);
-  margin: 10px 0;
+.sticker {
+  background: var(--yellow, #ffdd69);
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 7px;
+  padding: 6px 12px;
+  transform: rotate(4deg);
+  white-space: nowrap;
+  box-shadow: 2px 3px 0 var(--ink, #123f3b);
 }
 
-.section-emoji {
-  font-size: 42px;
+.sticker.coral {
+  background: var(--coral, #ff9587);
 }
 
-.section-description {
-  color: #64746b;
-  line-height: 1.7;
-  margin-bottom: 25px;
+.sticker.lime {
+  background: var(--lime, #dff09c);
 }
 
-.table-wrap {
-  overflow-x: auto;
+.section-subtitle {
+  color: var(--muted, #557b77);
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hand-input {
+  min-width: 140px;
+  flex: 1;
+  padding: 9px 13px;
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 10px;
+  background: white;
+  font-family: inherit;
+  color: inherit;
+  outline-offset: 3px;
+}
+
+.hand-button {
+  padding: 8px 16px;
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 10px;
+  background: var(--yellow, #ffdd69);
+  color: var(--ink, #123f3b);
+  box-shadow: var(--shadow-small, 3px 4px 0 #123f3b);
+  font: inherit;
+  cursor: pointer;
+  transition: transform .18s, box-shadow .18s;
+}
+
+.hand-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 6px 0 var(--ink, #123f3b);
+}
+
+.hand-button.secondary {
+  background: var(--aqua-soft, #d9f4ef);
 }
 
 .inventory-table {
-  width: 100%;
-  border-collapse: collapse;
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--ink, #123f3b);
+  font-size: 17px;
 }
 
-.inventory-table th {
-  background: #e1f3e6;
-  color: #194b39;
-  padding: 16px;
-  text-align: left;
-  border-bottom: 2px solid #194b39;
+.inventory-table thead th {
+  background: var(--aqua-soft, #d9f4ef);
+  border-bottom: 2px solid var(--ink, #123f3b);
 }
 
 .inventory-table td {
-  padding: 17px 16px;
-  border-bottom: 1px dashed #c1cfc3;
+  padding: 14px 9px;
+  border-color: var(--line, #9bcac5);
 }
 
-.ingredient-name {
-  font-weight: 800;
+.inventory-table tbody tr:hover {
+  background: var(--yellow-sticky, #fff9df);
 }
 
-.storage-cell {
-  text-transform: capitalize;
+.food-name {
+  font-weight: bold;
 }
 
-.expiry-badge,
-.timeline-label {
+.status-tag {
   display: inline-block;
-  padding: 7px 13px;
-  border: 1.5px solid #194b39;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 800;
+  border: 1.5px solid var(--ink, #123f3b);
+  border-radius: 9px;
+  padding: 3px 10px;
+  font-size: 15px;
+  white-space: nowrap;
 }
 
-.expiry-fresh {
-  background: #c9efce;
-}
-
-.expiry-soon {
-  background: #fff0a8;
-}
-
-.expiry-urgent {
-  background: #ffb8a7;
-}
-
-.expiry-expired {
-  background: #e8c7c7;
-}
-
-.expiry-neutral {
-  background: #e6e6e6;
-}
-
-.eat-soon-section {
-  background: #fff7dc;
-}
+.status-fresh { background: var(--lime, #dff09c); }
+.status-soon { background: var(--yellow, #ffdd69); }
+.status-expired { background: var(--coral, #ff9587); }
+.status-unknown { background: #eee; }
 
 .timeline {
-  position: relative;
-  margin-left: 12px;
-  border-left: 3px dashed #109e91;
+  margin-left: 13px;
+  border-left: 3px dashed var(--line, #9bcac5);
+  padding: 0 0 0 25px;
 }
 
 .timeline-item {
   position: relative;
-  padding: 0 0 24px 28px;
+  margin-bottom: 15px;
 }
 
-.timeline-item:last-child {
-  padding-bottom: 0;
-}
-
-.timeline-marker {
+.timeline-dot {
   position: absolute;
-  left: -11px;
+  left: -35px;
   top: 18px;
-  width: 19px;
-  height: 19px;
-  border: 3px solid #194b39;
+  width: 17px;
+  height: 17px;
+  border: 3px solid var(--ink, #123f3b);
   border-radius: 50%;
+  background: var(--yellow, #ffdd69);
 }
 
-.timeline-content {
+.timeline-dot.expired {
+  background: var(--coral, #ff9587);
+}
+
+.timeline-note {
+  background: var(--yellow-sticky, #fff9df);
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 12px;
+  padding: 15px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 18px;
-  background: #fffdf5;
-  border: 2px solid #194b39;
-  border-radius: 13px;
-  padding: 18px;
+  gap: 12px;
+  transition: transform .2s;
 }
 
-.timeline-content strong {
-  font-size: 18px;
+.timeline-note:hover {
+  transform: translateX(4px);
 }
 
-.timeline-content p {
-  margin: 6px 0 0;
-  color: #64746b;
+.timeline-note.overdue {
+  background: #ffe8e4;
 }
 
-.expired-note {
-  margin-top: 24px;
-  color: #8b4949;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.filter-bar {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 30px;
-  flex-wrap: wrap;
-}
-
-.filter-input-group {
-  flex: 1;
-  min-width: 230px;
-}
-
-.filter-input-group label {
+.timeline-note strong {
   display: block;
-  font-weight: 800;
-  margin-bottom: 8px;
+  font-size: 21px;
 }
 
-.filter-input {
-  width: 100%;
-  border: 2px solid #194b39;
-  border-radius: 12px;
-  background: #fffdf5;
-  padding: 12px 15px;
-  outline-color: #109e91;
+.timeline-note small {
+  color: var(--muted, #557b77);
 }
 
-.clear-button {
-  padding: 12px 18px;
-  background: #fff0bf;
-  border: 2px solid #194b39;
-  border-radius: 12px;
-  color: #194b39;
-  font-weight: 800;
+.recipe-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-bottom: 2px dashed var(--line, #9bcac5);
+  padding-bottom: 12px;
+}
+
+.recipe-tabs button {
+  background: var(--paper-bright, #fbfffd);
+  color: var(--ink, #123f3b);
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 10px;
+  padding: 9px 17px;
+  font: inherit;
   cursor: pointer;
+  transition: transform .2s, background .2s;
+}
+
+.recipe-tabs button:hover {
+  transform: translateY(-2px);
+}
+
+.recipe-tabs button.active {
+  background: var(--yellow, #ffdd69);
+  box-shadow: var(--shadow-small, 3px 4px 0 #123f3b);
 }
 
 .recipe-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
 }
 
 .recipe-card {
-  background: #fffdf5;
-  border: 2px solid #194b39;
-  border-radius: 17px;
+  background: var(--paper-bright, #fbfffd);
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 15px;
+  box-shadow: var(--shadow-small, 3px 4px 0 #123f3b);
   overflow: hidden;
-  box-shadow: 4px 4px 0 #194b39;
-  display: flex;
-  flex-direction: column;
+  cursor: pointer;
+  transition: transform .2s, box-shadow .2s;
 }
 
-.recipe-image {
+.recipe-card:hover,
+.recipe-card:focus-visible {
+  transform: translateY(-5px);
+  box-shadow: 6px 9px 0 var(--ink, #123f3b);
+}
+
+.recipe-visual {
+  height: 155px;
+  background: var(--aqua-soft, #d9f4ef);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4rem;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 2px solid var(--ink, #123f3b);
+}
+
+.recipe-visual img {
   width: 100%;
-  height: 195px;
+  height: 100%;
   object-fit: cover;
-  border-bottom: 2px solid #194b39;
+  transition: transform .3s;
+}
+
+.recipe-card:hover img {
+  transform: scale(1.05);
+}
+
+.rescue-stamp {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: var(--lime, #dff09c);
+  font-size: 14px;
+  padding: 3px 9px;
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 8px;
+  transform: rotate(-4deg);
 }
 
 .recipe-content {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.match-badge {
-  align-self: flex-start;
-  background: #d8f2df;
-  border: 1.5px solid #194b39;
-  border-radius: 20px;
-  padding: 6px 11px;
-  font-size: 11px;
-  font-weight: 800;
+  padding: 18px;
 }
 
 .recipe-content h3 {
-  font-family: var(--font-display);  
-  font-size: 21px;
-  font-weight: 800;
-  margin: 16px 0 8px;
+  font-size: 1.45rem;
 }
 
-.recipe-category {
-  color: #64746b;
-  font-size: 13px;
+.recipe-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted, #557b77);
+  font-size: 15px;
+  margin: 8px 0 15px;
 }
 
-.ingredient-info {
-  font-size: 13px;
-  line-height: 1.6;
-  margin-top: 12px;
-  flex: 1;
+.diet-pill {
+  background: var(--aqua-soft, #d9f4ef);
+  border-radius: 7px;
+  padding: 1px 8px;
 }
 
-.ingredient-info p {
-  margin-bottom: 10px;
+.match-line {
+  display: flex;
+  justify-content: space-between;
 }
 
-.action-button {
-  display: inline-flex;
+.match-track {
+  height: 11px;
+  background: #e1e9e4;
+  border: 1px solid var(--ink, #123f3b);
+  border-radius: 20px;
+  overflow: hidden;
+  margin: 6px 0 15px;
+}
+
+.match-fill {
+  height: 100%;
+  background: var(--aqua, #0fa89c);
+  border-radius: 20px;
+  transition: width .6s ease;
+}
+
+.ingredient-line {
+  font-size: 16px;
+  margin: 7px 0;
+  line-height: 1.35;
+}
+
+.recipe-actions {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 13px 26px;
-  border: 2px solid var(--ink);
-  border-radius: 14px 11px 16px 10px;
-  background: var(--aqua);
-  color: white;
-  font-size: 17px;
-  font-weight: 800;
-  box-shadow: var(--shadow-small);
-  transition: transform 150ms ease, box-shadow 150ms ease;
-  cursor: pointer;
-  text-decoration: none;
+  gap: 10px;
+  margin-top: 17px;
 }
 
-.action-button:hover:not(:disabled) {
-  box-shadow: 1px 2px 0 var(--ink);
-  transform: translate(2px, 2px);
-  background: #0d968b;
-  color: white;
+.view-link {
+  font-weight: bold;
+  color: var(--aqua, #0fa89c);
 }
 
-
-
-.recipe-button {
-  margin-top: 15px;
-  width: 100%;
-}
-
-.status-message {
+.empty-state {
   text-align: center;
-  padding: 35px 15px;
+  padding: 28px;
+  background: var(--yellow-sticky, #fff9df);
+  border: 2px dashed var(--line, #9bcac5);
+  border-radius: 12px;
 }
 
-.status-message h3 {
-  font-size: 25px;
+.pop-enter-active,
+.pop-leave-active {
+  transition: opacity .25s, transform .25s;
 }
 
-.status-message p,
-.empty-message {
-  color: #64746b;
+.pop-enter-from,
+.pop-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
 }
 
-.footer-note {
-  text-align: center;
-  color: #64746b;
-  margin-top: 30px;
-  font-size: 14px;
+.pop-move {
+  transition: transform .25s;
 }
 
-@media (max-width: 900px) {
-  .recipe-grid {
-    grid-template-columns: repeat(2, 1fr);
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
   }
 
-  .hero-card {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 800px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recipe-grid {
     grid-template-columns: 1fr;
   }
 
-  .hero-decoration {
+  .section-card {
+    padding: 17px;
+  }
+
+  .hero-doodle {
+    font-size: 2.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    gap: 10px;
+  }
+
+  .stat {
+    padding: 13px;
+  }
+
+  .sticker {
     display: none;
   }
-}
 
-@media (max-width: 650px) {
-  .summary-grid,
-  .recipe-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .section-card,
-  .hero-card {
-    padding: 23px;
-  }
-
-  .timeline-content {
+  .timeline-note {
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .recipe-tabs button {
+    flex: 1;
+    padding: 7px;
+  }
 }
 
-/* Full Circle typography */
-.recipe-page,
-.freshness-page {
-  font-family: var(--font-sans);
-  font-size: 18px;
-}
-
-.recipe-page h1,
-.recipe-page h2,
-.recipe-page h3,
-.freshness-page h1,
-.freshness-page h2,
-.freshness-page h3 {
-  font-family: var(--font-display);
-}
-
-.recipe-page button,
-.recipe-page input,
-.freshness-page button,
-.freshness-page input {
-  font-family: var(--font-sans);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 </style>
