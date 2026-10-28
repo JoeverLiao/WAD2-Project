@@ -1394,6 +1394,7 @@ function onActionDragLeave(event) {
 .storage-unit { position:relative; flex:0 0 50%; width:50%; min-width:0; padding:0 12px; opacity:.58; transform:scale(.9) rotateY(7deg); filter:saturate(.72); transition:opacity .55s ease,transform .65s cubic-bezier(.2,.75,.2,1),filter .55s ease; }
 .storage-unit.unit-current { opacity:1; transform:scale(1) rotateY(0); filter:none; }
 .storage-unit-content { width:100%; }
+.pantry-unit .storage-unit-content { display:flex; flex-direction:column; }
 .storage-unit-activate { position:absolute; inset:0; z-index:20; display:block; width:100%; height:100%; padding:0; border:0; background:transparent; cursor:pointer; }
 .storage-unit-activate:focus-visible { outline:3px solid #f0b93d; outline-offset:-4px; border-radius:12px; }
 .storage-pantry .unit-top-label,.storage-pantry .unit-caption { color:#725a3d; }
