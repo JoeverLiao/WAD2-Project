@@ -1,6 +1,64 @@
 <script setup>
-import { RouterLink } from 'vue-router'
+import { ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import HomeFridge from '../components/HomeFridge.vue'
+import { useAuthStore } from '../stores/auth.js'
+
+const auth = useAuthStore()
+const router = useRouter()
+const route = useRoute()
+
+const email = ref('')
+const password = ref('')
+const error = ref('')
+const loading = ref(false)
+
+const funFacts = [
+  'Did you know a banana is a berry, but a strawberry isn’t? Isn’t that totally bananas?',
+  'Roughly a third of all food produced in the world is lost or wasted. That’s like buying three bags of groceries and leaving one at the shop!',
+  'If food waste were a country, it would be the third-largest greenhouse gas emitter, right behind China and the USA.',
+  'Most food waste happens at home, not in restaurants or supermarkets. Your fridge is the front line!',
+  '“Best before” is about quality, not safety. That yoghurt might still be perfectly fine a day later, so look and sniff before you toss.',
+  'Honey basically never spoils. Archaeologists have found pots of it in ancient Egyptian tombs that were still edible!',
+  'Limp celery or carrots? Soak them in ice-cold water for 30 minutes and they’ll crisp right back up.',
+  'Spotty brown bananas aren’t trash. They’re banana bread waiting to happen, and they’re sweeter too.',
+  'Stale bread makes the best croutons, breadcrumbs and French toast. Old bread, new tricks!',
+]
+
+function pickFact(current) {
+  let next
+  do {
+    next = funFacts[Math.floor(Math.random() * funFacts.length)]
+  } while (next === current)
+  return next
+}
+
+const fact = ref(pickFact())
+
+function showAnotherFact() {
+  fact.value = pickFact(fact.value)
+}
+
+async function handleLogin() {
+  error.value = ''
+  if (!email.value.trim() || !password.value) {
+    error.value = 'Email and password are required'
+    return
+  }
+  loading.value = true
+  try {
+    await auth.login(email.value.trim(), password.value)
+    // Return to the page the user originally asked for, if it was an in-app path.
+    const redirect = route.query.redirect
+    const isInternal =
+      typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    router.push(isInternal ? redirect : { name: 'dashboard' })
+  } catch (e) {
+    error.value = e.message || 'Login failed'
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -8,75 +66,51 @@ import HomeFridge from '../components/HomeFridge.vue'
     <div class="home-shell">
       <div class="home-hero">
         <div class="hero-copy">
-          <p class="kitchen-tag">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="m15 3 1.5 4.5L21 9l-4.5 1.5L15 15l-1.5-4.5L9 9l4.5-1.5ZM6 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1Z"
-              /></svg>
-            >Your kitchen sidekick
-          </p>
-          <h1>
-            <span>Eat fresh.</span><span class="underlined">Waste less.</span
-            ><span>Share the rest.</span>
-          </h1>
-          <p class="hero-description">
-            Keep track of what’s in the fridge, cook before it expires, and pass extras to a
-            neighbour who can use them.
-          </p>
-          <div class="hero-actions">
-            <RouterLink :to="{ name: 'scanning' }" class="home-button button-scan">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 6h4l2-3h4l2 3h4a1 1 0 0 1 1 1v13H3V7a1 1 0 0 1 1-1Z" />
-                <circle cx="12" cy="12" r="4" />
-              </svg>
-              Scan my groceries
-            </RouterLink>
-            <RouterLink :to="{ name: 'food-rescue' }" class="home-button button-donate">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 21 3.8 12.8C-2 7 6 0 12 7c6-7 14 0 8.2 5.8Z" />
-              </svg>
-              Donate extra food
-            </RouterLink>
+          <div v-if="auth.isAuthenticated" class="login-card">
+            <h1>Welcome back, {{ auth.user.username }}</h1>
+            <p class="login-subtitle">You&rsquo;re already signed in.</p>
+            <RouterLink :to="{ name: 'dashboard' }" class="home-button button-scan"
+              >Go to my dashboard</RouterLink
+            >
           </div>
+          <form v-else class="login-card" aria-label="Login" @submit.prevent="handleLogin">
+            <h1>Login</h1>
+            <p class="login-subtitle">Sign in to your Full Circle account.</p>
+            <p v-if="error" class="login-error" role="alert">{{ error }}</p>
+            <div class="login-field">
+              <label for="email">Email:</label>
+              <input id="email" v-model="email" type="email" required autocomplete="email" />
+            </div>
+            <div class="login-field">
+              <label for="password">Password:</label>
+              <input
+                id="password"
+                v-model="password"
+                type="password"
+                required
+                autocomplete="current-password"
+              />
+            </div>
+            <button type="submit" class="home-button button-scan" :disabled="loading">
+              {{ loading ? 'Logging in...' : 'Login' }}
+            </button>
+            <p class="login-register">
+              Don&rsquo;t have an account?
+              <RouterLink :to="{ name: 'register', query: route.query }">Register</RouterLink>
+            </p>
+          </form>
         </div>
         <div class="hero-illustration"><HomeFridge /></div>
       </div>
 
-      <div class="snapshot" aria-label="Example kitchen snapshot">
-        <RouterLink :to="{ name: 'fridge' }" class="snapshot-card snapshot-soon">
-          <span class="snapshot-icon"
-            ><svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="8" />
-              <path d="M12 7v5l3 2" /></svg
-          ></span>
-          <div>
-            <strong class="snapshot-number">4</strong>
-            <p><b>use soon</b><span> · before Friday</span></p>
-          </div>
-        </RouterLink>
-        <RouterLink :to="{ name: 'analytics' }" class="snapshot-card snapshot-saved">
-          <span class="snapshot-icon"
-            ><svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 19C5 10 11 5 20 4c-1 9-6 15-15 15Zm0 0 8-8" /></svg
-          ></span>
-          <div>
-            <strong class="snapshot-number">8.4 kg</strong>
-            <p><b>food saved</b><span> · this month</span></p>
-          </div>
-        </RouterLink>
-        <RouterLink :to="{ name: 'food-rescue' }" class="snapshot-card snapshot-community">
-          <span class="snapshot-icon"
-            ><svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M10 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm9-1a3 3 0 0 1-3 3 M2 21v-3a5 5 0 0 1 10 0v3m3-7a5 5 0 0 1 5 5v2"
-              /></svg
-          ></span>
-          <div>
-            <strong class="snapshot-number">38</strong>
-            <p><b>local rescuers</b><span> · in your area</span></p>
-          </div>
-        </RouterLink>
-      </div>
+      <aside class="fun-fact" aria-live="polite">
+        <span class="fun-fact-icon" aria-hidden="true">💡</span>
+        <div>
+          <p class="fun-fact-label">Fun food fact</p>
+          <p class="fun-fact-text">{{ fact }}</p>
+        </div>
+        <button type="button" class="fun-fact-next" @click="showAnotherFact">Another fact</button>
+      </aside>
     </div>
   </section>
 </template>
@@ -110,24 +144,16 @@ import HomeFridge from '../components/HomeFridge.vue'
   position: relative;
   z-index: 1;
 }
-.kitchen-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 26px;
-  padding: 11px 17px;
-  border: 2px solid var(--ink);
-  border-radius: 5px;
-  background: #ffe16a;
-  box-shadow: 2px 2px 0 var(--ink);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.kitchen-tag svg {
-  width: 17px;
-  height: 20px;
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 560px;
+  padding: clamp(28px, 3vw, 44px);
+  border: 3px solid var(--ink);
+  border-radius: 26px;
+  background: #fff;
+  box-shadow: 6px 8px 0 var(--ink);
 }
 .home-page svg {
   fill: none;
@@ -138,45 +164,54 @@ import HomeFridge from '../components/HomeFridge.vue'
   flex-shrink: 0;
 }
 h1 {
-  position: relative;
-  isolation: isolate;
-  margin: 0 0 38px;
+  margin: 0;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: clamp(3.1rem, 5.4vw, 6.2rem);
-  line-height: 0.98;
+  font-size: clamp(2.4rem, 3.6vw, 3.6rem);
+  line-height: 1;
   letter-spacing: -0.03em;
 }
-h1 > span {
-  display: block;
-  width: fit-content;
-}
-.underlined {
-  position: relative;
-}
-.underlined::after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  left: -4px;
-  right: -5px;
-  bottom: -0.06em;
-  height: 0.16em;
-  border-radius: 50%;
-  background: #72d7cc;
-  transform: rotate(-1deg);
-}
-.hero-description {
-  max-width: 720px;
-  margin: 0 0 40px;
-  font-size: clamp(1.15rem, 1.35vw, 1.45rem);
-  line-height: 1.65;
+.login-subtitle {
+  margin: -8px 0 0;
+  font-size: 1.15rem;
   color: #366e6a;
 }
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
+.login-field label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.login-field input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: #f6fdfc;
+  font: inherit;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+.login-field input:focus-visible {
+  outline: 3px solid #1f7d74;
+  outline-offset: 3px;
+}
+.login-error {
+  margin: 0;
+  padding: 12px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: #ffd2ca;
+  font-weight: 600;
+}
+.login-register {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #366e6a;
+}
+.login-register a {
+  color: var(--ink);
+  font-weight: 700;
 }
 .home-button {
   display: inline-flex;
@@ -189,8 +224,10 @@ h1 > span {
   border-radius: 16px;
   box-shadow: 4px 5px 0 var(--ink);
   text-decoration: none;
+  font: inherit;
   font-size: 1.25rem;
   font-weight: 700;
+  cursor: pointer;
   transition:
     transform 160ms ease,
     box-shadow 160ms ease;
@@ -219,83 +256,71 @@ h1 > span {
   transform: translate(2px, 2px);
   box-shadow: 2px 3px 0 var(--ink);
 }
+.home-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 .home-button:active {
   transform: translate(4px, 5px);
   box-shadow: none;
 }
-.snapshot {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 22px;
-  margin-top: clamp(56px, 5vw, 88px);
-}
-.snapshot-card {
+.fun-fact {
   display: flex;
   align-items: center;
   gap: 22px;
-  min-height: 134px;
-  padding: 21px 26px;
+  margin-top: clamp(56px, 5vw, 88px);
+  padding: 24px 28px;
   border: 3px solid var(--ink);
   border-radius: 26px;
-  box-shadow: 6px 8px 0 var(--ink);
-  color: var(--ink);
-  text-decoration: none;
-  transition:
-    translate 160ms ease,
-    box-shadow 160ms ease;
-}
-.snapshot-card:hover {
-  color: var(--ink);
-  translate: 0 -3px;
-  box-shadow: 6px 11px 0 var(--ink);
-}
-.snapshot-soon {
-  background: #cef3ed;
-}
-.snapshot-saved {
   background: #e7f5ac;
-  transform: rotate(-1deg);
+  box-shadow: 6px 8px 0 var(--ink);
+  transform: rotate(-0.5deg);
 }
-.snapshot-community {
-  background: #ffd2ca;
-  transform: rotate(1deg);
-}
-.snapshot-icon {
+.fun-fact-icon {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   border: 2px solid var(--ink);
   border-radius: 50%;
   background: #fff;
+  font-size: 1.8rem;
 }
-.snapshot-icon svg {
-  width: 26px;
-  height: 26px;
+.fun-fact-label {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.snapshot-number {
-  display: block;
-  margin-bottom: 6px;
-  font-family: var(--font-display);
-  font-size: 2.45rem;
-  line-height: 1.15;
-}
-.snapshot-card p {
+.fun-fact-text {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: clamp(1.1rem, 1.3vw, 1.35rem);
+  line-height: 1.5;
 }
-.snapshot-card p span {
-  color: var(--muted);
+.fun-fact-next {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 10px 18px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 2px 3px 0 var(--ink);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
-.snapshot-note {
-  margin: 22px 0 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-  text-align: center;
+.fun-fact-next:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 2px 0 var(--ink);
 }
 .home-button:focus-visible,
-.snapshot-card:focus-visible {
+.fun-fact-next:focus-visible {
   outline: 3px solid #1f7d74;
   outline-offset: 7px;
 }
@@ -303,84 +328,47 @@ h1 > span {
   .home-hero {
     gap: 24px;
   }
-  .hero-actions {
-    gap: 14px;
-  }
   .home-button {
     padding: 13px 18px;
     font-size: 1.1rem;
     min-height: 60px;
-  }
-  .snapshot-card {
-    gap: 14px;
-    padding: 18px;
-  }
-  .snapshot-card p {
-    font-size: 1.05rem;
   }
 }
 @media (max-width: 850px) {
   .home-hero {
     grid-template-columns: 1fr;
   }
-  h1 {
-    font-size: clamp(3.5rem, 8.5vw, 5rem);
+  .login-card {
+    max-width: none;
   }
   .hero-illustration {
     max-width: 560px;
     width: 100%;
     margin: 10px auto 0;
   }
-  .snapshot {
-    grid-template-columns: 1fr;
-    gap: 22px;
+  .fun-fact {
+    flex-wrap: wrap;
     margin-top: 38px;
-  }
-  .snapshot-card {
-    min-height: 112px;
-  }
-  .snapshot-card p {
-    font-size: 1.2rem;
   }
 }
 @media (max-width: 480px) {
   .home-page {
     padding: 86px 22px 24px 18px;
   }
-  .kitchen-tag {
-    font-size: 13px;
-    margin-bottom: 26px;
-    padding: 9px 12px;
+  .login-card {
+    padding: 24px 20px;
   }
-  h1 {
-    font-size: clamp(2.45rem, 10.8vw, 3.5rem);
-    margin-bottom: 28px;
+  .fun-fact {
+    padding: 20px;
+    gap: 16px;
   }
-  .hero-description {
-    font-size: 1.15rem;
-    margin-bottom: 28px;
-  }
-  .hero-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .home-button {
+  .fun-fact-next {
     width: 100%;
-  }
-  .snapshot-card {
-    padding: 18px;
-    gap: 18px;
-  }
-  .snapshot-number {
-    font-size: 2.1rem;
-  }
-  .snapshot-card p {
-    font-size: 1.1rem;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .home-button,
-  .snapshot-card {
+  .fun-fact-next {
     transition: none;
   }
 }

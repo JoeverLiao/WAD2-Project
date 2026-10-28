@@ -58,7 +58,8 @@ export const routes = [
   {
     path: '/login',
     name: 'login',
-    component: () => import('../views/account/LoginView.vue'),
+    // The login form lives on the home page; /login keeps working for nav links and redirects.
+    component: () => import('../views/HomeView.vue'),
     meta: { navLabel: 'Login', navGroup: 'Profile', public: true },
   },
   {

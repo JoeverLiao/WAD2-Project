@@ -74,6 +74,7 @@ function pillClass(days) {
 </script>
 
 <template>
+  <div class="dashboard-page">
   <section aria-label="Dashboard" class="dashboard container-xl py-4">
       <!-- ================= HERO ================= -->
       <header class="hero row align-items-center g-4 mb-5">
@@ -234,9 +235,23 @@ function pillClass(days) {
         </div>
       </div>
   </section>
+  </div>
 </template>
 
 <style scoped>
+/* Same page shell as Home: grid paper, handwritten fonts, ink text */
+.dashboard-page {
+  --aqua-dark: #087d73;
+  min-height: 100svh;
+  color: var(--ink);
+  background-color: #eafaf7;
+  background-image:
+    linear-gradient(rgb(33 144 133 / 7%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(33 144 133 / 7%) 1px, transparent 1px);
+  background-size: 32px 32px;
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+}
 .dashboard {
   max-width: 1200px;
 }
@@ -251,14 +266,14 @@ svg {
 
 /* ---------- shared bits ---------- */
 .panel {
-  background: #fff;
+  background: var(--paper-bright);
   border: 2px solid var(--ink);
   border-radius: 20px;
   box-shadow: var(--shadow-paper);
   padding: 1.5rem;
 }
 .panel-tint {
-  background: #e3f3ee;
+  background: var(--aqua-soft);
 }
 .panel-title {
   margin: 0;
@@ -301,19 +316,19 @@ svg {
   font-size: 0.85rem;
 }
 .pill-coral {
-  background: #fde0dc;
-  color: #9a3a2e;
+  background: #ffd2ca;
+  color: var(--ink);
 }
 .pill-lime {
   background: var(--lime);
-  color: #3f5a12;
+  color: var(--ink);
 }
 .pill-aqua {
   background: var(--aqua-soft);
-  color: #1f6e66;
+  color: var(--aqua-dark);
 }
 .pill-muted {
-  background: #eef1f0;
+  background: var(--paper);
   color: var(--muted);
 }
 .pill-link {
@@ -325,7 +340,7 @@ svg {
 }
 
 .link-arrow {
-  color: #1f7d74;
+  color: var(--aqua-dark);
   font-size: 1.1rem;
   font-weight: 700;
   text-decoration: none;
@@ -343,20 +358,26 @@ svg {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 28px;
-  border: 2px solid var(--ink);
-  border-radius: 14px;
-  background: #3e9a8e;
+  padding: 15px 27px;
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  background: var(--aqua);
   color: #fff;
-  font-size: 1.35rem;
+  font-size: 1.25rem;
+  font-weight: 700;
   text-decoration: none;
-  box-shadow: var(--shadow-paper);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  box-shadow: 4px 5px 0 var(--ink);
+  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 .btn-cta:hover {
   color: #fff;
-  transform: translate(2px, 3px);
-  box-shadow: var(--shadow-small);
+  background: #0b968b;
+  transform: translate(2px, 2px);
+  box-shadow: 2px 3px 0 var(--ink);
+}
+.btn-cta:active {
+  transform: translate(4px, 5px);
+  box-shadow: none;
 }
 .btn-cta span:first-child {
   font-size: 1.8rem;
@@ -373,9 +394,10 @@ svg {
   left: 0;
   right: 0;
   bottom: -0.05em;
-  height: 0.22em;
-  border-radius: 999px;
-  background: #9fdcd3;
+  height: 0.16em;
+  border-radius: 50%;
+  background: #72d7cc;
+  transform: rotate(-1deg);
   z-index: -1;
 }
 
@@ -384,14 +406,21 @@ svg {
   position: relative;
   isolation: isolate;
 }
+/* Yellow sticker tag, same as Home's kitchen tag */
 .eyebrow {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 0.5rem;
-  color: #1f6e66;
-  font-size: 1.05rem;
-  letter-spacing: 0.12em;
+  margin-bottom: 1.25rem;
+  padding: 8px 15px;
+  border: 2px solid var(--ink);
+  border-radius: 5px;
+  background: var(--yellow);
+  box-shadow: 2px 2px 0 var(--ink);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .eyebrow svg {
@@ -405,7 +434,7 @@ svg {
 }
 .hero-sub {
   margin: 0;
-  color: var(--muted);
+  color: #366e6a;
   font-size: 1.35rem;
 }
 
@@ -425,7 +454,7 @@ svg {
 .stamp-heart {
   width: 40px;
   height: 40px;
-  color: #3e9a8e;
+  color: var(--aqua);
 }
 .stamp-title {
   margin: 0.25rem 0 0;
@@ -470,7 +499,7 @@ svg {
   padding: 1.1rem;
   border: 1.5px solid var(--line);
   border-radius: 16px;
-  background: #fff;
+  background: var(--paper-bright);
 }
 .item-icon {
   display: grid;
@@ -513,9 +542,7 @@ svg {
   border: 1.5px solid var(--line);
   border-radius: 16px;
   background: var(--aqua-soft);
-  color: #1f6e66;
-}
-.preview-box {
+  color: var(--aqua-dark);
   font-size: 2.6rem;
 }
 .area-meta {
@@ -604,7 +631,7 @@ svg {
 .donate-heart {
   width: 36px;
   height: 36px;
-  color: #3e9a8e;
+  color: var(--aqua);
 }
 .donate-title {
   margin: 0.25rem 0;
