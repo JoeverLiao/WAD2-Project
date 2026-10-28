@@ -14,7 +14,6 @@ const emit = defineEmits([
     'edit',
     'remove',
     'consume',
-    'discard',
     'drag-start',
     'drag-end'
 ])
@@ -130,11 +129,6 @@ function handleConsume() {
     emit('consume', props.item, details => startReaction('consume', details))
 }
 
-function handleDiscard() {
-    if (busy.value) return
-    emit('discard', props.item, details => startReaction('discard', details))
-}
-
 // Drag-and-drop remains unchanged.
 function handleDragStart(event) {
     event.dataTransfer.setData('text/plain', String(props.item.id))
@@ -199,21 +193,6 @@ onBeforeUnmount(() => {
                 <span v-if="animation === 'consume'" class="mini-sparkle" aria-hidden="true">✨</span>
             </button>
 
-            <button
-                type="button"
-                class="action-button discard-button"
-                :class="{
-                    'bin-gentle': animation === 'discard-gentle',
-                    'bin-medium': animation === 'discard-medium',
-                    'bin-strong': animation === 'discard-strong'
-                }"
-                title="Discard food"
-                :disabled="busy"
-                @click.stop="handleDiscard"
-            >
-                <span class="button-emoji bin-emoji" aria-hidden="true">🗑️</span>
-                <span>{{ animation.startsWith('discard-') ? 'Discarding…' : 'Discard' }}</span>
-            </button>
         </div>
     </article>
 </template>
@@ -346,6 +325,9 @@ onBeforeUnmount(() => {
 }
 
 .icon-button {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, background 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -357,6 +339,13 @@ onBeforeUnmount(() => {
     background: var(--yellow-sticky);
     box-shadow: 2px 3px 0 var(--ink);
     cursor: pointer;
+}
+
+.food-card:hover .icon-button,
+.food-card:focus-within .icon-button,
+.icon-button:focus-visible {
+    opacity: 1;
+    visibility: visible;
 }
 
 .icon-button:hover {
