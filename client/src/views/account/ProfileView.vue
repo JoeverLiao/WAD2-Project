@@ -48,94 +48,241 @@ async function handleLogout() {
 </script>
 
 <template>
-  <section aria-label="Profile" v-if="auth.user">
-    <h1>Profile</h1>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <p v-if="success" class="success" role="alert">{{ success }}</p>
+  <section class="profile-page" aria-label="Profile">
+    <div v-if="auth.user" class="profile-card">
+      <div class="profile-avatar">
+        <svg viewBox="0 0 120 120" role="img" aria-label="Default profile picture">
+          <circle cx="60" cy="60" r="60" fill="#72d7cc" />
+          <path d="M18 106c6-22 23-34 42-34s36 12 42 34a60 60 0 0 1-84 0Z" fill="#0fa89c" />
+          <circle cx="60" cy="48" r="22" fill="#ffe16a" />
+          <circle cx="52" cy="46" r="2.6" fill="currentColor" />
+          <circle cx="68" cy="46" r="2.6" fill="currentColor" />
+          <path d="M52 56q8 7 16 0" />
+        </svg>
+      </div>
 
-    <div v-if="!editMode">
-      <div class="field">
-        <span class="label">Username</span>
-        <span>{{ auth.user.username }}</span>
+      <p class="profile-tag">My account</p>
+      <h1>{{ auth.user.username }}</h1>
+      <p v-if="error" class="profile-alert alert-error" role="alert">{{ error }}</p>
+      <p v-if="success" class="profile-alert alert-success" role="status">{{ success }}</p>
+
+      <div v-if="!editMode" class="profile-details">
+        <div class="profile-field">
+          <span class="field-label">Username:</span>
+          <span>{{ auth.user.username }}</span>
+        </div>
+        <div class="profile-field">
+          <span class="field-label">Email:</span>
+          <span>{{ auth.user.email }}</span>
+        </div>
+        <div class="profile-actions">
+          <button type="button" class="profile-button button-primary" @click="startEdit">
+            Edit profile
+          </button>
+          <button type="button" class="profile-button button-logout" @click="handleLogout">
+            Logout
+          </button>
+        </div>
       </div>
-      <div class="field">
-        <span class="label">Email</span>
-        <span>{{ auth.user.email }}</span>
-      </div>
-      <div class="actions">
-        <button @click="startEdit">Edit Profile</button>
-        <button class="btn-danger" @click="handleLogout">Logout</button>
-      </div>
+
+      <form v-else class="profile-details" @submit.prevent="saveProfile">
+        <div class="profile-input">
+          <label for="edit-name">Username:</label>
+          <input id="edit-name" v-model="editName" type="text" required autocomplete="username" />
+        </div>
+        <div class="profile-input">
+          <label for="edit-email">Email:</label>
+          <input id="edit-email" v-model="editEmail" type="email" required autocomplete="email" />
+        </div>
+        <div class="profile-actions">
+          <button type="submit" class="profile-button button-primary">Save</button>
+          <button type="button" class="profile-button button-secondary" @click="cancelEdit">
+            Cancel
+          </button>
+        </div>
+      </form>
     </div>
-
-    <form v-else @submit.prevent="saveProfile">
-      <div>
-        <label for="edit-name">Username</label>
-        <input id="edit-name" v-model="editName" type="text" required />
-      </div>
-      <div>
-        <label for="edit-email">Email</label>
-        <input id="edit-email" v-model="editEmail" type="email" required />
-      </div>
-      <div class="actions">
-        <button type="submit">Save</button>
-        <button type="button" @click="cancelEdit">Cancel</button>
-      </div>
-    </form>
-  </section>
-  <section v-else aria-label="Profile">
-    <h1>Profile</h1>
-    <p>Please <RouterLink :to="{ name: 'login' }">log in</RouterLink> to view your profile.</p>
+    <div v-else class="profile-card">
+      <h1>Profile</h1>
+      <p>Please <RouterLink :to="{ name: 'login' }">log in</RouterLink> to view your profile.</p>
+    </div>
   </section>
 </template>
 
 <style scoped>
-section {
-  max-width: 480px;
-  margin: 2rem auto;
+.profile-page {
+  min-height: 100svh;
+  padding: clamp(110px, 9vw, 140px) clamp(16px, 4.4vw, 80px) 48px;
+  color: var(--ink);
+  background-color: #eafaf7;
+  background-image:
+    linear-gradient(rgb(33 144 133 / 7%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(33 144 133 / 7%) 1px, transparent 1px);
+  background-size: 32px 32px;
+  font-family: var(--font-sans);
 }
-.field {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+:global(body:has(.profile-page)) {
+  padding-bottom: 0;
 }
-.label {
-  font-weight: 600;
-  min-width: 80px;
+.profile-card {
+  position: relative;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 84px clamp(20px, 4vw, 44px) clamp(28px, 4vw, 44px);
+  border: 3px solid var(--ink);
+  border-radius: 26px;
+  background: #fff;
+  box-shadow: 6px 8px 0 var(--ink);
+  text-align: center;
 }
-.actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
+.profile-avatar {
+  position: absolute;
+  top: -66px;
+  left: 50%;
+  width: 132px;
+  height: 132px;
+  translate: -50% 0;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 4px 5px 0 var(--ink);
+  overflow: hidden;
+  color: var(--ink);
 }
-button {
-  padding: 0.5rem 1.5rem;
-  background: #164b35;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.btn-danger {
-  background: #a33;
-}
-input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-label {
+.profile-avatar svg {
   display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.profile-tag {
+  display: inline-block;
+  margin: 0 0 14px;
+  padding: 7px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 5px;
+  background: #ffe16a;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+h1 {
+  margin: 0 0 26px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.profile-alert {
+  margin: 0 0 20px;
+  padding: 12px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
   font-weight: 600;
-  margin-bottom: 0.25rem;
 }
-.error {
-  color: #c00;
-  font-weight: 500;
+.alert-error {
+  background: #ffd2ca;
 }
-.success {
-  color: #080;
-  font-weight: 500;
+.alert-success {
+  background: #cef3ed;
+}
+.profile-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+}
+.profile-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 14px 18px;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: #f6fdfc;
+  font-size: 1.1rem;
+  overflow-wrap: anywhere;
+}
+.field-label,
+.profile-input label {
+  font-weight: 700;
+}
+.profile-input label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+}
+.profile-input input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: #f6fdfc;
+  font: inherit;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+.profile-input input:focus-visible {
+  outline: 3px solid #1f7d74;
+  outline-offset: 3px;
+}
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 10px;
+}
+.profile-button {
+  flex: 1 1 160px;
+  min-height: 56px;
+  padding: 12px 22px;
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  box-shadow: 4px 5px 0 var(--ink);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+.profile-button:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 3px 0 var(--ink);
+}
+.profile-button:active {
+  transform: translate(4px, 5px);
+  box-shadow: none;
+}
+.profile-button:focus-visible {
+  outline: 3px solid #1f7d74;
+  outline-offset: 5px;
+}
+.button-primary {
+  background: #0fa89c;
+  color: #fff;
+}
+.button-primary:hover {
+  background: #0b968b;
+}
+.button-secondary {
+  background: #ffe16a;
+}
+.button-logout {
+  background: #ffd2ca;
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-button {
+    transition: none;
+  }
 }
 </style>
