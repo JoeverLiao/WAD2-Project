@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onBeforeUnmount } from 'vue'
+import { computed } from 'vue'
 
 // The parent provides the food item.
 const props = defineProps({
@@ -13,18 +13,9 @@ const props = defineProps({
 const emit = defineEmits([
     'edit',
     'remove',
-    'consume',
     'drag-start',
     'drag-end'
 ])
-
-// Reactions start only after the parent confirms the inventory update succeeded.
-const animation = ref('')
-const chompCount = ref(0)
-const currentChomp = ref(0)
-const busy = ref(false)
-let animationTimer = null
-let chompInterval = null
 
 // Food emoji.
 const foodEmoji = computed(() => {
@@ -82,68 +73,47 @@ const expiryClass = computed(() => {
     return 'expiry-normal'
 })
 
-// Run the reaction on the button after a successful inventory update.
-function startReaction(type, details = {}) {
-    clearTimeout(animationTimer)
-    clearInterval(chompInterval)
+// Use an emoji-only preview for drag operations.
+function setEmojiDragImage(event) {
+    if (!event.dataTransfer) return
 
-    busy.value = true
+    // Draw the food emoji on a transparent canvas so the native drag preview
+    // shows the food being held instead of a snapshot of the full card.
+    const size = 72
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const context = canvas.getContext('2d')
+    if (!context) return
 
-    if (type === 'consume') {
-        animation.value = 'consume'
-        const amount = Number(details.amount) || 1
-        chompCount.value = Math.max(1, Math.min(5, Math.ceil(amount / 2)))
-        currentChomp.value = 0
+    context.font = '52px "Segoe UI Emoji", "Apple Color Emoji", sans-serif'
+    context.textAlign = 'center'
+    context.textBaseline = 'middle'
+    context.fillText(foodEmoji.value, size / 2, size / 2)
 
-        chompInterval = setInterval(() => {
-            currentChomp.value += 1
-            if (currentChomp.value >= chompCount.value) {
-                clearInterval(chompInterval)
-                chompInterval = null
-            }
-        }, 220)
-
-        animationTimer = setTimeout(finishReaction, 700 + chompCount.value * 220)
-    } else {
-        const proportion = Number(details.proportion) || 0
-        const level = proportion >= 0.75 ? 'strong' : proportion >= 0.35 ? 'medium' : 'gentle'
-        animation.value = `discard-${level}`
-        animationTimer = setTimeout(finishReaction, level === 'strong' ? 850 : 650)
-    }
+    // Browsers can ignore drag images that are not rendered in the document.
+    // Keep the transparent canvas under the pointer until the drag snapshot is taken.
+    canvas.style.position = 'fixed'
+    canvas.style.left = `${Math.max(0, event.clientX - size / 2)}px`
+    canvas.style.top = `${Math.max(0, event.clientY - size / 2)}px`
+    canvas.style.zIndex = '2147483647'
+    canvas.style.pointerEvents = 'none'
+    canvas.style.background = 'transparent'
+    document.body.appendChild(canvas)
+    event.dataTransfer.setDragImage(canvas, size / 2, size / 2)
+    requestAnimationFrame(() => canvas.remove())
 }
 
-function finishReaction() {
-    clearTimeout(animationTimer)
-    clearInterval(chompInterval)
-    animationTimer = null
-    chompInterval = null
-    animation.value = ''
-    chompCount.value = 0
-    currentChomp.value = 0
-    busy.value = false
-}
-
-// The parent calls the callback only after confirmation and a successful API update.
-function handleConsume() {
-    if (busy.value) return
-    emit('consume', props.item, details => startReaction('consume', details))
-}
-
-// Drag-and-drop remains unchanged.
 function handleDragStart(event) {
     event.dataTransfer.setData('text/plain', String(props.item.id))
     event.dataTransfer.effectAllowed = 'move'
+    setEmojiDragImage(event)
     emit('drag-start', props.item)
 }
 
 function handleDragEnd() {
     emit('drag-end')
 }
-
-onBeforeUnmount(() => {
-    clearTimeout(animationTimer)
-    clearInterval(chompInterval)
-})
 </script>
 
 <template>
@@ -156,15 +126,14 @@ onBeforeUnmount(() => {
         <div class="card-top">
             <span class="food-emoji">{{ foodEmoji }}</span>
 
-            <button
-                type="button"
-                class="icon-button"
-                title="Edit food"
-                aria-label="Edit food"
-                @click.stop="emit('edit', item)"
-            >
-                ✏️
-            </button>
+            <div class="card-tools" role="group" aria-label="Food item controls">
+                <button type="button" class="icon-button" title="Edit food" :aria-label="`Edit ${item.name}`" @click.stop="emit('edit', item)">
+                    ✏️
+                </button>
+                <button type="button" class="icon-button remove-icon-button" title="Remove food" :aria-label="`Remove ${item.name}`" @click.stop="emit('remove', item)">
+                    ×
+                </button>
+            </div>
         </div>
 
         <h4>{{ item.name }}</h4>
@@ -173,27 +142,10 @@ onBeforeUnmount(() => {
             {{ item.quantity }} {{ item.unit }}
         </p>
 
-        <span class="expiry-badge" :class="expiryClass">
+        <span class="expiry-badge" :class="expiryClass" :aria-label="`Expiry status: ${expiryStatus}`">
             {{ expiryStatus }}
         </span>
 
-        <div class="food-actions">
-            <button
-                type="button"
-                class="action-button consume-button"
-                :class="{ 'button-consuming': animation === 'consume' }"
-                title="Record food consumed"
-                :disabled="busy"
-                @click.stop="handleConsume"
-            >
-                <span class="button-emoji consume-emoji" aria-hidden="true">
-                    {{ animation === 'consume' ? (currentChomp % 2 ? '🤤' : '😋') : '😋' }}
-                </span>
-                <span>{{ animation === 'consume' ? 'Nom nom!' : 'Consume' }}</span>
-                <span v-if="animation === 'consume'" class="mini-sparkle" aria-hidden="true">✨</span>
-            </button>
-
-        </div>
     </article>
 </template>
 
@@ -228,80 +180,6 @@ onBeforeUnmount(() => {
     cursor: grabbing;
 }
 
-/* Button animations: reactions stay on the button itself. */
-.button-emoji {
-    display: inline-block;
-    font-size: 18px;
-    line-height: 1;
-    vertical-align: middle;
-}
-
-.button-consuming {
-    background: #c8f4d5;
-    animation: consume-button-bounce 0.22s ease-in-out infinite alternate;
-}
-
-.button-consuming .consume-emoji {
-    animation: face-chomp 0.22s ease-in-out infinite alternate;
-}
-
-
-.mini-sparkle {
-    display: inline-block;
-    margin-left: 2px;
-    animation: sparkle-tiny 0.45s ease-in-out infinite alternate;
-}
-
-@keyframes consume-button-bounce {
-    from { transform: translateY(0) scale(1); }
-    to { transform: translateY(-2px) scale(1.025); }
-}
-
-@keyframes face-chomp {
-    from { transform: scale(1) rotate(-4deg); }
-    to { transform: scale(1.18) rotate(4deg); }
-}
-
-
-@keyframes sparkle-tiny {
-    from { transform: scale(0.7) rotate(-12deg); opacity: 0.45; }
-    to { transform: scale(1.15) rotate(12deg); opacity: 1; }
-}
-
-/* Discard is slower and deliberately less celebratory. */
-.bin-emoji { transform-origin: 50% 80%; }
-
-.bin-gentle .bin-emoji {
-    animation: bin-wobble-gentle 0.28s ease-in-out 2;
-}
-
-.bin-medium .bin-emoji {
-    animation: bin-wobble-medium 0.22s ease-in-out 3;
-}
-
-.bin-strong .bin-emoji {
-    animation: bin-wobble-strong 0.18s ease-in-out 4;
-}
-
-@keyframes bin-wobble-gentle {
-    0%, 100% { transform: rotate(0); }
-    35% { transform: rotate(-5deg) translateY(1px); }
-    70% { transform: rotate(5deg) translateY(1px); }
-}
-
-@keyframes bin-wobble-medium {
-    0%, 100% { transform: rotate(0); }
-    30% { transform: rotate(-10deg) translateY(1px); }
-    65% { transform: rotate(10deg) translateY(2px); }
-}
-
-@keyframes bin-wobble-strong {
-    0%, 100% { transform: rotate(0); }
-    25% { transform: rotate(-13deg) translateY(2px); }
-    55% { transform: rotate(13deg) translateY(2px); }
-    80% { transform: rotate(-7deg); }
-}
-
 /* Card header */
 .card-top {
     display: flex;
@@ -309,6 +187,12 @@ onBeforeUnmount(() => {
     justify-content: space-between;
     gap: 8px;
     margin-bottom: 10px;
+}
+
+/* Keep the small edit and remove controls together and visible on touch screens. */
+.card-tools {
+    display: flex;
+    gap: 6px;
 }
 
 .food-emoji {
@@ -341,11 +225,22 @@ onBeforeUnmount(() => {
     cursor: pointer;
 }
 
+.remove-icon-button {
+    color: #8d3832;
+}
+
 .food-card:hover .icon-button,
 .food-card:focus-within .icon-button,
 .icon-button:focus-visible {
     opacity: 1;
     visibility: visible;
+}
+
+@media (hover: none) {
+    .icon-button {
+        opacity: 1;
+        visibility: visible;
+    }
 }
 
 .icon-button:hover {
@@ -394,70 +289,13 @@ h4 {
     color: var(--ink);
 }
 
-/* Action buttons */
-.food-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 14px;
-}
-
-.action-button {
-    flex: 1 1 90px;
-    min-height: 36px;
-    padding: 6px 8px;
-    border: 2px solid var(--ink);
-    border-radius: 9px;
-    box-shadow: 2px 3px 0 var(--ink);
-    color: var(--ink);
-    font-family: var(--font-sans);
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-
-.action-button:hover:not(:disabled) {
-    transform: translate(-1px, -1px);
-    box-shadow: 3px 4px 0 var(--ink);
-}
-
-.action-button:active:not(:disabled) {
-    transform: translate(1px, 1px);
-    box-shadow: 1px 1px 0 var(--ink);
-}
-
-.action-button:disabled {
-    cursor: wait;
-    opacity: 0.7;
-}
-
-.consume-button {
-    background: var(--aqua-soft);
-}
-
-.consume-button:hover:not(:disabled) {
-    background: var(--lime);
-}
-
-.discard-button {
-    background: var(--coral);
-}
-
-.discard-button:hover:not(:disabled) {
-    background: #ff8170;
-}
-
-.icon-button:focus-visible,
-.action-button:focus-visible {
+.icon-button:focus-visible {
     outline: 3px dashed var(--aqua);
     outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .food-card,
-    .button-emoji,
-    .mini-sparkle {
+    .food-card {
         animation: none !important;
         transition: none !important;
     }
