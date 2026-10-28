@@ -13,7 +13,7 @@ export const routes = [
   {
     path: '/dashboard',
     name: 'dashboard',
-    component: () => import('../views/account/DashboardView.vue'),
+    component: () => import('../views/NewDashboardView.vue'),
     meta: { navLabel: 'Dashboard' },
   },
   {

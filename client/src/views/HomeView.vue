@@ -12,7 +12,7 @@ import HomeFridge from '../components/HomeFridge.vue'
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="m15 3 1.5 4.5L21 9l-4.5 1.5L15 15l-1.5-4.5L9 9l4.5-1.5ZM6 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1Z"
-              /></svg
+              /></svg>
             >Your kitchen sidekick
           </p>
           <h1>
