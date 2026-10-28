@@ -104,8 +104,18 @@ function openSection(section) {
       aria-label="Open fridge"
       @click="openSection('fridge')"
     >
-      <img src="/images/fridge.svg" alt="" />
-    </button>
+    <!-- Interior and outer shell -->
+    <img
+      class="fridge-base"
+      src="/images/fridge.svg"
+      alt=""
+    />
+
+    <!-- Doors layered over the interior -->
+    <span class="fridge-door-layer">
+      <img src="/images/fridge-doors.svg" alt="" />
+    </span>
+  </button>
 
     <button
       type="button"
@@ -269,7 +279,7 @@ function openSection(section) {
 
 /* Digital wall clock */
 .wall-clock {
-  left: 71.75%;
+  right: 8.25%;
   top: 3.25%;
   width: 18.5%;
   height: 7.5%;
@@ -343,6 +353,60 @@ function openSection(section) {
   top: 3.75%;
   bottom: 0;
   width: 21.67%;
+
+  /* Remove your previous bottom: 0 */
+  perspective: 1000px;
+  overflow: visible;
+}
+
+/* Keep the fridge still while its doors move. */
+.fridge:hover {
+  transform: none;
+}
+
+.fridge-base {
+  position: relative;
+  z-index: 0;
+}
+
+/*
+  These values assume:
+  - fridge.svg includes the shell and feet
+  - fridge-doors.svg is tightly cropped around both doors
+*/
+.fridge-door-layer {
+  position: absolute;
+  left: 5.8%;
+  top: 17%;
+  width: 89.2%;
+  z-index: 1;
+
+  display: block;
+  transform-origin: left center;
+  transform: rotateY(0deg);
+  transition:
+    transform 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.75s ease;
+
+  backface-visibility: hidden;
+  pointer-events: none;
+}
+
+.fridge-door-layer img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .fridge:hover .fridge-door-layer {
+    transform: rotateY(-90deg);
+    filter: brightness(0.92);
+  }
+}
+
+.fridge:focus-visible .fridge-door-layer {
+  transform: rotateY(-75deg);
 }
 
 .pantry {
