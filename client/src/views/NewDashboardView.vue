@@ -53,8 +53,7 @@ function openSection(section) {
 
 <template>
   <main class="kitchen">
-    <!-- Room background is supplied through CSS. -->
-
+    <!-- Decorative layers -->
     <img
       class="decoration kitchen-window"
       src="/images/window.svg"
@@ -67,87 +66,98 @@ function openSection(section) {
       alt=""
     />
 
-    <!-- Live wall calendar -->
-    <section
-      class="wall-calendar"
-      :aria-label="`Today is ${fullDate}`"
-    >
-      <span class="calendar-ring ring-left" aria-hidden="true"></span>
-      <span class="calendar-ring ring-right" aria-hidden="true"></span>
 
-      <div class="calendar-month">
-        {{ dateParts.month }} {{ dateParts.year }}
-      </div>
-
-      <div class="calendar-paper">
-        <span class="calendar-day">{{ dateParts.day }}</span>
-        <span class="calendar-weekday">{{ dateParts.weekday }}</span>
-        <span class="calendar-footer">a fresh day</span>
-      </div>
-    </section>
-
-    <!-- Live digital clock -->
+    <!-- Live clock -->
     <section
       class="wall-clock"
       :aria-label="`Singapore time ${currentTime}`"
     >
       <div class="clock-display">
         <span class="clock-time">{{ currentTime }}</span>
-        <span class="clock-format">24H</span>
       </div>
     </section>
 
-    <!-- Interactive objects -->
+    <!-- Fridge -->
     <button
       type="button"
       class="object fridge"
-      aria-label="Open fridge"
+      aria-label="Open fridge inventory"
       @click="openSection('fridge')"
     >
-    <!-- Interior and outer shell -->
-    <img
-      class="fridge-base"
-      src="/images/fridge.svg"
-      alt=""
-    />
+      <img
+        class="fridge-base"
+        src="/images/fridge.svg"
+        alt=""
+      />
 
-    <!-- Doors layered over the interior -->
-    <span class="fridge-door-layer">
-      <img src="/images/fridge-doors.svg" alt="" />
-    </span>
-  </button>
+      <span class="fridge-door-layer">
+        <img src="/images/fridge-doors.svg" alt="" />
+      </span>
+    </button>
 
+    <!-- Pantry -->
     <button
       type="button"
       class="object pantry"
-      aria-label="Open pantry"
+      aria-label="Open pantry inventory"
       @click="openSection('pantry')"
     >
       <img src="/images/pantry.svg" alt="" />
     </button>
 
+    <!-- Community board -->
+    <div class="community-board">
+      <!-- Export the board without the two notes -->
+      <img
+        class="board-background"
+        src="/images/community-board.svg"
+        alt=""
+      />
+
+      <button
+        type="button"
+        class="board-note share-note"
+        aria-label="Share your surplus food"
+        @click="openSection('share')"
+      >
+        <img src="/images/share-food-note.svg" alt="" />
+      </button>
+
+      <button
+        type="button"
+        class="board-note rescue-note"
+        aria-label="Find food to rescue nearby"
+        @click="openSection('rescue')"
+      >
+        <img src="/images/rescue-food-note.svg" alt="" />
+      </button>
+    </div>
+
+    <!-- Recipe book -->
     <button
       type="button"
-      class="object ledger"
-      aria-label="Open community sharing"
-      @click="openSection('sharing')"
+      class="object recipe-book"
+      aria-label="Find recipes using your ingredients"
+      @click="openSection('recipes')"
     >
-      <img src="/images/ledger.svg" alt="" />
+      <img src="/images/recipe-book.svg" alt="" />
     </button>
 
+    <!-- Impact plant -->
     <button
       type="button"
-      class="object food"
-      aria-label="View expiring food"
-      @click="openSection('expiring-food')"
+      class="object impact-plant"
+      aria-label="View your food-saving impact"
+      @click="openSection('impact')"
     >
-      <img src="/images/expiring.svg" alt="" />
+      <img src="/images/plant.svg" alt="" />
     </button>
 
+    <!-- Scanner -->
     <button
       type="button"
       class="object scanner"
-      aria-label="Scan food"
+      aria-label="Scan a receipt"
       @click="openSection('scanner')"
     >
       <img src="/images/scanner.svg" alt="" />
@@ -171,163 +181,45 @@ function openSection(section) {
     center / 100% 100% no-repeat;
 }
 
+/* Shared positioning */
 .decoration,
 .object,
-.wall-calendar,
-.wall-clock {
+.wall-clock,
+.scan-shortcut {
   position: absolute;
-  display: block;
   box-sizing: border-box;
 }
 
 .decoration {
+  display: block;
   height: auto;
   pointer-events: none;
   user-select: none;
 }
 
 .kitchen-window {
-  left: 70.92%;
-  top: 12.25%;
-  width: 24.25%;
+  left: 79.8333%;
+  top: 16.625%;
+  width: 17.25%;
   z-index: 1;
 }
 
 .countertop {
-  left: 26.25%;
-  top: 60.5%;
-  width: 73.75%;
+  left: 26%;
+  top: 66.125%;
+  width: 73.1667%;
   z-index: 2;
-}
-
-/* Wall calendar */
-.wall-calendar {
-  left: 64.08%;
-  top: 24.38%;
-  width: 6.17%;
-  height: 15.38%;
-  z-index: 2;
-
-  border: 0.167cqw solid #62594a;
-  border-radius: 0.333cqw;
-  background: #fff6df;
-  box-shadow: 0.333cqw 0.5cqw 0 rgb(189 149 111 / 20%);
-  font-family: 'Kalam', 'Patrick Hand', 'Comic Sans MS', cursive;
-  color: #62594a;
-  text-align: center;
-}
-
-.calendar-ring {
-  position: absolute;
-  top: -0.583cqw;
-  width: 0.417cqw;
-  height: 1.083cqw;
-  z-index: 1;
-  border-radius: 0.167cqw;
-  background: #62594a;
-}
-
-.ring-left {
-  left: 22%;
-}
-
-.ring-right {
-  right: 22%;
-}
-
-.calendar-month {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 20%;
-  border-radius: 0.167cqw 0.167cqw 0 0;
-  background: #bc7d66;
-  color: #fff6df;
-  font-size: 0.833cqw;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.calendar-paper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 80%;
-}
-
-.calendar-day {
-  margin-top: 0.5cqw;
-  font-size: 3.25cqw;
-  line-height: 1.2;
-}
-
-.calendar-weekday {
-  margin-top: 0.167cqw;
-  font-size: 0.75cqw;
-  text-transform: uppercase;
-}
-
-.calendar-footer {
-  width: 70%;
-  margin-top: auto;
-  margin-bottom: 0.333cqw;
-  padding-top: 0.333cqw;
-  border-top: 1px solid #bd956f;
-  color: #bc7d66;
-  font-size: 0.667cqw;
-}
-
-/* Digital wall clock */
-.wall-clock {
-  right: 8.25%;
-  top: 3.25%;
-  width: 18.5%;
-  height: 7.5%;
-  z-index: 2;
-
-  padding: 0.5cqw;
-  border: 0.208cqw solid #62594a;
-  border-radius: 0.917cqw;
-  background: #bd956f;
-  box-shadow: 0.333cqw 0.417cqw 0 rgb(189 149 111 / 22%);
-}
-
-.clock-display {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1cqw;
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  border: 0.25cqw solid #62594a;
-  border-radius: 0.5cqw;
-  background: #304f42;
-  color: #e3ecc9;
-}
-
-.clock-time {
-  font-family: 'Roboto Mono', 'Courier New', monospace;
-  font-size: 2.5cqw;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.clock-format {
-  align-self: flex-start;
-  margin-top: 0.417cqw;
-  font-family: monospace;
-  font-size: 0.75cqw;
 }
 
 /* Interactive objects */
 .object {
+  display: block;
   z-index: 3;
+
   margin: 0;
   padding: 0;
   border: 0;
+
   background: transparent;
   cursor: pointer;
   transition: transform 0.2s ease;
@@ -337,29 +229,34 @@ function openSection(section) {
   display: block;
   width: 100%;
   height: auto;
+  pointer-events: none;
+  user-select: none;
 }
 
 .object:hover {
   transform: translateY(-4px);
 }
 
-.object:focus-visible {
+.object:focus-visible,
+.scan-shortcut:focus-visible {
   outline: 3px dashed #ba7749;
   outline-offset: 4px;
 }
 
+/* Fridge */
 .fridge {
-  left: 3.83%;
-  top: 3.75%;
-  bottom: 0;
-  width: 21.67%;
+  left: 4%;
+  top: 23%;
+  width: 22%;
 
-  /* Remove your previous bottom: 0 */
+  /* Height comes from the base image. */
+  bottom: auto;
+
   perspective: 1000px;
   overflow: visible;
+  isolation: isolate;
 }
 
-/* Keep the fridge still while its doors move. */
 .fridge:hover {
   transform: none;
 }
@@ -370,71 +267,176 @@ function openSection(section) {
 }
 
 /*
-  These values assume:
-  - fridge.svg includes the shell and feet
-  - fridge-doors.svg is tightly cropped around both doors
+  Doors relative to fridge:
+  X offset: 15 / 260
+  Y offset: 16 / 544.04
+  Width: 232 / 260
 */
 .fridge-door-layer {
   position: absolute;
-  left: 5.8%;
-  top: 17%;
-  width: 89.2%;
-  z-index: 1;
+  left: 6%;
+  top: 3%;
+  width: 89%;
+  z-index: 2;
 
   display: block;
   transform-origin: left center;
   transform: rotateY(0deg);
+  backface-visibility: hidden;
+  pointer-events: none;
+
   transition:
     transform 0.75s cubic-bezier(0.22, 1, 0.36, 1),
     filter 0.75s ease;
-
-  backface-visibility: hidden;
-  pointer-events: none;
-}
-
-.fridge-door-layer img {
-  display: block;
-  width: 100%;
-  height: auto;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .fridge:hover .fridge-door-layer {
-    transform: rotateY(-90deg);
+    transform: rotateY(-85deg);
     filter: brightness(0.92);
   }
 }
 
 .fridge:focus-visible .fridge-door-layer {
-  transform: rotateY(-75deg);
+  transform: rotateY(-85deg);
 }
 
+/* Pantry */
 .pantry {
-  left: 28.83%;
-  top: 5.5%;
-  width: 34%;
+  left: 28%;
+  top: 26%;
+  width: 18%;
+}
+/* Community Board */
+.community-board {
+  position: absolute;
+  left: 49.0833%;
+  top: 7.625%;
+  width: 28.75%;
+  z-index: 3;
 }
 
-.ledger {
-  left: 33.17%;
-  top: 58.13%;
-  width: 15%;
+.community-board img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
 }
 
-.food {
-  left: 52.25%;
-  top: 64.38%;
-  width: 25%;
+.board-background {
+  position: relative;
 }
 
-.scanner {
-  left: 81.83%;
-  top: 57.75%;
-  width: 9.25%;
+/* Both notes are positioned relative to the board. */
+.board-note {
+  position: absolute;
+  top: 34%;
+  width: 36%;
+  z-index: 1;
+
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+/* Share on the left */
+.share-note {
+  left: 8%;
+}
+
+/* Rescue on the right */
+.rescue-note {
+  right: 8%;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .board-note:hover {
+    transform: translateY(-4px) scale(1.03);
+  }
+}
+
+.board-note:focus-visible {
+  outline: 3px dashed #ba7749;
+  outline-offset: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .object {
+  .board-note {
+    transition: none;
+  }
+
+  .board-note:hover {
+    transform: none;
+  }
+}
+
+/* Includes the cookbook stand and shadow. */
+.recipe-book {
+  left: 35%;
+  top: 60%;
+  width: 30%;
+}
+
+/* Includes the plant's marker and progress label. */
+.impact-plant {
+  left: 81.9167%;
+  top: 51.25%;
+  width: 12.6667%;
+}
+
+/* Clock */
+.wall-clock {
+  left: 82.9167%;
+  top: 7.625%;
+  width: 11.4167%;
+  height: 6%;
+  z-index: 2;
+
+  padding: 0.4cqw;
+  border: 0.208cqw solid #62594a;
+  border-radius: 0.75cqw;
+  background: #bd956f;
+}
+
+.clock-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 100%;
+  height: 100%;
+  border-radius: 0.4cqw;
+  background: #304f42;
+  color: #e3ecc9;
+}
+
+.clock-time {
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  font-size: 2cqw;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Optional scanner shortcut */
+.scanner {
+  left: 70%;
+  top: 62%;
+  width: 9.25%;
+  z-index: 4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .object,
+  .fridge-door-layer {
     transition: none;
   }
 
