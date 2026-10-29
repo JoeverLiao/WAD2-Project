@@ -4,9 +4,8 @@
 // Shared by the Smart Fridge and the Dashboard so both pages
 // show the same food items and storage area names.
 //
-// IMPORTANT:
-// This still uses temporary sample data held in memory.
-// It does not save items to MongoDB or the backend yet.
+// Items are loaded from the backend (GET /api/inventory) for
+// the signed-in user. No sample data is held here.
 // ============================================================
 
 import { ref } from 'vue'
@@ -81,128 +80,59 @@ export function isInArea(item, area) {
 
 export const useInventoryStore = defineStore('inventory', () => {
     // --------------------------------------------------------
-    // 2. SAMPLE INVENTORY
+    // 2. INVENTORY FROM THE BACKEND
     //
-    // Each item has:
-    // id          - a temporary unique identifier
-    // name        - food name
-    // quantity    - amount of food
-    // unit        - how the amount is measured
-    // storage     - main location: fridge, freezer or pantry
-    // storageZone - specific compartment within that location
-    // expiresAt   - expiry date in YYYY-MM-DD format
+    // Loaded from GET /api/inventory, the same endpoint the
+    // Smart Fridge page uses, so the Dashboard only ever shows
+    // the signed-in user's real items. Starts empty.
     // --------------------------------------------------------
 
-    const items = ref([
-    {
-        id: 1,
-        name: 'Fresh Milk',
-        quantity: 1,
-        unit: 'carton',
-        storage: 'fridge',
-        storageZone: 'middle-shelf',
-        expiresAt: '2026-10-15'
-    },
-    {
-        id: 2,
-        name: 'Eggs',
-        quantity: 10,
-        unit: 'pieces',
-        storage: 'fridge',
-        storageZone: 'middle-shelf',
-        expiresAt: '2026-10-20'
-    },
-    {
-        id: 3,
-        name: 'Leftover Pasta',
-        quantity: 1,
-        unit: 'container',
-        storage: 'fridge',
-        storageZone: 'upper-shelf',
-        expiresAt: '2026-10-14'
-    },
-    {
-        id: 4,
-        name: 'Chicken Breast',
-        quantity: 2,
-        unit: 'pieces',
-        storage: 'fridge',
-        storageZone: 'lower-shelf',
-        expiresAt: '2026-10-13'
-    },
-    {
-        id: 5,
-        name: 'Tomato Sauce',
-        quantity: 1,
-        unit: 'bottle',
-        storage: 'fridge',
-        storageZone: 'door',
-        expiresAt: '2026-11-10'
-    },
-    {
-        id: 6,
-        name: 'Carrots',
-        quantity: 5,
-        unit: 'pieces',
-        storage: 'fridge',
-        storageZone: 'crisper',
-        expiresAt: '2026-10-18'
-    },
-    {
-        id: 7,
-        name: 'Broccoli',
-        quantity: 2,
-        unit: 'pieces',
-        storage: 'fridge',
-        storageZone: 'crisper',
-        expiresAt: '2026-10-17'
-    },
-    {
-        id: 8,
-        name: 'Frozen Peas',
-        quantity: 1,
-        unit: 'bag',
-        storage: 'freezer',
-        storageZone: 'freezer-main',
-        expiresAt: '2027-02-01'
-    },
-    {
-        id: 9,
-        name: 'Ice Cream',
-        quantity: 1,
-        unit: 'tub',
-        storage: 'freezer',
-        storageZone: 'freezer-main',
-        expiresAt: '2027-01-15'
-    },
-    {
-        id: 10,
-        name: 'Rice',
-        quantity: 2,
-        unit: 'bags',
-        storage: 'pantry',
-        storageZone: 'dry-storage',
-        expiresAt: '2027-06-01'
-    },
-    {
-        id: 11,
-        name: 'Pasta',
-        quantity: 3,
-        unit: 'packets',
-        storage: 'pantry',
-        storageZone: 'dry-storage',
-        expiresAt: '2027-03-01'
-    },
-    {
-        id: 12,
-        name: 'Cereal',
-        quantity: 1,
-        unit: 'box',
-        storage: 'pantry',
-        storageZone: 'dry-storage',
-        expiresAt: '2027-04-01'
-    }
-])
+    const items = ref([])
+    const loading = ref(false)
+    const error = ref('')
 
-    return { items }
+    async function loadInventory() {
+        loading.value = true
+        error.value = ''
+
+        try {
+            const response = await fetch('/api/inventory', {
+                method: 'GET',
+                credentials: 'include'
+            })
+
+            if (!response.ok) {
+                throw new Error(`Could not load inventory (HTTP ${response.status}).`)
+            }
+
+            const data = await response.json()
+            const apiItems = Array.isArray(data) ? data : (data.items || [])
+            items.value = apiItems.map(normaliseItem)
+        } catch (err) {
+            console.error('Failed to load inventory:', err)
+            items.value = []
+            error.value = 'Unable to load your inventory. Check that you are logged in and the backend is running, then retry.'
+        } finally {
+            loading.value = false
+        }
+    }
+
+    return { items, loading, error, loadInventory }
 })
+
+// Same shape conversion as the Smart Fridge page: MongoDB _id -> id,
+// ISO dates -> YYYY-MM-DD, and a default zone for older records.
+function normaliseItem(apiItem) {
+    return {
+        ...apiItem,
+        id: String(apiItem._id || apiItem.id),
+        expiresAt: apiItem.expiresAt ? String(apiItem.expiresAt).slice(0, 10) : '',
+        storageZone: apiItem.storageZone || defaultZoneFor(apiItem.storage)
+    }
+}
+
+function defaultZoneFor(storage) {
+    if (storage === 'freezer') return 'freezer-main'
+    if (storage === 'pantry') return 'dry-storage'
+    return 'middle-shelf'
+}

@@ -1,18 +1,17 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useInventoryStore, storageAreas, isInArea } from '../../stores/inventory.js'
-import { sampleRecipes } from '../../data/freshnessDemo.js'
 import { getDaysRemaining, getExpiryStatus } from '../../utils/expiryUtils.js'
-import { matchRecipes } from '../../utils/recipeUtils.js'
 import { useAuthStore } from '../../stores/auth.js'
 
 const authStore = useAuthStore()
 const { user, isAuthenticated } = storeToRefs(authStore)
 
-// Same items + area names as the Smart Fridge page
-const { items } = storeToRefs(useInventoryStore())
+// The user's Smart Fridge items, loaded from the backend
+const inventoryStore = useInventoryStore()
+const { items, loading, error } = storeToRefs(inventoryStore)
 
 // Every item tagged with its area title and days left, most urgent first
 const allExpiryItems = computed(() => {
@@ -48,15 +47,45 @@ const areaSummaries = computed(() =>
   }),
 )
 
-const recipes = computed(() => {
-  const inventory = allExpiryItems.value.map((i) => ({
-    name: i.name,
-    quantity: i.quantity || 1,
-    daysRemaining: i.daysRemaining,
-    status: i.status,
-  }))
-  return matchRecipes(sampleRecipes, inventory)
-})
+// Real TheMealDB recipes ranked by how many of the user's ingredients they use.
+// Ingredients that expire soonest go first, so suggestions help use them up.
+const recipes = ref([])
+const recipesLoading = ref(false)
+const recipesError = ref('')
+
+const usableIngredients = computed(() => [
+  ...new Set(
+    allExpiryItems.value
+      .filter((i) => i.status !== 'expired' && Number(i.quantity) > 0)
+      .map((i) => i.name.toLowerCase()),
+  ),
+].slice(0, 8))
+
+async function loadRecipes(ingredients) {
+  if (!ingredients.length) {
+    recipes.value = []
+    return
+  }
+  recipesLoading.value = true
+  recipesError.value = ''
+  try {
+    const response = await fetch(`/api/freshness/recipes?ingredients=${encodeURIComponent(ingredients.join(','))}`, {
+      credentials: 'include',
+    })
+    if (!response.ok) throw new Error(`Recipes HTTP ${response.status}`)
+    const data = await response.json()
+    recipes.value = Array.isArray(data) ? data : []
+  } catch (err) {
+    console.error('Failed to load recipes:', err)
+    recipes.value = []
+    recipesError.value = 'Unable to load recipe suggestions right now.'
+  } finally {
+    recipesLoading.value = false
+  }
+}
+
+// Only refetch when the ingredient list actually changes
+watch(() => usableIngredients.value.join(','), () => loadRecipes(usableIngredients.value), { immediate: true })
 
 // Pill copy + colour for the "time left" cards and expiry list
 function useByLabel(days) {
@@ -71,6 +100,75 @@ function pillClass(days) {
   if (days === null) return 'pill-muted'
   return days <= 1 ? 'pill-coral' : 'pill-lime'
 }
+
+const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+// Expiry list filter chips
+const expiryFilters = [
+  { id: 'all', label: 'All' },
+  { id: 'eat-soon', label: 'Eat soon' },
+  { id: 'fresh', label: 'Fresh' },
+  { id: 'expired', label: 'Expired' },
+]
+const activeFilter = ref('all')
+const filteredExpiryItems = computed(() =>
+  activeFilter.value === 'all' ? allExpiryItems.value : allExpiryItems.value.filter((i) => i.status === activeFilter.value),
+)
+function filterCount(id) {
+  return id === 'all' ? allExpiryItems.value.length : allExpiryItems.value.filter((i) => i.status === id).length
+}
+
+// Hero stat counts up from 0 (and re-animates when the total changes)
+const displayedCount = ref(0)
+function animateCount(target) {
+  if (prefersReducedMotion()) {
+    displayedCount.value = target
+    return
+  }
+  const start = displayedCount.value
+  const startTime = performance.now()
+  const duration = 900
+  const step = (now) => {
+    const t = Math.min((now - startTime) / duration, 1)
+    const eased = 1 - Math.pow(1 - t, 3)
+    displayedCount.value = Math.round(start + (target - start) * eased)
+    if (t < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
+}
+watch(() => allExpiryItems.value.length, animateCount)
+
+// Healthy bars grow from 0 once the page has painted
+const barsReady = ref(false)
+onMounted(() => {
+  inventoryStore.loadInventory()
+  animateCount(allExpiryItems.value.length)
+  requestAnimationFrame(() => (barsReady.value = true))
+})
+
+// v-reveal: fade/slide an element in when it scrolls into view
+const vReveal = {
+  mounted(el, binding) {
+    el.style.setProperty('--reveal-delay', `${binding.value ?? 0}ms`)
+    if (prefersReducedMotion() || !('IntersectionObserver' in window)) {
+      el.classList.add('is-visible')
+      return
+    }
+    el.classList.add('reveal')
+    el._revealObserver = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return
+        el.classList.add('is-visible')
+        el._revealObserver.disconnect()
+      },
+      { threshold: 0.15 },
+    )
+    el._revealObserver.observe(el)
+  },
+  unmounted(el) {
+    el._revealObserver?.disconnect()
+  },
+}
 </script>
 
 <template>
@@ -78,7 +176,7 @@ function pillClass(days) {
   <section aria-label="Dashboard" class="dashboard container-xl py-4">
       <!-- ================= HERO ================= -->
       <header class="hero row align-items-center g-4 mb-5">
-        <div class="col-lg-7">
+        <div v-reveal class="col-lg-7">
           <p class="eyebrow">
               ✿ {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} KITCHEN AT A GLANCE
           </p>
@@ -91,10 +189,10 @@ function pillClass(days) {
           </p>
         </div>
 
-        <div class="col-lg-5 d-flex align-items-center justify-content-lg-end gap-4 flex-wrap">
+        <div v-reveal="150" class="col-lg-5 d-flex align-items-center justify-content-lg-end gap-4 flex-wrap">
           <div class="stamp">
             <svg class="stamp-heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" /></svg>
-            <p class="stamp-title">{{ allExpiryItems.length }} items tracked.</p>
+            <p class="stamp-title" :aria-label="`${allExpiryItems.length} items tracked.`">{{ displayedCount }} items tracked.</p>
             <p class="stamp-sub">across {{ storageAreas.length }} storage areas</p>
           </div>
           <RouterLink :to="{ name: 'fridge' }" class="btn-cta">
@@ -103,12 +201,22 @@ function pillClass(days) {
         </div>
       </header>
 
+      <p v-if="loading" class="status-note mb-4" role="status">Loading your Smart Fridge…</p>
+      <div v-else-if="error" class="status-note status-error mb-4" role="alert">
+        {{ error }}
+        <button type="button" class="chip ms-2" @click="inventoryStore.loadInventory()">Retry</button>
+      </div>
+
       <!-- ================= TIME LEFT PANEL ================= -->
-      <section class="panel panel-tint mb-5" aria-labelledby="time-left-heading">
+      <section v-reveal class="panel panel-tint mb-5" aria-labelledby="time-left-heading">
         <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
           <div class="d-flex align-items-center gap-3">
             <span class="clock-badge" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 1.5" /></svg>
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8" />
+                <path class="clock-hand clock-hand-hour" d="M12 12V8" />
+                <path class="clock-hand clock-hand-minute" d="M12 12l2.5 1.5" />
+              </svg>
             </span>
             <div>
               <h2 id="time-left-heading" class="panel-title">Quick Bites. Use them before they're gone!</h2>
@@ -119,7 +227,7 @@ function pillClass(days) {
         </div>
 
         <div v-if="urgentItems.length" class="row g-3">
-          <div v-for="item in urgentItems" :key="item.id" class="col-md-4">
+          <div v-for="(item, index) in urgentItems" :key="item.id" v-reveal="120 + index * 110" class="col-md-4">
             <article class="item-card">
               <span class="item-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M5 19C5 10 11 5 20 4c-1 9-6 15-15 15Zm0 0 8-8" /></svg>
@@ -127,7 +235,9 @@ function pillClass(days) {
               <div class="flex-grow-1 min-w-0">
                 <h3 class="item-name">{{ item.name }}</h3>
                 <p class="item-meta">Qty {{ item.quantity }}{{ item.unit ? ` ${item.unit}` : '' }} · {{ item.storageLabel }}</p>
-                <span class="pill" :class="pillClass(item.daysRemaining)">{{ useByLabel(item.daysRemaining) }}</span>
+                <span class="pill" :class="[pillClass(item.daysRemaining), { 'pill-pulse': item.daysRemaining !== null && item.daysRemaining <= 1 }]">
+                  {{ useByLabel(item.daysRemaining) }}
+                </span>
               </div>
               <RouterLink :to="{ name: 'freshness-recipes', query: { search: item.name } }" class="link-arrow">
                 Cook <span aria-hidden="true">→</span>
@@ -135,6 +245,7 @@ function pillClass(days) {
             </article>
           </div>
         </div>
+        <p v-else-if="!allExpiryItems.length" class="empty">Your fridge is empty. Add some food to start tracking.</p>
         <p v-else class="empty">Nothing urgent. Your fridge is in great shape!</p>
       </section>
 
@@ -143,7 +254,7 @@ function pillClass(days) {
         <div class="col-lg-7 d-flex flex-column gap-4">
           <h2 class="section-title">Your storage units</h2>
 
-          <article v-for="area in areaSummaries" :key="area.id" class="panel storage-card">
+          <article v-for="(area, index) in areaSummaries" :key="area.id" v-reveal="index * 100" class="panel storage-card">
             <div class="d-flex gap-3">
               <div class="preview-box" aria-hidden="true">{{ area.icon }}</div>
 
@@ -156,16 +267,23 @@ function pillClass(days) {
                   <span v-if="area.healthyPercent !== null" class="pill pill-aqua">Healthy {{ area.healthyPercent }}%</span>
                 </div>
 
+                <div
+                  v-if="area.healthyPercent !== null"
+                  class="health-bar mb-3"
+                  role="progressbar"
+                  :aria-valuenow="area.healthyPercent"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  :aria-label="`${area.title} freshness`"
+                >
+                  <span class="health-fill" :style="{ width: barsReady ? `${area.healthyPercent}%` : '0%' }" />
+                </div>
+
                 <p class="label">Expiring soon</p>
                 <div v-if="area.expiringSoon.length" class="d-flex flex-wrap gap-2">
-                  <RouterLink
-                    v-for="item in area.expiringSoon"
-                    :key="item.id"
-                    :to="{ name: 'freshness-recipes', query: { search: item.name } }"
-                    class="pill pill-coral pill-link"
-                  >
+                  <span v-for="item in area.expiringSoon" :key="item.id" class="pill pill-coral">
                     {{ item.name }}
-                  </RouterLink>
+                  </span>
                 </div>
                 <p v-else class="empty m-0">{{ area.count ? 'None. Nice work!' : 'Empty for now.' }}</p>
               </div>
@@ -178,17 +296,24 @@ function pillClass(days) {
             </div>
           </article>
 
-          <!-- Popular Recipes Block -->
-          <section class="panel" aria-labelledby="recipes-heading">
-            <h2 id="recipes-heading" class="panel-title mb-2">Popular recipes</h2>
-            <ul class="recipe-list">
+          <!-- Recipe suggestions from the user's ingredients -->
+          <section v-reveal class="panel" aria-labelledby="recipes-heading">
+            <h2 id="recipes-heading" class="panel-title mb-2">Try these recipes!</h2>
+            <p v-if="recipesLoading" class="empty m-0" role="status">Finding recipes for your ingredients…</p>
+            <p v-else-if="recipesError" class="empty m-0" role="alert">{{ recipesError }}</p>
+            <p v-else-if="!recipes.length" class="empty m-0">
+              {{ usableIngredients.length ? 'No recipes found for your ingredients yet.' : 'Add some food to get recipe ideas.' }}
+            </p>
+            <ul v-else class="recipe-list">
               <li v-for="recipe in recipes.slice(0, 3)" :key="recipe.id">
-                <div>
-                  <strong class="recipe-name">{{ recipe.name }}</strong>
-                  <span class="recipe-meta">made by 5.2K</span>
-                </div>
-                <RouterLink :to="{ name: 'freshness-recipes', query: { id: recipe.id } }" class="link-arrow">
-                  View <span aria-hidden="true">→</span>
+                <RouterLink :to="{ name: 'recipe-detail', params: { id: String(recipe.id) } }" class="recipe-link">
+                  <div>
+                    <strong class="recipe-name">{{ recipe.name }}</strong>
+                    <span v-if="recipe.ingredients?.length" class="recipe-meta">
+                      {{ recipe.matchedIngredients?.length ?? 0 }} of {{ recipe.ingredients.length }} ingredients in your fridge
+                    </span>
+                  </div>
+                  <span class="link-arrow">View <span aria-hidden="true">→</span></span>
                 </RouterLink>
               </li>
             </ul>
@@ -199,7 +324,21 @@ function pillClass(days) {
         <div class="col-lg-5 d-flex flex-column gap-4">
           <h2 class="section-title">Expiry list</h2>
 
-          <div class="panel p-0 expiry-wrap">
+          <div v-reveal class="filter-chips" role="group" aria-label="Filter expiry list">
+            <button
+              v-for="filter in expiryFilters"
+              :key="filter.id"
+              type="button"
+              class="chip"
+              :class="{ 'is-active': activeFilter === filter.id }"
+              :aria-pressed="activeFilter === filter.id"
+              @click="activeFilter = filter.id"
+            >
+              {{ filter.label }} <span class="chip-count">{{ filterCount(filter.id) }}</span>
+            </button>
+          </div>
+
+          <div v-reveal="100" class="panel p-0 expiry-wrap">
             <table class="expiry-table">
               <thead>
                 <tr>
@@ -209,22 +348,24 @@ function pillClass(days) {
                   <th scope="col"><span class="visually-hidden">Status</span></th>
                 </tr>
               </thead>
-              <tbody>
-                <tr v-for="item in allExpiryItems" :key="item.id">
+              <TransitionGroup tag="tbody" name="row">
+                <tr v-for="item in filteredExpiryItems" :key="item.id">
                   <td class="fw-bold">{{ item.name }}</td>
                   <td class="muted">{{ item.storageLabel }}</td>
                   <td>{{ item.quantity }}</td>
                   <td><span class="pill pill-sm" :class="pillClass(item.daysRemaining)">{{ useByLabel(item.daysRemaining) }}</span></td>
                 </tr>
-                <tr v-if="!allExpiryItems.length">
-                  <td colspan="4" class="text-center py-4 muted">Your fridge is empty. Add some food to start tracking.</td>
+                <tr v-if="!filteredExpiryItems.length" key="empty">
+                  <td colspan="4" class="text-center py-4 muted">
+                    {{ allExpiryItems.length ? 'Nothing in this group right now.' : 'Your fridge is empty. Add some food to start tracking.' }}
+                  </td>
                 </tr>
-              </tbody>
+              </TransitionGroup>
             </table>
           </div>
 
           <!-- Donation callout -->
-          <section class="donate" aria-labelledby="donate-heading">
+          <section v-reveal class="donate" aria-labelledby="donate-heading">
             <svg class="donate-heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" /></svg>
             <h2 id="donate-heading" class="donate-title">A little extra? <span class="scribble">Pass it on.</span></h2>
             <p class="donate-sub">Good food deserves a home, not a bin.</p>
@@ -330,13 +471,6 @@ svg {
 .pill-muted {
   background: var(--paper);
   color: var(--muted);
-}
-.pill-link {
-  text-decoration: none;
-  transition: transform 120ms ease;
-}
-.pill-link:hover {
-  transform: translateY(-1px);
 }
 
 .link-arrow {
@@ -569,12 +703,20 @@ svg {
   list-style: none;
 }
 .recipe-list li {
+  border-bottom: 1.5px dashed var(--line);
+}
+/* Whole row is the link to the recipe page */
+.recipe-link {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 0.7rem 0;
-  border-bottom: 1.5px dashed var(--line);
+  padding: 0.7rem 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+.recipe-link:hover .link-arrow > span {
+  transform: translateX(3px);
 }
 .recipe-list li:last-child {
   border-bottom: none;
@@ -641,6 +783,235 @@ svg {
 .donate-sub {
   margin: 0 0 1.1rem;
   color: var(--muted);
+}
+
+/* ---------- load status ---------- */
+.status-note {
+  padding: 0.75rem 1rem;
+  border: 2px dashed var(--line);
+  border-radius: 14px;
+  background: var(--paper-bright);
+  color: var(--muted);
+}
+.status-error {
+  border-color: #e8907f;
+  background: #fff3f0;
+  color: var(--ink);
+}
+
+/* ---------- motion ---------- */
+/* Scroll reveal (class added by v-reveal) */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 600ms ease var(--reveal-delay, 0ms),
+    transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--reveal-delay, 0ms);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero: beating hearts, wiggling sticker */
+.stamp-heart,
+.donate-heart {
+  animation: heartbeat 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+.eyebrow {
+  transition: transform 200ms ease;
+}
+.eyebrow:hover {
+  animation: sticker-wiggle 500ms ease;
+}
+.scribble::after {
+  transform-origin: left center;
+  animation: scribble-draw 900ms cubic-bezier(0.2, 0.8, 0.2, 1) 400ms both;
+}
+
+/* Ticking clock */
+.clock-hand {
+  transform-origin: 12px 12px;
+}
+.clock-hand-minute {
+  animation: clock-spin 6s linear infinite;
+}
+.clock-hand-hour {
+  animation: clock-spin 72s linear infinite;
+}
+.clock-badge {
+  transition: transform 200ms ease;
+}
+.clock-badge:hover {
+  transform: rotate(-10deg) scale(1.08);
+}
+
+/* Cards lift on hover */
+.item-card,
+.storage-card,
+.donate {
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+}
+.item-card:hover {
+  transform: translateY(-5px) rotate(-0.5deg);
+  border-color: var(--ink);
+  box-shadow: 4px 6px 0 var(--ink);
+}
+.item-card:hover .item-icon {
+  animation: wiggle 600ms ease;
+}
+.storage-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 6px 8px 0 var(--ink);
+}
+.preview-box {
+  transition: transform 300ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.storage-card:hover .preview-box {
+  transform: scale(1.08) rotate(-5deg);
+}
+.donate:hover {
+  transform: rotate(-1deg) scale(1.01);
+  border-color: var(--aqua);
+}
+
+/* Urgent pills breathe */
+.pill-pulse {
+  animation: pill-pulse 1.6s ease-in-out infinite;
+}
+
+/* Healthy bar fills on load */
+.health-bar {
+  height: 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  overflow: hidden;
+}
+.health-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--aqua), #72d7cc);
+  transition: width 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) 300ms;
+}
+
+/* Recipe rows slide on hover */
+.recipe-list li {
+  transition: transform 200ms ease, background-color 200ms ease;
+  border-radius: 10px;
+}
+.recipe-list li:hover {
+  transform: translateX(6px);
+  background: #f4fbf9;
+}
+
+/* Expiry filter chips */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -0.5rem;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-bright);
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+.chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 2px 4px 0 var(--ink);
+}
+.chip:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.chip.is-active {
+  background: var(--yellow);
+}
+.chip-count {
+  min-width: 1.5em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--aqua-soft);
+  color: var(--aqua-dark);
+  font-size: 0.85rem;
+}
+
+/* Expiry rows animate in/out when filtering */
+.row-move,
+.row-enter-active,
+.row-leave-active {
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+.row-enter-from,
+.row-leave-to {
+  opacity: 0;
+  transform: translateX(-16px);
+}
+@keyframes heartbeat {
+  0%, 60%, 100% { transform: scale(1); }
+  15% { transform: scale(1.18); }
+  30% { transform: scale(0.95); }
+  45% { transform: scale(1.1); }
+}
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-4deg); }
+  25% { transform: rotate(6deg); }
+  50% { transform: rotate(-8deg); }
+  75% { transform: rotate(3deg); }
+}
+@keyframes sticker-wiggle {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(3deg); }
+  50% { transform: rotate(-3deg); }
+  75% { transform: rotate(1.5deg); }
+}
+@keyframes scribble-draw {
+  from { transform: rotate(-1deg) scaleX(0); }
+  to { transform: rotate(-1deg) scaleX(1); }
+}
+@keyframes clock-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes pill-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(255 120 100 / 45%); }
+  50% { box-shadow: 0 0 0 6px rgb(255 120 100 / 0%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp-heart,
+  .donate-heart,
+  .scribble::after,
+  .clock-hand,
+  .pill-pulse,
+  .eyebrow:hover,
+  .item-card:hover .item-icon {
+    animation: none;
+  }
+  .item-card:hover,
+  .storage-card:hover,
+  .storage-card:hover .preview-box,
+  .donate:hover,
+  .recipe-list li:hover,
+  .chip:hover {
+    transform: none;
+  }
+  .health-fill,
+  .row-move,
+  .row-enter-active,
+  .row-leave-active {
+    transition: none;
+  }
 }
 
 @media (max-width: 575.98px) {
