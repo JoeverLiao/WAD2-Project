@@ -17,16 +17,16 @@ export const routes = [
     meta: { navLabel: 'Dashboard' },
   },
   {
-    path: '/scanning',
-    name: 'scanning',
-    component: () => import('../views/scanning/ScanningView.vue'),
-    meta: { navLabel: 'Receipt & Product Scanning' },
-  },
-  {
     path: '/fridge',
     name: 'fridge',
     component: () => import('../views/fridge/FridgeView.vue'),
     meta: { navLabel: 'Smart Fridge' },
+  },
+  {
+    path: '/analytics',
+    name: 'analytics',
+    component: () => import('../views/analytics/AnalyticsView.vue'),
+    meta: { navLabel: 'Food Waste Analytics' },
   },
   {
     path: '/freshness-recipes',
@@ -50,10 +50,10 @@ export const routes = [
     meta: { navLabel: 'Neighbour Food Rescue' },
   },
   {
-    path: '/analytics',
-    name: 'analytics',
-    component: () => import('../views/analytics/AnalyticsView.vue'),
-    meta: { navLabel: 'Food Waste Analytics' },
+    path: '/scanning',
+    name: 'scanning',
+    component: () => import('../views/scanning/ScanningView.vue'),
+    meta: { navLabel: 'Receipt & Product Scanning' },
   },
   {
     path: '/login',

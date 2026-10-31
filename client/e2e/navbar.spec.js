@@ -43,6 +43,8 @@ test('hover opens the full wheel over the page, and leaving the circle closes it
   await page.getByRole('button', { name: 'Open navigation', exact: true }).hover()
   await expect(page.locator('.radial-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
   await selected(page, 'home', 'Home')
+  await expect(page.locator('.nav-page-dim')).toBeVisible()
+  await expect(page.locator('.nav-page-dim')).toHaveCSS('pointer-events', 'none')
   expect(await page.locator('main').evaluate((el) => el.getBoundingClientRect().top)).toBe(top)
   const rect = await page.locator('.radial-panel').boundingBox()
   expect(rect.width).toBeCloseTo(rect.height, 0)
@@ -52,6 +54,7 @@ test('hover opens the full wheel over the page, and leaving the circle closes it
   await expect(page.getByRole('button', { name: 'Close navigation', exact: true })).toBeVisible()
   await page.mouse.move(rect.x + 2, rect.y + 2)
   await expect(page.locator('.radial-panel')).toBeHidden()
+  await expect(page.locator('.nav-page-dim')).toHaveCount(0)
 })
 
 test('selection changes the center and segment color without moving any icons', async ({

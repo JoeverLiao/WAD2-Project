@@ -8,15 +8,24 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const routes = router.getRoutes()
-const segmentColors = {
-  home: '#d9f1de',
-  dashboard: '#cce7fa',
-  scanning: '#ffe3a5',
-  fridge: '#c9f1eb',
-  'freshness-recipes': '#e6efa9',
-  'food-rescue': '#ffd1c8',
-  analytics: '#dfd2f4',
-  profile: '#f3d2e6',
+// Colors reflect each destination's purpose, with soft gradients and shared teal ink.
+const navTones = {
+  home: ['#e8f5ef', '#b8d9cc'],
+  dashboard: ['#d8eceb', '#94c4be'],
+  scanning: ['#fff0c8', '#e9c370'],
+  fridge: ['#def2fb', '#9fcede'],
+  'freshness-recipes': ['#e8f3dc', '#dfedcf'],
+  'food-rescue': ['#fde8dd', '#e7b299'],
+  analytics: ['#f0eaf8', '#e7def2'],
+  profile: ['#f3ebdf', '#d8c4aa'],
+}
+const navInk = '#123f3b'
+function navColor(key) {
+  return (navTones[key] || navTones.home)[0]
+}
+function navGradient(key) {
+  const [light, deep] = navTones[key] || navTones.home
+  return `linear-gradient(145deg, ${light} 0%, ${light} 25%, ${deep} 100%)`
 }
 const entries = [
   ...routes
@@ -303,7 +312,7 @@ onBeforeUnmount(() => {
     ref="navbar"
     class="orbit-navbar"
     :class="{ 'is-open': opened, 'is-hovered': hovered }"
-    :style="{ '--selected-color': segmentColors[selectedEntry.key] || segmentColors.home }"
+    :style="{ '--selected-color': navColor(selectedEntry.key), '--selected-ink': navInk, '--selected-gradient': navGradient(selectedEntry.key) }"
     aria-label="Main navigation"
     @pointermove="moveLight"
     @pointerleave="hovered = false"
@@ -331,7 +340,9 @@ onBeforeUnmount(() => {
             :class="{ 'is-selected': selectedIndex === index }"
             :style="{
               clipPath: `url(#wheel-sector-${item.key})`,
-              '--segment-color': segmentColors[item.key] || segmentColors.home,
+              '--segment-color': navColor(item.key),
+              '--segment-ink': navInk,
+              '--segment-gradient': navGradient(item.key),
             }"
             :data-nav-key="item.key"
             :aria-label="item.label"
@@ -412,6 +423,9 @@ onBeforeUnmount(() => {
     </button>
   </nav>
   <Teleport to="body">
+    <Transition name="nav-dim">
+      <div v-if="opened" class="nav-page-dim" aria-hidden="true"></div>
+    </Transition>
     <Transition name="tooltip">
       <span
         v-if="tooltip"
@@ -435,10 +449,26 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.nav-page-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgb(255 255 255 / 28%);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+.nav-dim-enter-active, .nav-dim-leave-active { transition: opacity 220ms ease; }
+.nav-dim-enter-from, .nav-dim-leave-to { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-dim-enter-active, .nav-dim-leave-active { transition: none; }
+}
+
 .orbit-navbar {
   --light-x: 50%;
   --light-y: 50%;
-  --selected-color: #d9f1de;
+  --selected-color: #d9f4ef;
+  --selected-ink: #123f3b;
   --wheel-size: min(480px, calc(100vw - 24px), calc(100dvh - 120px));
   position: fixed;
   z-index: 1000;
@@ -495,8 +525,9 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0;
   border: 0;
-  background: var(--segment-color);
-  color: #164b35;
+  background-color: var(--segment-color);
+  background-image: var(--segment-gradient);
+  color: var(--segment-ink);
   font: inherit;
   cursor: pointer;
   text-decoration: none;
@@ -509,8 +540,8 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 0 0 100vmax rgb(18 63 59 / 5%);
 }
 .orbit-option.is-selected {
-  background: var(--selected-color);
-  color: #164b35;
+  background-color: var(--selected-color);
+  color: var(--selected-ink);
 }
 .sector-content {
   position: absolute;
@@ -543,12 +574,12 @@ onBeforeUnmount(() => {
 }
 .wheel-dividers path {
   fill: none;
-  stroke: #8db5a0;
+  stroke: #94b5aa;
   stroke-width: 1.5;
 }
 .wheel-dividers .wheel-selection {
   fill: rgb(255 255 255 / 10%);
-  stroke: #164b35;
+  stroke: #234d46;
   stroke-width: 4;
   transform-box: view-box;
   transform-origin: 250px 250px;
@@ -564,7 +595,7 @@ onBeforeUnmount(() => {
   opacity: 0;
   background: radial-gradient(
     circle 120px at var(--light-x) var(--light-y),
-    rgb(218 255 230 / 26%),
+    rgb(255 250 230 / 22%),
     transparent 76%
   );
   transition: opacity 180ms ease;
@@ -584,11 +615,12 @@ onBeforeUnmount(() => {
   width: 38%;
   aspect-ratio: 1;
   padding: 10px;
-  border: 2px solid #8db5a0;
+  border: 2px solid #94b5aa;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: var(--selected-color);
-  color: #164b35;
+  background-color: var(--selected-color);
+  background-image: var(--selected-gradient);
+  color: var(--selected-ink);
   text-align: center;
   pointer-events: auto;
   transition: background-color 560ms ease;
@@ -649,7 +681,7 @@ onBeforeUnmount(() => {
   padding: 0;
   border: 1px solid rgb(225 255 234 / 30%);
   border-radius: 50%;
-  background: #164b35;
+  background: linear-gradient(145deg, #24685f, #087d73);
   color: #fff;
   box-shadow: 0 5px 20px rgb(10 42 29 / 22%);
   cursor: pointer;
@@ -659,11 +691,11 @@ onBeforeUnmount(() => {
     box-shadow 200ms ease;
 }
 .nav-toggle:hover {
-  background: #205e43;
-  box-shadow: 0 0 22px rgb(122 220 158 / 40%);
+  background: linear-gradient(145deg, #307b70, #0b968b);
+  box-shadow: 0 0 22px rgb(157 198 180 / 30%);
 }
 .is-open .nav-toggle {
-  background: #103b2a;
+  background: linear-gradient(145deg, #173d39, #0b6c63);
   box-shadow: none;
 }
 .toggle-lines {
@@ -722,10 +754,11 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 16px;
   list-style: none;
-  border: 2px solid #8db5a0;
+  border: 2px solid #94b5aa;
   border-radius: 50%;
-  background: var(--selected-color);
-  color: #164b35;
+  background-color: var(--selected-color);
+  background-image: var(--selected-gradient);
+  color: var(--selected-ink);
   pointer-events: auto;
 }
 .account-title {
@@ -751,7 +784,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgb(22 75 53 / 22%);
   border-radius: 18px;
   background: rgb(255 255 255 / 65%);
-  color: #164b35;
+  color: #234d46;
   font: inherit;
   font-size: 11px;
   text-align: center;
@@ -788,7 +821,7 @@ onBeforeUnmount(() => {
 }
 .account-menu a.router-link-exact-active {
   background: #fff;
-  border-color: #164b35;
+  border-color: #234d46;
 }
 .account-enter-active,
 .account-leave-active {
@@ -816,8 +849,8 @@ onBeforeUnmount(() => {
   padding: 8px 12px;
   border: 1px solid rgb(22 75 53 / 16%);
   border-radius: 10px;
-  background: #f1fbf4;
-  color: #164b35;
+  background: #fff9df;
+  color: #234d46;
   box-shadow: 0 5px 18px rgb(10 42 29 / 20%);
   font:
     600 12px/1.4 system-ui,
@@ -847,7 +880,7 @@ onBeforeUnmount(() => {
   background: radial-gradient(
     circle,
     rgb(164 255 202 / 55%),
-    rgb(63 187 122 / 20%) 45%,
+    rgb(118 166 149 / 18%) 45%,
     transparent 72%
   );
   animation: page-click 700ms ease-out forwards;
