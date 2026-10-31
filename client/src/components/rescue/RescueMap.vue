@@ -1,6 +1,7 @@
 <script setup>
     import { computed, onMounted, nextTick, ref } from 'vue'
     import L from 'leaflet';
+    import FoodIcon from '../FoodIcon.vue'
     import 'leaflet/dist/leaflet.css';
 
     const foodItems = ref([
@@ -17,7 +18,6 @@
         availability: 'available',
         person: 'Sarah M.',
         image: '',
-        icon: '🍅',
         lat: 1.3000,
         lng: 103.8500,
     },
@@ -34,7 +34,6 @@
         availability: 'available',
         person: 'Jamie R.',
         image: '',
-        icon: '🍞',
         lat: 1.3020,
         lng: 103.8530,
     },
@@ -51,7 +50,6 @@
         availability: 'available',
         person: 'Priya K.',
         image: '',
-        icon: '🥬',
         lat: 1.3050,
         lng: 103.8480,
     },
@@ -280,7 +278,7 @@
                     class="photo-placeholder"
                     aria-hidden="true"
                 >
-                    {{ item.icon }}
+                    <FoodIcon :food="item.name" />
                 </div>
 
                 <div class="food-details">

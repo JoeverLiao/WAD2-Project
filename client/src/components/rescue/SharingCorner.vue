@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
+import FoodIcon from '../FoodIcon.vue'
 
 // One food item contains several people/request conversations.
 // The whole structure is local demo data; there are no props or emits.
@@ -10,7 +11,6 @@ const itemGroups = ref([
     food: 'Organic veggie box',
     quantity: '1 box · 1 kg',
     image: '',
-    icon: '🥬',
     preferredPickup: 'Today, 5–7 pm',
     requests: [
       {
@@ -55,7 +55,6 @@ const itemGroups = ref([
     food: 'Extra sourdough',
     quantity: '1 whole loaf',
     image: '',
-    icon: '🍞',
     preferredPickup: 'Tomorrow, 6–8 pm',
     requests: [
       {
@@ -117,7 +116,6 @@ const itemGroups = ref([
     food: 'Garden tomatoes',
     quantity: '500 g',
     image: '',
-    icon: '🍅',
     preferredPickup: 'Today, 4–7 pm',
     requests: [
       {
@@ -145,7 +143,6 @@ const itemGroups = ref([
     food: 'Fresh bananas',
     quantity: '1 bunch',
     image: '',
-    icon: '🍌',
     preferredPickup: 'Tomorrow, 10 am–12 pm',
     requests: [
       {
@@ -173,7 +170,6 @@ const itemGroups = ref([
     food: 'Avocados',
     quantity: '2 avocados',
     image: '',
-    icon: '🥑',
     preferredPickup: 'Today, 6–8 pm',
     requests: [
       {
@@ -434,7 +430,7 @@ async function sendMessage() {
                 class="group-image placeholder"
                 aria-hidden="true"
               >
-                {{ group.icon }}
+                <FoodIcon :food="group.food" />
               </span>
 
               <span class="group-copy">
@@ -519,7 +515,7 @@ async function sendMessage() {
             class="listing-placeholder"
             aria-hidden="true"
           >
-            {{ selectedGroup.icon }}
+            <FoodIcon :food="selectedGroup.food" />
           </span>
 
           <div>

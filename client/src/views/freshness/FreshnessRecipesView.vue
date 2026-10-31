@@ -2,6 +2,8 @@
 <script setup>
 import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import FoodIcon from '../../components/FoodIcon.vue'
+import NoticeIcon from '../../components/NoticeIcon.vue'
 import { sampleInventory } from '../../data/freshnessDemo.js'
 
 const router = useRouter()
@@ -345,7 +347,7 @@ onMounted(loadApi)
         </p>
       </div>
 
-      <span class="hero-doodle" aria-hidden="true">🥬</span>
+      <span class="hero-doodle" aria-hidden="true"><FoodIcon kind="leaf" /></span>
     </header>
 
     <div v-if="!USE_API" class="demo-note mb-4">
@@ -370,12 +372,12 @@ onMounted(loadApi)
         </div>
 
         <div class="stat paper stat-soon">
-          <span>⏰ Eat soon</span>
+          <span><NoticeIcon name="clock" /> Eat soon</span>
           <strong>{{ stats.soon }}</strong>
         </div>
 
         <div class="stat paper stat-expired">
-          <span>⚠ Expired</span>
+          <span><NoticeIcon name="bell" /> Expired</span>
           <strong>{{ stats.expired }}</strong>
         </div>
       </div>

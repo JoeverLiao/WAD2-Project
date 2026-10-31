@@ -1,21 +1,22 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import FoodIcon from '../FoodIcon.vue'
 
 // Local demo data only. Replace with your inventory/listings API later.
 const examples = [
-  ['Organic veggie box', '1 box · 1 kg', 'Today, 5–7 pm', '🥬', 2],
-  ['Extra sourdough', '1 whole loaf', 'Tomorrow, 6–8 pm', '🍞', 3],
-  ['Garden tomatoes', '500 g · 1 punnet', 'Today, 4–7 pm', '🍅', 1],
-  ['Fresh spinach', '1 bag · 200 g', 'Tomorrow, 9–11 am', '🥬', 0],
-  ['Weekend veggie box', '1 box · 1.5 kg', 'Collected yesterday', '🥕', 0],
-  ['Apples', '4 apples', 'Tomorrow, 3–5 pm', '🍎', 0],
-  ['Greek yoghurt', '2 pots', 'Today, 6–8 pm', '🥛', 1],
-  ['Fresh pesto', '1 jar', 'Tomorrow, 5–7 pm', '🌿', 0],
+  ['Organic veggie box', '1 box · 1 kg', 'Today, 5–7 pm', 2],
+  ['Extra sourdough', '1 whole loaf', 'Tomorrow, 6–8 pm', 3],
+  ['Garden tomatoes', '500 g · 1 punnet', 'Today, 4–7 pm', 1],
+  ['Fresh spinach', '1 bag · 200 g', 'Tomorrow, 9–11 am', 0],
+  ['Weekend veggie box', '1 box · 1.5 kg', 'Collected yesterday', 0],
+  ['Apples', '4 apples', 'Tomorrow, 3–5 pm', 0],
+  ['Greek yoghurt', '2 pots', 'Today, 6–8 pm', 1],
+  ['Fresh pesto', '1 jar', 'Tomorrow, 5–7 pm', 0],
 ]
 
 const listings = ref(
   Array.from({ length: 24 }, (_, index) => {
-    const [name, quantity, pickup, icon, requests] =
+    const [name, quantity, pickup, requests] =
       examples[index % examples.length]
 
     return {
@@ -23,7 +24,6 @@ const listings = ref(
       name: index < 8 ? name : `${name} ${Math.floor(index / 8) + 1}`,
       quantity,
       pickup,
-      icon,
       requests,
       image: '', // Add your local image path, e.g. '/images/veggie-box.jpg'.
       status:
@@ -142,7 +142,6 @@ function saveListing() {
     listings.value.unshift({
       ...form.value,
       id: Date.now(),
-      icon: '🥬',
       image: '',
       requests: 0,
     })
@@ -262,7 +261,7 @@ function viewRequests(item) {
                   class="food-placeholder"
                   aria-hidden="true"
                 >
-                  {{ item.icon }}
+                  <FoodIcon :food="item.name" />
                 </span>
 
                 <div>

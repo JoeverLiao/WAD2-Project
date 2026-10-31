@@ -82,8 +82,8 @@ describe('Fridge interactions', () => {
       { ...food, _id: 'freezer-old', storage: 'freezer' },
     ] }) })
     await openFridge()
-    expect(wrapper.get('.pantry-foods').text()).toContain('🍎')
-    expect(wrapper.get('.freezer-compartment .food-preview').text()).toContain('🍎')
+    expect(wrapper.find('.pantry-foods .food-icon').exists()).toBe(true)
+    expect(wrapper.find('.freezer-compartment .food-preview .food-icon').exists()).toBe(true)
   })
 
   it('shows highlighted food and fixed actions only during a drag, and cancels without saving', async () => {

@@ -2,6 +2,7 @@
   import {ref, onMounted} from 'vue';
   import { storeToRefs } from 'pinia';
   import { useAuthStore } from '../../stores/auth.js'
+  import FoodIcon from '../FoodIcon.vue'
 
 const authStore = useAuthStore()
 const { user, isAuthenticated } = storeToRefs(authStore)
@@ -51,7 +52,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
             <div class="d-flex flex-column gap-2 mb-3">
               <div class="p-2 bg-white rounded border border-dark d-flex align-items-center justify-content-between">
                 <div>
-                  <strong class="d-block small">🍞 Fresh Sourdough Loaf</strong>
+                  <strong class="d-block small"><FoodIcon food="Sourdough" /> Fresh Sourdough Loaf</strong>
                   <span class="small text-muted">0.3 km away</span>
                 </div>
                 <button class="primary-button" @click="claimItem('Sourdough Loaf')">Quick Claim</button>
@@ -59,7 +60,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
 
               <div class="p-2 bg-white rounded border border-dark d-flex align-items-center justify-content-between">
                 <div>
-                  <strong class="d-block small">🥦 Fresh Spinach Bag</strong>
+                  <strong class="d-block small"><FoodIcon food="Spinach" /> Fresh Spinach Bag</strong>
                   <span class="small text-muted">0.5 km away</span>
                 </div>
                 <button class="primary-button" @click="claimItem('Spinach Bag')">Quick Claim</button>

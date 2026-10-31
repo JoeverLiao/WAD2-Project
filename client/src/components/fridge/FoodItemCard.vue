@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import FoodIcon from '../FoodIcon.vue'
 
 // The parent provides the food item.
 const props = defineProps({
@@ -19,25 +20,6 @@ const emit = defineEmits([
     'drag-start',
     'drag-end'
 ])
-
-// Food emoji.
-const foodEmoji = computed(() => {
-    const name = props.item.name.toLowerCase()
-
-    if (name.includes('milk')) return '🥛'
-    if (name.includes('egg')) return '🥚'
-    if (name.includes('carrot')) return '🥕'
-    if (name.includes('broccoli')) return '🥦'
-    if (name.includes('chicken')) return '🍗'
-    if (name.includes('fish')) return '🐟'
-    if (name.includes('rice')) return '🍚'
-    if (name.includes('pasta')) return '🍝'
-    if (name.includes('bread')) return '🍞'
-    if (name.includes('cheese')) return '🧀'
-    if (name.includes('ice cream')) return '🍦'
-
-    return '🍱'
-})
 
 // Expiry status.
 const expiryStatus = computed(() => {
@@ -119,7 +101,7 @@ function handleDragEnd() {
         @dragend="handleDragEnd"
     >
         <div class="card-top">
-            <span class="food-emoji">{{ foodEmoji }}</span>
+            <span class="food-emoji"><FoodIcon :food="item.name" /></span>
 
             <div class="card-tools" role="group" aria-label="Food item controls">
                 <button type="button" class="icon-button" title="Edit food" :aria-label="`Edit ${item.name}`" @click.stop="emit('edit', item)">

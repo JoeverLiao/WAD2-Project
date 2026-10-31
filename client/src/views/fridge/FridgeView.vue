@@ -28,6 +28,8 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import FoodItemCard from '../../components/fridge/FoodItemCard.vue'
 import FoodItemForm from '../../components/fridge/FoodItemForm.vue'
 import FoodDragActions from '../../components/fridge/FoodDragActions.vue'
+import FoodIcon from '../../components/FoodIcon.vue'
+import NoticeIcon from '../../components/NoticeIcon.vue'
 import { showConfirm, showPrompt } from '../../utils/dialog.js'
 
 // ============================================================
@@ -870,31 +872,6 @@ function itemCount(compartment) {
 }
 
 
-function foodEmojiFor(name = '') {
-    const value = String(name).toLowerCase()
-    if (value.includes('milk')) return '🥛'
-    if (value.includes('egg')) return '🥚'
-    if (value.includes('carrot')) return '🥕'
-    if (value.includes('broccoli')) return '🥦'
-    if (value.includes('chicken')) return '🍗'
-    if (value.includes('fish') || value.includes('salmon')) return '🐟'
-    if (value.includes('rice')) return '🍚'
-    if (value.includes('pasta') || value.includes('noodle')) return '🍝'
-    if (value.includes('bread')) return '🍞'
-    if (value.includes('cheese')) return '🧀'
-    if (value.includes('ice cream')) return '🍦'
-    if (value.includes('apple')) return '🍎'
-    if (value.includes('banana')) return '🍌'
-    if (value.includes('orange')) return '🍊'
-    if (value.includes('tomato')) return '🍅'
-    if (value.includes('potato')) return '🥔'
-    if (value.includes('meat') || value.includes('beef')) return '🥩'
-    if (value.includes('juice')) return '🧃'
-    if (value.includes('sauce')) return '🫙'
-    if (value.includes('cereal')) return '🥣'
-    return '🍱'
-}
-
 function expiryDays(item) {
     if (!item.expiresAt) return null
     const expiry = new Date(`${item.expiresAt}T00:00:00`)
@@ -1042,7 +1019,7 @@ onBeforeUnmount(cancelActionReaction)
             <div class="header-actions">
                 <span class="hero-doodle" aria-hidden="true">🧊</span>
                 <button type="button" class="expiry-button" @click="openExpiryPanel($event)">
-                    ⚠️ Expired <span class="expiry-count">{{ expiryItemCount }}</span>
+                    <NoticeIcon name="bell" /> Expired <span class="expiry-count">{{ expiryItemCount }}</span>
                 </button>
                 <button type="button" class="primary-button" @click="openAddForm('fridge')">
                     ＋ Add Food
@@ -1063,7 +1040,7 @@ onBeforeUnmount(cancelActionReaction)
                 <strong>{{ countItems('fridge') + countItems('freezer') }}</strong>
             </article>
             <article class="summary-card summary-pantry">
-                <span class="summary-icon" aria-hidden="true">🥫</span>
+                <span class="summary-icon" aria-hidden="true"><FoodIcon kind="can" /></span>
                 <span class="summary-label">Pantry</span>
                 <strong>{{ countItems('pantry') }}</strong>
             </article>
@@ -1100,20 +1077,20 @@ onBeforeUnmount(cancelActionReaction)
                                         <button type="button" class="compartment freezer-compartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
                                             <span class="compartment-heading">❄️ Freezer <small>{{ countItems('freezer') }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone('freezer', 'freezer-main').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                                <span v-for="item in itemsInZone('freezer', 'freezer-main').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length > 3" class="more-food">+{{ itemsInZone('freezer', 'freezer-main').length - 3 }}</span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
 
                                         <button v-for="compartment in [
-                                            { id: 'upper-shelf', title: 'Upper shelf', storage: 'fridge', zone: 'upper-shelf', icon: '🥣' },
-                                            { id: 'middle-shelf', title: 'Middle shelf', storage: 'fridge', zone: 'middle-shelf', icon: '🥛' },
-                                            { id: 'lower-shelf', title: 'Lower shelf', storage: 'fridge', zone: 'lower-shelf', icon: '🍱' }
+                                            { id: 'upper-shelf', title: 'Upper shelf', storage: 'fridge', zone: 'upper-shelf', icon: 'bowl' },
+                                            { id: 'middle-shelf', title: 'Middle shelf', storage: 'fridge', zone: 'middle-shelf', icon: 'carton' },
+                                            { id: 'lower-shelf', title: 'Lower shelf', storage: 'fridge', zone: 'lower-shelf', icon: 'box' }
                                         ]" :key="compartment.id" type="button" class="compartment shelf-compartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
-                                            <span class="compartment-heading"><span>{{ compartment.icon }} {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
+                                            <span class="compartment-heading"><span><FoodIcon :kind="compartment.icon" /> {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone).slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone).slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
                                                 <span v-if="itemCount(compartment) > 3" class="more-food">+{{ itemCount(compartment) - 3 }}</span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
@@ -1121,9 +1098,9 @@ onBeforeUnmount(cancelActionReaction)
 
                                         <div class="fridge-bottom">
                                             <button type="button" class="compartment crisper-compartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: '🥬' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
-                                                <span class="compartment-heading">🥬 Crisper drawer <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
+                                                <span class="compartment-heading"><span><FoodIcon kind="leaf" /> Crisper drawer</span> <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
                                                 <span class="food-preview">
-                                                <span v-for="item in itemsInZone('fridge', 'crisper').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                                <span v-for="item in itemsInZone('fridge', 'crisper').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length > 3" class="more-food">+{{ itemsInZone('fridge', 'crisper').length - 3 }}</span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                                 </span>
@@ -1145,11 +1122,11 @@ onBeforeUnmount(cancelActionReaction)
                                     <span class="door-inner" :inert="!fridgeDoorOpen">
                                         <span class="door-inner-title">DOOR SHELVES</span>
                                         <span class="door-bin" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" title="View all food stored in the fridge door" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door').slice(0,3)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                            <span v-for="item in itemsInZone('fridge', 'door').slice(0,3)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
                                             <span v-if="itemsInZone('fridge', 'door').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span class="door-bin door-bin-small" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" title="View all food stored in the fridge door" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door').slice(3,6)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                            <span v-for="item in itemsInZone('fridge', 'door').slice(3,6)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
                                             <span v-if="itemsInZone('fridge', 'door').length <= 3" class="door-empty">{{ itemsInZone('fridge', 'door').length === 0 ? (searchQuery ? 'No matches' : 'Empty shelf') : 'Tap to view door items' }}</span>
                                         </span>
                                         <span v-if="fridgeDoorOpen" class="fridge-close-button" role="button" tabindex="0" aria-label="Close refrigerator door" @click.stop="fridgeDoorOpen = false" @keydown.enter.stop="fridgeDoorOpen = false" @keydown.space.prevent.stop="fridgeDoorOpen = false">✕ Close door</span>
@@ -1166,13 +1143,13 @@ onBeforeUnmount(cancelActionReaction)
                     <section v-if="!embedded" class="storage-unit pantry-unit" aria-label="Pantry">
                         <div class="storage-unit-content">
                         <h2 class="storage-heading">The pantry</h2><p class="storage-intro">Dry goods, snacks and everyday staples, all in one place.</p><button type="button" class="primary-button pantry-add" @click="openAddForm('pantry')">＋ Add pantry food</button>
-                        <div class="unit-top-label pantry-label"><span>🥫</span> DRY &amp; SHELF-STABLE</div>
+                        <div class="unit-top-label pantry-label"><span><FoodIcon kind="can" /></span> DRY &amp; SHELF-STABLE</div>
                         <div class="pantry-cabinet pantry-single-storage">
                             <div class="pantry-top"><span>THE PANTRY</span><span>🌾</span></div>
                             <button type="button" class="pantry-shelf pantry-whole-storage" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
                                 <span class="pantry-shelf-label">ALL PANTRY ITEMS · {{ countItems('pantry') }}</span>
                                 <span class="pantry-foods pantry-all-foods">
-                                <span v-for="item in itemsInZone('pantry', 'dry-storage').slice(0,12)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                <span v-for="item in itemsInZone('pantry', 'dry-storage').slice(0,12)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
                                     <span v-if="itemsInZone('pantry', 'dry-storage').length > 12" class="more-food">+{{ itemsInZone('pantry', 'dry-storage').length - 12 }}</span>
                                     <span v-if="itemsInZone('pantry', 'dry-storage').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Drop pantry food here' }}</span>
                                 </span>
@@ -1193,7 +1170,7 @@ onBeforeUnmount(cancelActionReaction)
 
 
         <section v-if="!embedded" class="storage-hint">
-            <span>💡</span>
+            <span><NoticeIcon name="sparkle" /></span>
             <p><strong>Tip:</strong> Food closest to its expiry date appears first. Click any shelf or drawer to see its complete inventory, then drag an item to Consume or Discard.</p>
         </section>
 
@@ -1202,7 +1179,7 @@ onBeforeUnmount(cancelActionReaction)
             <p>Some foods may need a different storage location. Check product packaging and food-specific guidance.</p>
             <div class="recommendation-list">
                 <article v-for="item in storageRecommendations" :key="item.id" class="recommendation-card">
-                    <span>💡</span><div><strong>{{ item.name }}</strong><p>{{ getRecommendation(item) }}</p></div>
+                    <span><NoticeIcon name="sparkle" /></span><div><strong>{{ item.name }}</strong><p>{{ getRecommendation(item) }}</p></div>
                 </article>
                 <p v-if="storageRecommendations.length === 0" class="no-recommendations">No basic storage suggestions for the current search.</p>
             </div>
@@ -1242,19 +1219,19 @@ onBeforeUnmount(cancelActionReaction)
             @action-drop="dropOnAction" />
         <Teleport to="body">
             <div v-if="draggedFood && dragPosition" class="held-food" aria-hidden="true"
-                :style="{ left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }">{{ foodEmojiFor(draggedFood.name) }}</div>
+                :style="{ left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }"><FoodIcon :food="draggedFood.name" /></div>
         </Teleport>
 
         <!-- Expired items across the fridge, freezer and pantry. -->
         <div v-if="expiryPanelOpen" class="modal-backdrop" @click.self="closeExpiryPanel">
             <section ref="dialogRef" class="inventory-modal expiry-modal" role="dialog" aria-modal="true" aria-labelledby="expiry-title" tabindex="-1" @keydown="handleDialogKeydown">
                 <header class="modal-heading">
-                    <div><p class="eyebrow">REDUCE FOOD WASTE</p><h2 id="expiry-title">⚠️ Expired Food</h2><p>Food past its expiry date across your fridge, freezer and pantry.</p></div>
+                    <div><p class="eyebrow">REDUCE FOOD WASTE</p><h2 id="expiry-title"><NoticeIcon name="bell" /> Expired Food</h2><p>Food past its expiry date across your fridge, freezer and pantry.</p></div>
                     <button type="button" class="modal-close" aria-label="Close expiry panel" @click="closeExpiryPanel">✕</button>
                 </header>
                 <div v-if="expiryItems.length" class="modal-food-list">
                     <button v-for="item in expiryItems" :key="item.id" type="button" class="expiry-food-row" @click="jumpToItem(item)">
-                        <span class="modal-food-emoji">{{ foodEmojiFor(item.name) }}</span>
+                        <span class="modal-food-emoji"><FoodIcon :food="item.name" /></span>
                         <span class="modal-food-info"><strong>{{ item.name }}</strong><span>{{ locationLabel(item) }} · {{ item.quantity }} {{ item.unit }}</span></span>
                         <span class="expiry-label" :class="{ 'is-expired': expiryDays(item) < 0 }">{{ expiryLabel(item) }}</span>
                         <span aria-hidden="true">›</span>
