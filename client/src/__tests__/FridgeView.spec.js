@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import FridgeView from '../views/fridge/FridgeView.vue'
 import FoodDragActions from '../components/fridge/FoodDragActions.vue'
+import { showConfirm, showPrompt } from '../utils/dialog.js'
+
+vi.mock('../utils/dialog.js')
 
 const food = { _id: 'apple-1', name: 'Apples', quantity: 3, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', expiresAt: '2026-11-05' }
 let wrapper
@@ -22,8 +25,8 @@ async function beginDrag() {
 beforeEach(() => {
   request = vi.fn(async (_url, options) => ({ ok: true, json: async () => options?.method === 'DELETE' ? {} : [food] }))
   vi.stubGlobal('fetch', request)
-  vi.spyOn(window, 'prompt').mockReturnValue('3')
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  showPrompt.mockResolvedValue('3')
+  showConfirm.mockResolvedValue(true)
 })
 afterEach(() => {
   wrapper?.unmount()
@@ -110,7 +113,7 @@ describe('Fridge interactions', () => {
   })
 
   it('does not discard food when confirmation is cancelled', async () => {
-    window.confirm.mockReturnValue(false)
+    showConfirm.mockResolvedValue(false)
     await openFridge()
     await beginDrag()
     const target = document.querySelector('[data-food-action="discard"]')
@@ -121,6 +124,17 @@ describe('Fridge interactions', () => {
     expect(request.mock.calls.filter(([, options]) => options.method === 'DELETE')).toHaveLength(0)
     expect(wrapper.find('.mini-food').exists()).toBe(true)
     expect(document.querySelector('.celebrating')).toBeNull()
+  })
+
+  it('rejects quantities outside the available amount before saving', async () => {
+    await openFridge()
+    await wrapper.get('[data-drop-zone="middle-shelf"]').trigger('click')
+    showPrompt.mockClear()
+    await wrapper.findAll('.food-quantity-actions button')[0].trigger('click')
+    await flushPromises()
+    const { validate } = showPrompt.mock.calls[0][0]
+    for (const quantity of ['', '0', '-1', '4', 'abc']) expect(validate(quantity)).toContain('no more than 3')
+    expect(validate('1.5')).toBe('')
   })
 
   it('keeps the food and shows the server error when consumption fails', async () => {
@@ -150,7 +164,7 @@ describe('Fridge interactions', () => {
     Object.defineProperty(event, 'dataTransfer', { value: transfer() })
     target.dispatchEvent(event)
     await flushPromises()
-    expect(window.confirm).toHaveBeenCalled()
+    expect(showConfirm).toHaveBeenCalled()
     expect(document.querySelector('.discard-target.celebrating')).not.toBeNull()
     expect(wrapper.find('.inventory-modal').exists()).toBe(false)
   })

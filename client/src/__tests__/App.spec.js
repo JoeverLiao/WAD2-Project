@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import App from '../App.vue'
 import { authGuard, routes } from '../router'
+import { activeDialog, showConfirm } from '../utils/dialog.js'
 
 function mockSession(user) {
   vi.stubGlobal(
@@ -47,6 +48,17 @@ afterEach(() => {
 })
 
 describe('App', () => {
+  it('cancels an open dialog when the route changes', async () => {
+    mockSession(null)
+    const { router } = await mountApp('/analytics')
+    const answer = showConfirm({ title: 'Remove Apples?' })
+
+    await router.push('/')
+
+    await expect(answer).resolves.toBe(false)
+    expect(activeDialog.value).toBeNull()
+  })
+
   it('keeps the full navbar and shows a login prompt on protected pages for guests', async () => {
     mockSession(null)
     const { router, wrapper } = await mountApp('/analytics')

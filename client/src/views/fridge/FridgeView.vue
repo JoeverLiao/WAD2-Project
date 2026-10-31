@@ -28,6 +28,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import FoodItemCard from '../../components/fridge/FoodItemCard.vue'
 import FoodItemForm from '../../components/fridge/FoodItemForm.vue'
 import FoodDragActions from '../../components/fridge/FoodDragActions.vue'
+import { showConfirm, showPrompt } from '../../utils/dialog.js'
 
 // ============================================================
 // 1. INVENTORY DATA AND PAGE STATUS
@@ -375,38 +376,41 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
 
     const actionLabel = action === 'consume' ? 'consume' : 'discard'
 
-    const input = window.prompt(
-        `How many ${item.unit} of ${item.name} would you like to ${actionLabel}?\n` +
-        `Current quantity: ${item.quantity}`,
-        String(item.quantity)
-    )
+    const input = await showPrompt({
+        title: `How many ${item.unit} of ${item.name} would you like to ${actionLabel}?`,
+        message: `Current quantity: ${item.quantity}`,
+        label: `Quantity (${item.unit})`,
+        defaultValue: String(item.quantity),
+        inputMode: 'decimal',
+        confirmLabel: action === 'consume' ? 'Consume' : 'Continue',
+        // Validate the quantity.
+        validate: (value) => {
+            const quantity = Number(value)
+            if (!Number.isFinite(quantity) || quantity <= 0 || quantity > item.quantity) {
+                return `Please enter a quantity greater than 0 and no more than ${item.quantity}.`
+            }
+            return ''
+        }
+    })
 
     // Cancel was clicked.
     if (input === null) return
 
     const amount = Number(input)
-
-    // Validate the quantity.
-    if (
-        !Number.isFinite(amount) ||
-        amount <= 0 ||
-        amount > item.quantity
-    ) {
-        window.alert(
-            `Please enter a quantity greater than 0 and no more than ${item.quantity}.`
-        )
-        return
-    }
-
     const remainingQuantity = Number(item.quantity) - amount
 
     // Confirm before discarding food.
     if (action === 'discard') {
-        const confirmed = window.confirm(
-            remainingQuantity === 0
-                ? `Discard all ${item.name}? This will remove it from your inventory.`
-                : `Discard ${amount} ${item.unit} of ${item.name}? ${remainingQuantity} will remain.`
-        )
+        const confirmed = await showConfirm({
+            title: remainingQuantity === 0
+                ? `Discard all ${item.name}?`
+                : `Discard ${amount} ${item.unit} of ${item.name}?`,
+            message: remainingQuantity === 0
+                ? 'This will remove it from your inventory.'
+                : `${remainingQuantity} will remain.`,
+            confirmLabel: 'Discard',
+            danger: true
+        })
 
         if (!confirmed) return
     }
@@ -501,7 +505,12 @@ function discardItem(item, onAnimationSuccess) {
 
 async function removeItem(item) {
     // Ask before deleting, so a click does not immediately remove food.
-    const confirmed = window.confirm(`Are you sure you want to remove ${item.name}?`)
+    const confirmed = await showConfirm({
+        title: `Remove ${item.name}?`,
+        message: 'Are you sure you want to remove this item from your inventory?',
+        confirmLabel: 'Remove',
+        danger: true
+    })
     if (!confirmed) return
 
     errorMessage.value = ''

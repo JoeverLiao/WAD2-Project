@@ -67,3 +67,23 @@ button, input, select, textarea {
       font-family: inherit;
       font-size: inherit;
     }
+
+/* Inline form errors added by utils/formValidation.js. */
+.field-error {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  color: #b5382a;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+}
+
+/* Must beat each form's own scoped border styles. */
+input[aria-invalid='true'],
+textarea[aria-invalid='true'],
+select[aria-invalid='true'] {
+  border-color: #b5382a !important;
+}

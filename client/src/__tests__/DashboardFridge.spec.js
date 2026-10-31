@@ -4,6 +4,9 @@ import { createPinia } from 'pinia'
 import DashboardView from '../views/account/DashboardView.vue'
 import FoodItemForm from '../components/fridge/FoodItemForm.vue'
 import { useInventoryStore } from '../stores/inventory.js'
+import { showConfirm, showPrompt } from '../utils/dialog.js'
+
+vi.mock('../utils/dialog.js')
 
 const food = { _id: 'apple-1', name: 'Apples', quantity: 3, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', expiresAt: '2026-11-05' }
 let wrapper
@@ -20,8 +23,8 @@ beforeEach(() => {
     return { items: [food] }
   } }))
   vi.stubGlobal('fetch', request)
-  vi.spyOn(window, 'prompt').mockReturnValue('1')
-  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  showPrompt.mockResolvedValue('1')
+  showConfirm.mockResolvedValue(true)
 })
 afterEach(() => {
   wrapper?.unmount()
@@ -51,7 +54,7 @@ describe('Dashboard Smart Fridge', () => {
   })
 
   it('removes consumed food from the expiry list, count and shared inventory', async () => {
-    window.prompt.mockReturnValue('3')
+    showPrompt.mockResolvedValue('3')
     await openShelf()
     await wrapper.findAll('.food-quantity-actions button')[0].trigger('click')
     await flushPromises()
