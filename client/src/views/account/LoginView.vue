@@ -1,4 +1,5 @@
 <script setup>
+import { usePageLoading } from '../../utils/pageLoading.js'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
@@ -11,6 +12,7 @@ const email = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+usePageLoading(loading, 'Logging in')
 
 async function handleLogin() {
   error.value = ''

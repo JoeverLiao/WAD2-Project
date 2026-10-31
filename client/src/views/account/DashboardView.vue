@@ -1,4 +1,5 @@
 <script setup>
+import { usePageLoading } from '../../utils/pageLoading.js'
 import { computed, ref, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 
@@ -13,6 +14,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
 // The user's Smart Fridge items, loaded from the backend
 const inventoryStore = useInventoryStore()
 const { items, loading, error } = storeToRefs(inventoryStore)
+usePageLoading(loading, 'Loading your dashboard')
 
 // Every item tagged with its area title and days left, most urgent first
 const allExpiryItems = computed(() => {

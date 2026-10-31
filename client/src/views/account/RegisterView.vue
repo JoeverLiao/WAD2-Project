@@ -1,4 +1,5 @@
 <script setup>
+import { usePageLoading } from '../../utils/pageLoading.js'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
@@ -13,6 +14,7 @@ const password = ref('')
 const confirmPassword = ref('')
 const error = ref('')
 const loading = ref(false)
+usePageLoading(loading, 'Creating account')
 
 async function handleRegister() {
   error.value = ''

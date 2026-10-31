@@ -1,6 +1,8 @@
 <script setup>
 import { computed, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
+import EggLoader from './components/EggLoader.vue'
+import { pageIsLoading, pageLoadingLabel } from './utils/pageLoading.js'
 import AppDialog from './components/AppDialog.vue'
 import AppNavbar from './components/AppNavbar.vue'
 import LoginPrompt from './components/LoginPrompt.vue'
@@ -25,4 +27,5 @@ watch(() => route.fullPath, dismissDialog)
     <RouterView v-else />
   </main>
   <AppDialog />
+  <EggLoader :visible="pageIsLoading" :label="pageLoadingLabel" />
 </template>

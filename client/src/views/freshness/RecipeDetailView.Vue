@@ -1,5 +1,6 @@
 
 <script setup>
+import { usePageLoading } from '../../utils/pageLoading.js'
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -10,6 +11,7 @@ const API = 'http://localhost:3000'
 
 const recipe = ref(null)
 const loading = ref(true)
+usePageLoading(loading, 'Loading recipe')
 const error = ref('')
 
 async function loadRecipe(id) {

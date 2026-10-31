@@ -1,5 +1,6 @@
 
 <script setup>
+import { usePageLoading } from '../../utils/pageLoading.js'
 import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import FoodIcon from '../../components/FoodIcon.vue'
@@ -14,6 +15,7 @@ const API = 'http://localhost:3000'
 const inventory = ref(sampleInventory)
 const recipes = ref([])
 const loading = ref(false)
+usePageLoading(loading, 'Finding recipes')
 const error = ref('')
 
 const tab = ref('mine')

@@ -1,5 +1,6 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
+import { navigating } from '../utils/pageLoading.js'
 import { useAuthStore } from '../stores/auth.js'
 
 export const routes = [
@@ -92,6 +93,9 @@ const router = createRouter({
   routes,
 })
 
+router.beforeEach(() => { navigating.value = true })
 router.beforeEach(authGuard)
+router.afterEach(() => { navigating.value = false })
+router.onError(() => { navigating.value = false })
 
 export default router

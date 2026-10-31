@@ -1,4 +1,5 @@
 <script setup>
+import { usePageLoading } from '../utils/pageLoading.js'
 import { ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import HomeFridge from '../components/HomeFridge.vue'
@@ -12,6 +13,7 @@ const email = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+usePageLoading(loading, 'Logging in')
 
 const funFacts = [
   'Did you know a banana is a berry, but a strawberry isn’t? Isn’t that totally bananas?',
