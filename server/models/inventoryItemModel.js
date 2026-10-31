@@ -68,7 +68,9 @@ const inventoryItemSchema = new mongoose.Schema(
         'freezer-main',
         'dry-storage',
       ],
-      default: 'middle-shelf',
+      default: function () {
+        return this?.storage === 'pantry' ? 'dry-storage' : this?.storage === 'freezer' ? 'freezer-main' : 'middle-shelf'
+      },
     },
 
     // Optional dates. Empty dates from the form are stored as null.

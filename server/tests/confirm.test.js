@@ -68,7 +68,7 @@ test('saves valid items for the logged-in user', async (t) => {
   assert.deepEqual(first.update.$inc, { quantity: 2, purchasePrice: 6.4 })
   assert.equal(first.update.$setOnInsert.purchasedAt.toISOString(), '2026-10-12T12:00:00.000Z')
   assert.equal(ops[1].updateOne.update.$inc.quantity, 1) // "1" was turned into a number
-  assert.equal(ops[1].updateOne.update.$setOnInsert, undefined)
+  assert.deepEqual(ops[1].updateOne.update.$setOnInsert, { storageZone: 'middle-shelf' })
 })
 
 test('an item already in stock has its quantity increased, not a second entry', async (t) => {

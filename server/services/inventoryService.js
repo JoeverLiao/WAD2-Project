@@ -47,7 +47,7 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
   const operations = groupSameProducts(prepared).map((item) => {
     const inc = { quantity: item.quantity }
     if (item.purchasePrice !== undefined) inc.purchasePrice = item.purchasePrice
-    const onInsert = {}
+    const onInsert = { storageZone: item.storage === 'pantry' ? 'dry-storage' : item.storage === 'freezer' ? 'freezer-main' : 'middle-shelf' }
     if (item.purchasedAt) onInsert.purchasedAt = item.purchasedAt
     if (item.expiresAt) onInsert.expiresAt = item.expiresAt
     const update = { $inc: inc }

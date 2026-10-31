@@ -1,0 +1,110 @@
+<script setup>
+import { computed, ref } from 'vue'
+
+const props = defineProps({
+  visible: Boolean,
+  position: { type: Object, default: null },
+  anchor: { type: Object, default: null },
+  reaction: { type: String, default: '' },
+  pending: Boolean,
+})
+const emit = defineEmits(['action-drop'])
+const face = ref(null)
+const bin = ref(null)
+const hovered = ref('')
+// Anchor once at drag start so targets stay close without chasing the food.
+const dockPosition = computed(() => {
+  if (!props.anchor) return {}
+  const width = Math.min(340, window.innerWidth - 24)
+  const height = 170
+  const above = props.anchor.y + 90 + height > window.innerHeight - 12
+  return {
+    width: `${width}px`,
+    left: `${Math.max(12, Math.min(window.innerWidth - width - 12, props.anchor.x - width / 2))}px`,
+    top: `${Math.max(12, Math.min(window.innerHeight - height - 12, above ? props.anchor.y - height - 65 : props.anchor.y + 65))}px`,
+    bottom: 'auto', transform: 'none',
+  }
+})
+function near(element) {
+  if (!props.position || !element) return false
+  const rect = element.getBoundingClientRect()
+  return props.position.x >= rect.left - 65 && props.position.x <= rect.right + 65
+    && props.position.y >= rect.top - 80 && props.position.y <= rect.bottom + 30
+}
+const hungry = computed(() => hovered.value === 'consume' || near(face.value))
+const binOpen = computed(() => hovered.value === 'discard' || near(bin.value))
+function drop(action, event) {
+  hovered.value = ''
+  if (!props.pending) emit('action-drop', action, event)
+}
+function leave(event) {
+  if (!event.currentTarget.contains(event.relatedTarget)) hovered.value = ''
+}
+</script>
+
+<template>
+  <Teleport to="body">
+    <Transition name="dock">
+      <div v-if="visible" class="food-action-dock" :style="dockPosition" aria-label="Drop food to consume or discard">
+        <p class="dock-instruction" role="status">{{ pending ? 'Updating your inventory…' : reaction ? 'Inventory updated!' : 'Drop your food here' }}</p>
+        <div class="dock-targets">
+          <div ref="face" class="food-drop-target consume-target" :class="{ approaching: hungry, celebrating: reaction === 'consume', waiting: pending }"
+            data-food-action="consume" @dragover.prevent="hovered = 'consume'" @dragenter.prevent="hovered = 'consume'" @dragleave="leave" @drop.prevent.stop="drop('consume', $event)">
+            <svg viewBox="0 0 120 120" aria-hidden="true" class="target-art">
+              <circle cx="60" cy="60" r="51" fill="#ffda67" stroke="#473d2b" stroke-width="4" />
+              <ellipse cx="31" cy="67" rx="10" ry="6" fill="#f4a079" />
+              <ellipse cx="89" cy="67" rx="10" ry="6" fill="#f4a079" />
+              <path d="M34 44 Q41 35 48 44 M72 44 Q79 35 86 44" fill="none" stroke="#473d2b" stroke-width="5" stroke-linecap="round" />
+              <g class="face-mouth">
+                <path class="smile" d="M35 69 Q60 99 85 69" fill="#803e39" stroke="#473d2b" stroke-width="3" />
+                <ellipse class="open-mouth" cx="60" cy="77" rx="25" ry="23" fill="#633633" stroke="#473d2b" stroke-width="3" />
+                <ellipse class="tongue" cx="60" cy="91" rx="13" ry="6" fill="#ed8d8c" />
+              </g>
+            </svg>
+            <strong>Consume</strong><small>{{ hungry ? 'Yum! Drop to eat' : 'Feed me your food' }}</small>
+          </div>
+          <div ref="bin" class="food-drop-target discard-target" :class="{ approaching: binOpen, celebrating: reaction === 'discard', waiting: pending }"
+            data-food-action="discard" @dragover.prevent="hovered = 'discard'" @dragenter.prevent="hovered = 'discard'" @dragleave="leave" @drop.prevent.stop="drop('discard', $event)">
+            <svg viewBox="0 0 120 120" aria-hidden="true" class="target-art">
+              <path d="M28 43 H92 L85 107 Q60 116 35 107Z" fill="#b9d7d0" stroke="#354c48" stroke-width="4" />
+              <path d="M47 55 L49 98 M60 55 V100 M73 55 L71 98" stroke="#6d9990" stroke-width="4" stroke-linecap="round" />
+              <g class="bin-lid"><path d="M24 39 Q60 29 96 39 V45 H24Z" fill="#76aaa0" stroke="#354c48" stroke-width="4" stroke-linejoin="round" /><path d="M49 33 V24 Q60 18 71 24 V33" fill="none" stroke="#354c48" stroke-width="4" /></g>
+            </svg>
+            <strong>Discard</strong><small>{{ binOpen ? 'Drop into the bin' : 'Only what you cannot save' }}</small>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+</template>
+
+<style scoped>
+.food-action-dock { position:fixed; bottom:max(16px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); z-index:2000; width:min(440px,100%); pointer-events:none; color:#243e37; text-align:center; }
+.dock-instruction { display:inline-block; margin:0 0 5px; padding:5px 15px; background:#fffffff2; border-radius:30px; box-shadow:0 2px 15px #16382e20; font-size:16px; font-weight:800; }
+.dock-targets { display:flex; justify-content:space-around; gap:30px; }
+.food-drop-target { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; width:170px; padding:8px; border-radius:50%; pointer-events:auto; transition:background .2s,filter .2s; }
+.target-art { width:88px; height:88px; overflow:visible; filter:drop-shadow(0 5px 6px #16382e30); animation:target-wiggle .7s ease-in-out infinite alternate; }
+.food-drop-target strong { padding:3px 13px; border-radius:20px; background:#fff; font-size:16px; }
+.food-drop-target small { margin-top:3px; padding:2px 6px; background:#fffffff0; border-radius:12px; font-size:14px; }
+.approaching { background:#fff8ccbb; filter:drop-shadow(0 0 12px #e6be4e); }
+.discard-target.approaching { background:#d5eee9bb; }
+.open-mouth,.tongue { opacity:0; transition:opacity .15s; }
+.approaching .open-mouth,.approaching .tongue { opacity:1; }
+.approaching .smile { opacity:0; }
+.bin-lid { transform-origin:27px 43px; transition:transform .25s ease; }
+.approaching .bin-lid { transform:rotate(-38deg) translateY(-4px); }
+.celebrating .target-art { animation:happy-bounce .7s ease; }
+.consume-target.celebrating .face-mouth { transform-origin:60px 78px; animation:chew .18s ease-in-out 5 alternate; }
+.consume-target.celebrating .open-mouth,.consume-target.celebrating .tongue { opacity:1; }
+.consume-target.celebrating .smile { opacity:0; }
+.discard-target.celebrating .bin-lid { animation:bin-close .65s ease; }
+.waiting { opacity:.8; }
+.dock-enter-active,.dock-leave-active { transition:opacity .2s,translate .2s; }
+.dock-enter-from,.dock-leave-to { opacity:0; translate:0 35px; }
+@keyframes target-wiggle { from { transform:rotate(-4deg) translateY(-2px); } to { transform:rotate(4deg) translateY(2px); } }
+@keyframes chew { from { transform:scaleY(1); } to { transform:scaleY(.25); } }
+@keyframes happy-bounce { 0%,100% { transform:translateY(0); } 40% { transform:translateY(-14px) rotate(-5deg); } 70% { transform:translateY(-5px) rotate(5deg); } }
+@keyframes bin-close { 0% { transform:rotate(-38deg); } 55% { transform:rotate(8deg); } 75% { transform:rotate(-8deg); } 100% { transform:rotate(0); } }
+@media(max-width:480px) { .target-art { width:90px; height:90px; } .dock-targets { gap:10px; } }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+</style>

@@ -479,7 +479,7 @@ function handleDialogKeydown(event) {
 
 .form-field label {
     color: #43534a;
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 700;
 }
 
@@ -495,7 +495,7 @@ function handleDialogKeydown(event) {
 
     background: var(--paper-bright, #fbfffd);
     color: var(--ink, #123f3b);
-    font-size: 13px;
+    font-size: 17px;
 }
 
 .form-field input:focus,
@@ -528,7 +528,7 @@ function handleDialogKeydown(event) {
     border: 2px solid var(--ink, #123f3b);
     border-radius: 9px;
     box-shadow: 2px 3px 0 var(--ink, #123f3b);
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 700;
     cursor: pointer;
 }

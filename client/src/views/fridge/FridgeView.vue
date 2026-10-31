@@ -27,6 +27,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 // Reusable card for displaying one food item.
 import FoodItemCard from '../../components/fridge/FoodItemCard.vue'
 import FoodItemForm from '../../components/fridge/FoodItemForm.vue'
+import FoodDragActions from '../../components/fridge/FoodDragActions.vue'
 
 // ============================================================
 // 1. INVENTORY DATA AND PAGE STATUS
@@ -63,7 +64,7 @@ function normaliseItem(apiItem) {
         expiresAt: toDateInputValue(apiItem.expiresAt),
         purchasedAt: toDateInputValue(apiItem.purchasedAt),
         // Keep storageZone available even for older records that lack it.
-        storageZone: apiItem.storageZone || defaultZoneFor(apiItem.storage)
+        storageZone: compatibleZone(apiItem.storage, apiItem.storageZone)
     }
 }
 
@@ -72,6 +73,12 @@ function defaultZoneFor(storage) {
     if (storage === 'freezer') return 'freezer-main'
     if (storage === 'pantry') return 'dry-storage'
     return 'middle-shelf'
+}
+
+// Older scanned items may have inherited the model's fridge-only default.
+function compatibleZone(storage, zone) {
+    if (storage === 'pantry' || storage === 'freezer') return defaultZoneFor(storage)
+    return ['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'crisper'].includes(zone) ? zone : 'middle-shelf'
 }
 
 // Turn the form's date fields into values that can safely be sent to the API.
@@ -107,7 +114,8 @@ async function loadInventory() {
 
         // A non-2xx response means the request failed.
         if (!response.ok) {
-            throw new Error(`Could not load inventory (HTTP ${response.status}).`)
+            const body = await response.json().catch(() => ({}))
+            throw new Error(response.status === 401 ? 'Your session has expired. Please sign in again to load your food.' : body.error || `Could not load inventory (HTTP ${response.status}).`)
         }
 
         const data = await response.json()
@@ -120,7 +128,7 @@ async function loadInventory() {
         items.value = apiItems.map(normaliseItem)
     } catch (error) {
         console.error('Failed to load inventory:', error)
-        errorMessage.value = 'Unable to load your inventory. Check that you are logged in and the backend is running, then retry.'
+        errorMessage.value = error.message || 'Unable to load your inventory. Please try again.'
     } finally {
         // `finally` runs whether the request succeeds or fails.
         loading.value = false
@@ -522,6 +530,16 @@ async function removeItem(item) {
 // This remembers the ID while an item is being dragged.
 // MongoDB IDs are strings, not numbers, so do not convert them to Number.
 const draggedItemId = ref(null)
+const dragPosition = ref(null)
+const dragAnchor = ref(null)
+const actionPending = ref(false)
+const draggedFood = computed(() => items.value.find(item => item.id === draggedItemId.value))
+function trackFoodDrag(event) {
+    if (!draggedItemId.value) return
+    dragPosition.value = { x: event.clientX, y: event.clientY }
+}
+onMounted(() => document.addEventListener('dragover', trackFoodDrag))
+onBeforeUnmount(() => document.removeEventListener('dragover', trackFoodDrag))
 const draggingFromModal = ref(false)
 // True only after the pointer has actually moved outside the inventory popup.
 const draggingOutsideModal = ref(false)
@@ -530,23 +548,14 @@ const actionReaction = ref('')
 let actionReactionTimer = null
 let actionReactionRequestId = 0
 
-function setEmojiDragImage(event, emoji) {
+function setEmojiDragImage(event) {
     if (!event.dataTransfer) return
 
-    // Use a transparent canvas so the native drag preview contains only the emoji,
-    // not the surrounding food card or compartment styling.
+    // Hide the native snapshot; the animated food preview follows the pointer.
     const size = 72
     const canvas = document.createElement('canvas')
     canvas.width = size
     canvas.height = size
-    const context = canvas.getContext('2d')
-    if (!context) return
-
-    context.font = '52px "Segoe UI Emoji", "Apple Color Emoji", sans-serif'
-    context.textAlign = 'center'
-    context.textBaseline = 'middle'
-    context.fillText(emoji, size / 2, size / 2)
-
     // setDragImage needs a rendered element in the document in some browsers.
     // Place the transparent canvas under the pointer, then remove it next frame.
     canvas.style.position = 'fixed'
@@ -560,20 +569,27 @@ function setEmojiDragImage(event, emoji) {
     requestAnimationFrame(() => canvas.remove())
 }
 
-// Small food icons in the stage are plain spans, so replace their default
-// drag snapshot with a transparent emoji-only preview as well.
+// Replace the native shelf snapshot with the shared animated preview.
 function setStageEmojiDragImage(event) {
-    const emojiElement = event.target.closest?.('.mini-food')
-    if (emojiElement) setEmojiDragImage(event, foodEmojiFor(emojiElement.title))
+    const emojiElement = event.target.closest?.('.mini-food, .door-food')
+    if (emojiElement) setEmojiDragImage(event)
 }
 
-function startDrag(item) {
+function startDrag(item, event) {
+    if (event) {
+        dragPosition.value = { x: event.clientX, y: event.clientY }
+        dragAnchor.value = { ...dragPosition.value }
+    }
     draggedItemId.value = item.id
     draggingFromModal.value = false
     draggingOutsideModal.value = false
 }
 
-function startModalDrag(item) {
+function startModalDrag(item, event) {
+    if (event) {
+        dragPosition.value = { x: event.clientX, y: event.clientY }
+        dragAnchor.value = { ...dragPosition.value }
+    }
     // Starting a drag must NOT hide the popup. It stays visible until the pointer
     // actually leaves the popup's bounds.
     draggedItemId.value = item.id
@@ -599,35 +615,9 @@ function updateModalDragVisibility(event) {
 
 function finishDrag() {
     draggedItemId.value = null
+    dragPosition.value = null
     draggingFromModal.value = false
     draggingOutsideModal.value = false
-    actionDropTarget.value = ''
-}
-
-// While dragging, move the carousel when the pointer reaches either edge
-// of the storage stage. This lets users drag from a compartment modal toward
-// the pantry (right edge) or back to the fridge (left edge).
-function handleStageDragOver(event) {
-    if (!draggedItemId.value) return
-
-    // Use the browser-window edges, not the stage's inner edges. This makes
-    // the carousel switch predictably when a held item is dragged toward the
-    // left side of the screen (fridge) or right side (pantry).
-    const edgeWidth = Math.min(140, window.innerWidth * 0.14)
-    const nearLeftEdge = event.clientX <= edgeWidth
-    const nearRightEdge = event.clientX >= window.innerWidth - edgeWidth
-
-    if (nearRightEdge && activeStorageUnit.value !== 'pantry') {
-        activeStorageUnit.value = 'pantry'
-        fridgeDoorOpen.value = false
-        selectedCompartment.value = null
-    } else if (nearLeftEdge && activeStorageUnit.value !== 'fridge') {
-        // When the user drags from the pantry toward the fridge, open the door
-        // automatically so the individual compartments are available as drop targets.
-        activeStorageUnit.value = 'fridge'
-        fridgeDoorOpen.value = true
-        selectedCompartment.value = null
-    }
 }
 
 // When dragging from the full-inventory popup, the backdrop visually covers the
@@ -790,49 +780,37 @@ const storageRecommendations = computed(() =>
 // 10. CAROUSEL, COMPARTMENT DETAILS, EXPIRY PANEL AND ACTION ZONES
 // ============================================================
 
-// 0 = refrigerator, 1 = pantry. The carousel changes which unit is in front.
-const activeStorageUnit = ref('fridge')
-const fridgeDoorOpen = ref(false)
+const doorAngle = ref(0)
+const doorGesture = ref(null)
+let ignoreDoorClick = false
+const fridgeDoorOpen = computed({ get: () => doorAngle.value > 85, set: (open) => { doorAngle.value = open ? 170 : 0 } })
+const fridgeLightOn = computed(() => doorAngle.value > 25)
 const selectedCompartment = ref(null)
 const expiryPanelOpen = ref(false)
-const actionDropTarget = ref('')
-
-function rotateStorage(direction) {
-    const nextStorageUnit = direction === 'right'
-        ? (activeStorageUnit.value === 'fridge' ? 'pantry' : 'fridge')
-        : (activeStorageUnit.value === 'pantry' ? 'fridge' : 'pantry')
-
-    activateStorageUnit(nextStorageUnit)
+function startDoorGesture(event) {
+    if (!event.isPrimary || event.button !== 0 || event.target.closest('.door-bin, .fridge-close-button, [draggable="true"]')) return
+    ignoreDoorClick = false
+    doorGesture.value = { x: event.clientX, angle: doorAngle.value, width: event.currentTarget.closest('.fridge-body').getBoundingClientRect().width, moved: false }
+    event.currentTarget.setPointerCapture(event.pointerId)
 }
-
-function activateStorageUnit(storage) {
-    if (storage === activeStorageUnit.value) return
-
-    cancelActionReaction()
-    activeStorageUnit.value = storage
-    selectedCompartment.value = null
-    fridgeDoorOpen.value = false
+function moveDoorGesture(event) {
+    const gesture = doorGesture.value
+    if (!gesture) return
+    const delta = gesture.x - event.clientX
+    if (Math.abs(delta) > 6) gesture.moved = true
+    if (gesture.moved) doorAngle.value = Math.max(0, Math.min(170, gesture.angle + delta / Math.max(gesture.width, 1) * 170))
 }
-
-function activateInactiveStorageAtPointer(event) {
-    const clickedUnit = event.target.closest?.('.storage-unit')
-    if (clickedUnit?.classList.contains('fridge-unit')) {
-        activateStorageUnit('fridge')
-        return
-    }
-    if (clickedUnit?.classList.contains('pantry-unit')) {
-        activateStorageUnit('pantry')
-        return
-    }
-
-    // The preview can extend beyond the carousel window. Route clicks in that
-    // overflow area to the inactive unit on that side of the current view.
-    const windowBounds = event.currentTarget.getBoundingClientRect()
-    if (activeStorageUnit.value === 'pantry' && event.clientX < windowBounds.left) {
-        activateStorageUnit('fridge')
-    } else if (activeStorageUnit.value === 'fridge' && event.clientX > windowBounds.right) {
-        activateStorageUnit('pantry')
-    }
+function endDoorGesture(event, cancelled = false) {
+    const gesture = doorGesture.value
+    if (!gesture) return
+    doorGesture.value = null
+    ignoreDoorClick = gesture.moved
+    if (gesture.moved) doorAngle.value = cancelled ? gesture.angle : doorAngle.value >= 60 ? 170 : 0
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+}
+function toggleDoor() {
+    if (ignoreDoorClick) { ignoreDoorClick = false; return }
+    fridgeDoorOpen.value = !fridgeDoorOpen.value
 }
 
 function openCompartment(compartment) {
@@ -952,12 +930,9 @@ function jumpToItem(item) {
     expiryPanelOpen.value = false
     cancelActionReaction()
     if (item.storage === 'pantry') {
-        activeStorageUnit.value = 'pantry'
-        fridgeDoorOpen.value = false
-        selectedCompartment.value = null
-        nextTick(() => document.querySelector('.carousel-nav button.selected')?.focus())
+        selectedCompartment.value = { id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' }
+        focusDialog()
     } else {
-        activeStorageUnit.value = 'fridge'
         fridgeDoorOpen.value = true
         selectedCompartment.value = item.storage === 'freezer'
             ? { id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' }
@@ -971,7 +946,7 @@ function jumpToItem(item) {
     }
 }
 
-function dropOnAction(action, event) {
+async function dropOnAction(action, event) {
     event.preventDefault()
     const transferredId = event.dataTransfer?.getData('text/plain')
     const itemId = transferredId || draggedItemId.value
@@ -986,14 +961,16 @@ function dropOnAction(action, event) {
     }
     const droppedInsideDialog = Boolean(event.currentTarget.closest('.inventory-modal'))
     if (draggingFromModal.value && !droppedInsideDialog) selectedCompartment.value = null
-    actionDropTarget.value = ''
-    // Consume/Discard may close the dialog or remove its card before dragend.
+    // Keep the targets visible while quantity confirmation and saving are in progress.
+    actionPending.value = true
     finishDrag()
     const reactionTarget = droppedInsideDialog ? `modal-${action}` : action
     const reactionRequestId = ++actionReactionRequestId
     const reactAfterSuccess = () => triggerActionReaction(reactionTarget, reactionRequestId)
-    if (action === 'consume') consumeItem(item, reactAfterSuccess)
-    else discardItem(item, reactAfterSuccess)
+    try {
+        if (action === 'consume') await consumeItem(item, reactAfterSuccess)
+        else await discardItem(item, reactAfterSuccess)
+    } finally { actionPending.value = false }
 }
 
 function triggerActionReaction(action, requestId) {
@@ -1024,28 +1001,12 @@ function cancelActionReaction() {
     clearActionReaction()
 }
 
-function finishActionReaction(event) {
-    if (event.target === event.currentTarget && event.animationName === 'action-zone-shake') {
-        clearActionReaction()
-    }
-}
-
 onBeforeUnmount(cancelActionReaction)
-
-function onActionDragEnter(action) {
-    actionDropTarget.value = action
-}
-
-function onActionDragLeave(event) {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-        actionDropTarget.value = ''
-    }
-}
 
 </script>
 
 <template>
-    <div class="smart-fridge-page">
+    <div class="fridge-page-shell"><div class="smart-fridge-page">
         <p v-if="loading" class="status-message" role="status">
             Loading your saved inventory from MongoDB...
         </p>
@@ -1063,14 +1024,14 @@ function onActionDragLeave(event) {
             <div>
                 <p class="eyebrow">FULL CIRCLE · INVENTORY MANAGEMENT</p>
                 <h1>My Smart Kitchen</h1>
-                <p class="page-description">Rotate between your fridge and pantry. Keep food visible, fresh and organised.</p>
+                <p class="page-description">Your fridge above, your pantry below. Keep food visible, fresh and organised.</p>
             </div>
             <div class="header-actions">
                 <span class="hero-doodle" aria-hidden="true">🧊</span>
                 <button type="button" class="expiry-button" @click="openExpiryPanel($event)">
                     ⚠️ Expired <span class="expiry-count">{{ expiryItemCount }}</span>
                 </button>
-                <button type="button" class="primary-button" @click="openAddForm(activeStorageUnit === 'pantry' ? 'pantry' : 'fridge')">
+                <button type="button" class="primary-button" @click="openAddForm('fridge')">
                     ＋ Add Food
                 </button>
             </div>
@@ -1104,20 +1065,19 @@ function onActionDragLeave(event) {
             </div>
         </section>
 
-        <section class="kitchen-stage" :class="`storage-${activeStorageUnit}`" aria-label="Rotating food storage" @dragstart.capture="setStageEmojiDragImage($event)" @dragover.prevent="handleStageDragOver($event)">
-            <button class="carousel-arrow arrow-left" type="button" aria-label="Rotate to previous storage unit" @click="rotateStorage('left')">
-                <span>‹</span><small>FRIDGE</small>
-            </button>
+        <section class="kitchen-stage" aria-label="Food storage" @dragstart.capture="setStageEmojiDragImage($event)">
 
-            <div class="carousel-window" @click.capture="activateInactiveStorageAtPointer($event)">
-                <div class="carousel-track" :class="`show-${activeStorageUnit}`">
+
+            <div class="carousel-window">
+                <div class="carousel-track">
                     <!-- Refrigerator unit -->
-                    <section class="storage-unit fridge-unit" :class="{ 'unit-current': activeStorageUnit === 'fridge' }" aria-label="Refrigerator">
-                        <div class="storage-unit-content" :inert="activeStorageUnit !== 'fridge'" :aria-hidden="activeStorageUnit !== 'fridge'">
+                    <section class="storage-unit fridge-unit" aria-label="Refrigerator">
+                        <div class="storage-unit-content">
                         <div class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
-                        <div class="fridge-body">
+                        <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn }" :style="{ '--door-angle': `${-doorAngle}deg`, '--open-progress': doorAngle / 170 }">
                             <div class="fridge-cabinet">
-                                <div class="fridge-interior">
+                                <div class="fridge-interior" :inert="!fridgeDoorOpen">
+                                    <div v-if="fridgeLightOn" class="cold-air" aria-hidden="true"><i></i><i></i><i></i></div>
                                     <div class="interior-header">
                                         <span>YOUR FRIDGE</span>
                                         <span class="temperature">❄ 4°C</span>
@@ -1126,7 +1086,7 @@ function onActionDragLeave(event) {
                                         <button type="button" class="compartment freezer-compartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
                                             <span class="compartment-heading">❄️ Freezer <small>{{ countItems('freezer') }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone('freezer', 'freezer-main').slice(0,3)" :key="item.id" class="mini-food" :title="item.name" draggable="true" @dragstart="startDrag(item); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                                <span v-for="item in itemsInZone('freezer', 'freezer-main').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length > 3" class="more-food">+{{ itemsInZone('freezer', 'freezer-main').length - 3 }}</span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
@@ -1139,7 +1099,7 @@ function onActionDragLeave(event) {
                                         ]" :key="compartment.id" type="button" class="compartment shelf-compartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
                                             <span class="compartment-heading"><span>{{ compartment.icon }} {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone).slice(0,3)" :key="item.id" class="mini-food" :title="item.name" draggable="true" @dragstart="startDrag(item); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone).slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
                                                 <span v-if="itemCount(compartment) > 3" class="more-food">+{{ itemCount(compartment) - 3 }}</span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
@@ -1149,7 +1109,7 @@ function onActionDragLeave(event) {
                                             <button type="button" class="compartment crisper-compartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: '🥬' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
                                                 <span class="compartment-heading">🥬 Crisper drawer <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
                                                 <span class="food-preview">
-                                                <span v-for="item in itemsInZone('fridge', 'crisper').slice(0,3)" :key="item.id" class="mini-food" :title="item.name" draggable="true" @dragstart="startDrag(item); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                                <span v-for="item in itemsInZone('fridge', 'crisper').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length > 3" class="more-food">+{{ itemsInZone('fridge', 'crisper').length - 3 }}</span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                                 </span>
@@ -1157,7 +1117,7 @@ function onActionDragLeave(event) {
                                         </div>
                                     </div>
                                 </div>
-                                <div class="fridge-door" :class="{ 'door-open': fridgeDoorOpen }" role="button" tabindex="0" :aria-label="fridgeDoorOpen ? 'Close refrigerator door' : 'Open refrigerator door'" @click="fridgeDoorOpen = !fridgeDoorOpen" @keydown.enter.prevent="fridgeDoorOpen = !fridgeDoorOpen" @keydown.space.prevent="fridgeDoorOpen = !fridgeDoorOpen">
+                                <div class="fridge-door" :class="{ 'door-open': fridgeDoorOpen }" role="button" tabindex="0" :aria-expanded="fridgeDoorOpen" :aria-label="fridgeDoorOpen ? 'Close refrigerator door' : 'Open refrigerator door'" @click="toggleDoor" @pointerdown="startDoorGesture" @pointermove="moveDoorGesture" @pointerup="endDoorGesture" @pointercancel="endDoorGesture($event, true)" @lostpointercapture="endDoorGesture($event, true)" @keydown.enter.prevent="fridgeDoorOpen = !fridgeDoorOpen" @keydown.space.prevent="fridgeDoorOpen = !fridgeDoorOpen">
                                     <span class="door-brand">FULL CIRCLE</span>
                                     <span v-if="!fridgeDoorOpen" class="closed-fridge-dashboard" aria-label="Fridge inventory summary">
                                         <span class="dashboard-title">FRIDGE STATUS</span>
@@ -1168,14 +1128,14 @@ function onActionDragLeave(event) {
                                     </span>
                                     <span class="door-handle"></span>
                                     <span class="door-hint">{{ fridgeDoorOpen ? 'DOOR OPEN' : 'OPEN FRIDGE' }}</span>
-                                    <span class="door-inner">
+                                    <span class="door-inner" :inert="!fridgeDoorOpen">
                                         <span class="door-inner-title">DOOR SHELVES</span>
                                         <span class="door-bin" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" title="View all food stored in the fridge door" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door').slice(0,3)" :key="item.id" class="door-food" :title="item.name">{{ foodEmojiFor(item.name) }}</span>
+                                            <span v-for="item in itemsInZone('fridge', 'door').slice(0,3)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
                                             <span v-if="itemsInZone('fridge', 'door').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span class="door-bin door-bin-small" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" title="View all food stored in the fridge door" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door').slice(3,6)" :key="item.id" class="door-food" :title="item.name">{{ foodEmojiFor(item.name) }}</span>
+                                            <span v-for="item in itemsInZone('fridge', 'door').slice(3,6)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
                                             <span v-if="itemsInZone('fridge', 'door').length <= 3" class="door-empty">{{ itemsInZone('fridge', 'door').length === 0 ? (searchQuery ? 'No matches' : 'Empty shelf') : 'Tap to view door items' }}</span>
                                         </span>
                                         <span v-if="fridgeDoorOpen" class="fridge-close-button" role="button" tabindex="0" aria-label="Close refrigerator door" @click.stop="fridgeDoorOpen = false" @keydown.enter.stop="fridgeDoorOpen = false" @keydown.space.prevent.stop="fridgeDoorOpen = false">✕ Close door</span>
@@ -1183,21 +1143,22 @@ function onActionDragLeave(event) {
                                 </div>
                             </div>
                         </div>
-                        <p class="unit-caption">Click the door to {{ fridgeDoorOpen ? 'close' : 'open' }} · Select a compartment to view everything</p>
+                        <p class="unit-caption">Click or drag the door to {{ fridgeDoorOpen ? 'close' : 'open' }} · Select a compartment to view everything</p>
                         </div>
-                        <button v-if="activeStorageUnit !== 'fridge'" type="button" class="storage-unit-activate" aria-label="Show refrigerator" @click.stop="activateStorageUnit('fridge')"></button>
+
                     </section>
 
                     <!-- Pantry unit -->
-                    <section class="storage-unit pantry-unit" :class="{ 'unit-current': activeStorageUnit === 'pantry' }" aria-label="Pantry">
-                        <div class="storage-unit-content" :inert="activeStorageUnit !== 'pantry'" :aria-hidden="activeStorageUnit !== 'pantry'">
+                    <section class="storage-unit pantry-unit" aria-label="Pantry">
+                        <div class="storage-unit-content">
+                        <h2 class="storage-heading">The pantry</h2><p class="storage-intro">Dry goods, snacks and everyday staples, all in one place.</p><button type="button" class="primary-button pantry-add" @click="openAddForm('pantry')">＋ Add pantry food</button>
                         <div class="unit-top-label pantry-label"><span>🥫</span> DRY &amp; SHELF-STABLE</div>
                         <div class="pantry-cabinet pantry-single-storage">
                             <div class="pantry-top"><span>THE PANTRY</span><span>🌾</span></div>
                             <button type="button" class="pantry-shelf pantry-whole-storage" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
                                 <span class="pantry-shelf-label">ALL PANTRY ITEMS · {{ countItems('pantry') }}</span>
                                 <span class="pantry-foods pantry-all-foods">
-                                <span v-for="item in itemsInZone('pantry', 'dry-storage').slice(0,12)" :key="item.id" class="mini-food" :title="item.name" draggable="true" @dragstart="startDrag(item); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
+                                <span v-for="item in itemsInZone('pantry', 'dry-storage').slice(0,12)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag">{{ foodEmojiFor(item.name) }}</span>
                                     <span v-if="itemsInZone('pantry', 'dry-storage').length > 12" class="more-food">+{{ itemsInZone('pantry', 'dry-storage').length - 12 }}</span>
                                     <span v-if="itemsInZone('pantry', 'dry-storage').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Drop pantry food here' }}</span>
                                 </span>
@@ -1207,48 +1168,15 @@ function onActionDragLeave(event) {
                         </div>
                         <p class="unit-caption">Click the pantry to view all items</p>
                         </div>
-                        <button v-if="activeStorageUnit !== 'pantry'" type="button" class="storage-unit-activate" aria-label="Show pantry" @click.stop="activateStorageUnit('pantry')"></button>
+
                     </section>
                 </div>
             </div>
 
-            <div class="action-zones" aria-label="Food actions">
-            <div class="action-zone action-consume"
-                :class="{ 'zone-active': actionDropTarget === 'consume', 'zone-shake-consume': actionReaction === 'consume' }"
-                @dragover.prevent="onActionDragEnter('consume')"
-                @dragenter.prevent="onActionDragEnter('consume')"
-                @dragleave="onActionDragLeave"
-                @animationend="finishActionReaction"
-                @drop="dropOnAction('consume', $event)">
-                <span class="action-icon">🍽️</span>
-                <strong>CONSUME</strong>
-                <small>Drop food here</small>
-            </div>
 
-            <div class="action-zone action-discard"
-                :class="{ 'zone-active': actionDropTarget === 'discard', 'zone-shake-discard': actionReaction === 'discard' }"
-                @dragover.prevent="onActionDragEnter('discard')"
-                @dragenter.prevent="onActionDragEnter('discard')"
-                @dragleave="onActionDragLeave"
-                @animationend="finishActionReaction"
-                @drop="dropOnAction('discard', $event)">
-                <span class="action-icon">🗑️</span>
-                <strong>DISCARD</strong>
-                <small>Drop food here</small>
-            </div>
-
-            </div>
-
-            <button class="carousel-arrow arrow-right" type="button" aria-label="Rotate to next storage unit" @click="rotateStorage('right')">
-                <span>›</span><small>PANTRY</small>
-            </button>
         </section>
 
-        <nav class="carousel-nav" aria-label="Choose storage unit">
-            <button type="button" :class="{ selected: activeStorageUnit === 'fridge' }" @click="activateStorageUnit('fridge')">🧊 Fridge</button>
-            <span class="carousel-track-dots"><i :class="{ active: activeStorageUnit === 'fridge' }"></i><i :class="{ active: activeStorageUnit === 'pantry' }"></i></span>
-            <button type="button" :class="{ selected: activeStorageUnit === 'pantry' }" @click="activateStorageUnit('pantry')">🥫 Pantry</button>
-        </nav>
+
 
         <section class="storage-hint">
             <span>💡</span>
@@ -1277,33 +1205,31 @@ function onActionDragLeave(event) {
                     <button type="button" class="primary-button small-button" @click="openAddForm(selectedCompartment.storage, selectedCompartment.zone)">＋ Add to this compartment</button>
                 </div>
                 <div v-if="compartmentItems.length" class="modal-food-list">
-                    <!-- Cards provide edit, remove, and drag controls; actions stay in the drop zones below. -->
+                    <!-- Food cards expose editing and quantity controls alongside dragging. -->
                     <FoodItemCard
                         v-for="item in compartmentItems"
                         :key="item.id"
                         :item="item"
+                        :dragging="draggedItemId === item.id"
                         @edit="openEditForm"
                         @remove="removeItem"
+                        @consume="consumeItem" @discard="discardItem"
                         @drag-start="startModalDrag"
                         @drag-end="finishDrag"
                     />
                 </div>
                 <div v-else class="modal-empty"><span>{{ searchQuery ? '🔎' : '🧺' }}</span><strong>{{ searchQuery ? 'No foods match this search' : 'This compartment is empty' }}</strong><p>{{ searchQuery ? 'Try a different food name, unit, or location.' : 'Add food to see it here.' }}</p></div>
-                <div class="modal-action-zones" aria-label="Actions for this compartment">
-                    <div class="action-zone action-consume" :class="{ 'zone-active': actionDropTarget === 'consume', 'zone-shake-consume': actionReaction === 'modal-consume' }"
-                        @dragover.prevent="onActionDragEnter('consume')" @dragenter.prevent="onActionDragEnter('consume')"
-                        @dragleave="onActionDragLeave" @animationend="finishActionReaction" @drop="dropOnAction('consume', $event)">
-                        <span class="action-icon">🍽️</span><strong>CONSUME</strong><small>Drop here</small>
-                    </div>
-                    <div class="action-zone action-discard" :class="{ 'zone-active': actionDropTarget === 'discard', 'zone-shake-discard': actionReaction === 'modal-discard' }"
-                        @dragover.prevent="onActionDragEnter('discard')" @dragenter.prevent="onActionDragEnter('discard')"
-                        @dragleave="onActionDragLeave" @animationend="finishActionReaction" @drop="dropOnAction('discard', $event)">
-                        <span class="action-icon">🗑️</span><strong>DISCARD</strong><small>Drop here</small>
-                    </div>
-                </div>
-                <p class="modal-footnote">Use the buttons on a food card, or drag it to an action below or another storage area.</p>
+                <p class="modal-footnote">Drag a food to the smiley or bin that appears beside your food, or to another storage area.</p>
             </section>
         </div>
+
+        <FoodDragActions :visible="Boolean(draggedItemId) || actionPending || Boolean(actionReaction)"
+            :position="dragPosition" :anchor="dragAnchor" :reaction="actionReaction" :pending="actionPending"
+            @action-drop="dropOnAction" />
+        <Teleport to="body">
+            <div v-if="draggedFood && dragPosition" class="held-food" aria-hidden="true"
+                :style="{ left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }">{{ foodEmojiFor(draggedFood.name) }}</div>
+        </Teleport>
 
         <!-- Expired items across the fridge, freezer and pantry. -->
         <div v-if="expiryPanelOpen" class="modal-backdrop" @click.self="closeExpiryPanel">
@@ -1335,7 +1261,7 @@ function onActionDragLeave(event) {
         />
 
         <footer class="page-footer"><p>Full Circle · Interactive Smart Fridge</p><p>Your inventory is loaded from and saved to the backend.</p></footer>
-        </div>
+        </div></div>
 </template>
 
 <style scoped>
@@ -1737,6 +1663,98 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .door-bin[role="button"]:focus-visible {
     outline:3px solid #3985a5;
     outline-offset:2px;
+}
+
+
+/* Each storage unit stands on the page without a shared display case. */
+.kitchen-stage, .kitchen-stage.storage-pantry {
+    display:block; min-height:0; padding:28px 0 12px; overflow:visible;
+    border:0; border-radius:0; background:transparent; box-shadow:none;
+}
+.kitchen-stage .carousel-arrow { display:none; }
+.kitchen-stage .carousel-window { width:100%; max-width:1000px; margin:auto; overflow:visible; }
+.kitchen-stage .carousel-track, .kitchen-stage .carousel-track.show-pantry {
+    display:block; width:100%; transform:none; transition:none;
+}
+.kitchen-stage .storage-unit { display:none; width:100%; padding:0; transform:none; filter:none; opacity:1; }
+.kitchen-stage .storage-unit.unit-current { display:block; animation:storage-arrive .45s ease both; }
+.kitchen-stage .storage-unit-activate { display:none; }
+.kitchen-stage .fridge-body {
+    width:min(82vw,430px); transform:translateX(0);
+    transition:transform 1s cubic-bezier(.22,.7,.2,1),width 1s cubic-bezier(.22,.7,.2,1);
+}
+.kitchen-stage .fridge-body.fridge-is-open { width:min(42vw,380px); transform:translateX(46%); }
+.kitchen-stage .fridge-cabinet { perspective:1800px; }
+.kitchen-stage .fridge-door { transition:transform 1s cubic-bezier(.22,.7,.2,1),box-shadow 1s; }
+.kitchen-stage .fridge-door.door-open { transform:rotateY(-170deg); }
+.kitchen-stage .fridge-door .door-inner { backface-visibility:hidden; }
+.kitchen-stage .fridge-interior { transition:box-shadow 1s; }
+.kitchen-stage .fridge-is-open .fridge-interior { box-shadow:inset 0 0 32px #a5e3ff70; }
+.kitchen-stage .pantry-cabinet { width:min(82vw,470px); margin:0 auto; }
+.kitchen-stage .food-preview { overflow:visible; flex-wrap:wrap; min-height:36px; }
+.kitchen-stage .mini-food,.kitchen-stage .door-food { min-width:34px; width:34px; height:34px; font-size:25px; cursor:grab; }
+.food-being-dragged { outline:3px solid #edb935; background:#fff0a9!important; animation:food-held-shake .25s ease-in-out infinite alternate; }
+.held-food { position:fixed; z-index:3000; pointer-events:none; width:64px; height:64px; display:grid; place-items:center; margin:-32px 0 0 -32px; font-size:46px; border-radius:50%; background:#fff9dbdd; border:2px solid #e6b533; box-shadow:0 0 0 7px #ffd95840,0 9px 25px #213a3633; animation:food-held-shake .25s ease-in-out infinite alternate; }
+.cold-air { position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden; border-radius:8px; }
+.cold-air i { position:absolute; left:15%; top:15%; width:70%; height:100px; border-radius:50%; background:radial-gradient(ellipse,#fff9 0%,#d4f3ff55 35%,transparent 70%); filter:blur(8px); animation:cold-breath 2s ease-out both; }
+.cold-air i:nth-child(2) { top:42%; animation-delay:.15s; }
+.cold-air i:nth-child(3) { top:70%; animation-delay:.3s; }
+@keyframes food-held-shake { from { transform:scale(1.2) rotate(-7deg); } to { transform:scale(1.2) rotate(7deg); } }
+@keyframes cold-breath { 0% { opacity:0; transform:scale(.5) translateY(0); } 25% { opacity:1; } 100% { opacity:0; transform:scale(2) translateY(75px); } }
+@keyframes storage-arrive { from { opacity:0; translate:0 12px; } to { opacity:1; translate:0 0; } }
+@media(max-width:600px) {
+    .kitchen-stage .fridge-body { padding:6px; }
+    .kitchen-stage .fridge-is-open .fridge-door .door-inner { padding:7px; }
+    .kitchen-stage .fridge-is-open .compartment-heading { font-size:8px; }
+    .kitchen-stage .fridge-is-open .compartment-heading small { font-size:7px; }
+    .kitchen-stage .fridge-is-open .mini-food { min-width:28px; width:28px; height:28px; font-size:22px; }
+}
+@media(prefers-reduced-motion:reduce) {
+    .held-food,.cold-air i,.kitchen-stage .storage-unit.unit-current { animation:none!important; }
+    .held-food,.food-being-dragged { transform:scale(1.2); }
+}
+
+
+/* Shared Home/Dashboard grid-paper shell, with readable inventory text. */
+.fridge-page-shell { min-height:100svh; color:var(--ink,#173d39); background-color:#eafaf7; background-image:linear-gradient(rgb(33 144 133 / 7%) 1px,transparent 1px),linear-gradient(90deg,rgb(33 144 133 / 7%) 1px,transparent 1px); background-size:32px 32px; }
+.smart-fridge-page { background:transparent; font-size:18px; }
+.smart-fridge-page .page-description { font-size:20px; }
+.smart-fridge-page .summary-label,.smart-fridge-page .primary-button,.smart-fridge-page .expiry-button { font-size:18px; }
+.smart-fridge-page .inventory-total,.smart-fridge-page .unit-caption,.smart-fridge-page .storage-hint p,.smart-fridge-page .recommendation-section p,.smart-fridge-page .page-footer,.smart-fridge-page .modal-footnote { font-size:16px; }
+.smart-fridge-page .toolbar input { font-size:18px; min-height:48px; }
+.kitchen-stage .storage-unit { display:block; animation:none; }
+.kitchen-stage .pantry-unit { margin-top:72px; padding-top:28px; }
+.storage-heading { text-align:center; font-family:var(--font-display); font-size:36px; margin:0 0 8px; }
+.storage-intro { text-align:center; font-size:18px; color:var(--muted); }
+.pantry-add { display:flex; width:fit-content; margin:0 auto 24px; }
+.kitchen-stage .unit-top-label { font-size:16px; }
+.kitchen-stage .fridge-body { --closed-width:min(82vw,430px); --open-width:min(42vw,400px); width:calc(var(--closed-width) * (1 - var(--open-progress)) + var(--open-width) * var(--open-progress)); transform:translateX(calc(46% * var(--open-progress))); }
+.kitchen-stage .fridge-body.fridge-is-open { width:calc(var(--closed-width) * (1 - var(--open-progress)) + var(--open-width) * var(--open-progress)); transform:translateX(calc(46% * var(--open-progress))); }
+.kitchen-stage .fridge-door,.kitchen-stage .fridge-door.door-open { transform:rotateY(var(--door-angle)); touch-action:pan-y; user-select:none; cursor:ew-resize; }
+.kitchen-stage .door-moving,.kitchen-stage .door-moving .fridge-door { transition:none; }
+.kitchen-stage .fridge-cabinet { height:680px; min-height:680px; }
+.kitchen-stage .fridge-interior { background:linear-gradient(135deg,#82959e,#bcc8cb); filter:brightness(.8); transition:background .25s,filter .25s,box-shadow .25s; }
+.kitchen-stage .light-on .fridge-interior { background:linear-gradient(135deg,#e1f5fc,#fffef0 55%,#d7edf2); filter:brightness(1); box-shadow:inset 0 0 35px #fffbd1,0 0 28px #e3f9ff90; }
+.kitchen-stage .interior-header,.kitchen-stage .compartment-heading,.kitchen-stage .compartment-heading small { font-size:15px; }
+.kitchen-stage .compartment-heading { flex-wrap:wrap; gap:4px; }
+.kitchen-stage .compartment-heading small { font-size:13px; }
+.kitchen-stage .empty-mini,.kitchen-stage .door-empty,.kitchen-stage .temperature,.kitchen-stage .more-food { font-size:14px; }
+.kitchen-stage .fridge-door .door-inner-title,.kitchen-stage .fridge-door .fridge-close-button { font-size:14px; }
+.kitchen-stage .door-hint,.kitchen-stage .door-brand { font-size:15px; }
+.kitchen-stage .dashboard-title,.kitchen-stage .dashboard-stat small { font-size:14px; }
+.kitchen-stage .dashboard-stat { min-height:66px; }
+.kitchen-stage .dashboard-stat strong { font-size:28px; }
+.kitchen-stage .pantry-shelf-label,.kitchen-stage .pantry-storage-hint { font-size:17px; }
+.smart-fridge-page .modal-heading p,.smart-fridge-page .modal-food-info span,.smart-fridge-page .expiry-label { font-size:16px; }
+.smart-fridge-page .modal-food-info strong { font-size:19px; }
+@media(max-width:600px) {
+    .kitchen-stage .fridge-cabinet { height:600px; min-height:600px; }
+    .kitchen-stage .interior-header,.kitchen-stage .compartment-heading,.kitchen-stage .fridge-is-open .compartment-heading { font-size:13px; }
+    .kitchen-stage .compartment-heading small,.kitchen-stage .fridge-is-open .compartment-heading small,.kitchen-stage .temperature { font-size:12px; }
+    .kitchen-stage .empty-mini,.kitchen-stage .door-empty { font-size:12px; }
+    .kitchen-stage .fridge-door .door-inner-title,.kitchen-stage .fridge-door .fridge-close-button { font-size:12px; }
+    .kitchen-stage .closed-fridge-dashboard { left:8%; right:8%; }
+    .smart-fridge-page .summary-label { font-size:16px; }
 }
 
 </style>

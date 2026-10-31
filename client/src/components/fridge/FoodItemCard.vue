@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 // The parent provides the food item.
 const props = defineProps({
+    dragging: { type: Boolean, default: false },
     item: {
         type: Object,
         required: true
@@ -13,6 +14,8 @@ const props = defineProps({
 const emit = defineEmits([
     'edit',
     'remove',
+    'consume',
+    'discard',
     'drag-start',
     'drag-end'
 ])
@@ -73,24 +76,15 @@ const expiryClass = computed(() => {
     return 'expiry-normal'
 })
 
-// Use an emoji-only preview for drag operations.
+// Suppress the native snapshot; the parent supplies an animated food preview.
 function setEmojiDragImage(event) {
     if (!event.dataTransfer) return
 
-    // Draw the food emoji on a transparent canvas so the native drag preview
-    // shows the food being held instead of a snapshot of the full card.
+    // An empty canvas keeps the native drag image transparent.
     const size = 72
     const canvas = document.createElement('canvas')
     canvas.width = size
     canvas.height = size
-    const context = canvas.getContext('2d')
-    if (!context) return
-
-    context.font = '52px "Segoe UI Emoji", "Apple Color Emoji", sans-serif'
-    context.textAlign = 'center'
-    context.textBaseline = 'middle'
-    context.fillText(foodEmoji.value, size / 2, size / 2)
-
     // Browsers can ignore drag images that are not rendered in the document.
     // Keep the transparent canvas under the pointer until the drag snapshot is taken.
     canvas.style.position = 'fixed'
@@ -108,7 +102,7 @@ function handleDragStart(event) {
     event.dataTransfer.setData('text/plain', String(props.item.id))
     event.dataTransfer.effectAllowed = 'move'
     setEmojiDragImage(event)
-    emit('drag-start', props.item)
+    emit('drag-start', props.item, event)
 }
 
 function handleDragEnd() {
@@ -119,6 +113,7 @@ function handleDragEnd() {
 <template>
     <article
         class="food-card"
+        :class="{ 'food-is-held': dragging }"
         draggable="true"
         @dragstart="handleDragStart"
         @dragend="handleDragEnd"
@@ -145,7 +140,10 @@ function handleDragEnd() {
         <span class="expiry-badge" :class="expiryClass" :aria-label="`Expiry status: ${expiryStatus}`">
             {{ expiryStatus }}
         </span>
-
+        <div class="food-quantity-actions" role="group" :aria-label="`Use ${item.name}`">
+            <button type="button" @click.stop="emit('consume', item)">😊 Consume</button>
+            <button type="button" @click.stop="emit('discard', item)">🗑 Discard</button>
+        </div>
     </article>
 </template>
 
@@ -180,6 +178,10 @@ function handleDragEnd() {
     cursor: grabbing;
 }
 
+.food-is-held { background: #fff6cc; outline: 3px solid #e4aa28; }
+.food-is-held .food-emoji { animation: held-wiggle .28s ease-in-out infinite alternate; }
+@keyframes held-wiggle { from { transform: scale(1.2) rotate(-7deg); } to { transform: scale(1.2) rotate(7deg); } }
+
 /* Card header */
 .card-top {
     display: flex;
@@ -199,18 +201,18 @@ function handleDragEnd() {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 42px;
-    height: 42px;
+    width: 52px;
+    height: 52px;
     flex-shrink: 0;
     border: 2px solid var(--ink);
     border-radius: 12px;
     background: var(--aqua-soft);
-    font-size: 24px;
+    font-size: 32px;
 }
 
 .icon-button {
-    opacity: 0;
-    visibility: hidden;
+    opacity: 1;
+    visibility: visible;
     transition: opacity 0.15s ease, background 0.15s ease;
     display: flex;
     align-items: center;
@@ -300,5 +302,8 @@ h4 {
         transition: none !important;
     }
 }
+.food-quantity-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.food-quantity-actions button { padding:8px 12px; border:1px solid #739c90; border-radius:8px; background:#edf8f3; color:#214a3c; font:inherit; font-size:16px; cursor:pointer; }
+.food-quantity-actions button:last-child { background:#fff0eb; border-color:#c59887; }
 </style>
 
