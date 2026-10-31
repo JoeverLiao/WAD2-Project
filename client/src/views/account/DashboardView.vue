@@ -188,7 +188,6 @@ const vReveal = {
         <div class="col-lg-7 d-flex flex-column gap-3">
           <section aria-labelledby="dashboard-fridge-heading">
             <h2 id="dashboard-fridge-heading" class="section-title">Your Smart Fridge</h2>
-            <p class="panel-sub fridge-instruction">Open the door or select a shelf to manage your food.</p>
             <SmartKitchen embedded :inventory-items="items"
               @inventory-change="items = $event" @reload="inventoryStore.loadInventory()" />
           </section>

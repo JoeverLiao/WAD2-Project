@@ -22,9 +22,11 @@
 // The backend uses that cookie to identify which user's items to use.
 // ============================================================
 
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, inject, watch } from 'vue'
 
 // Reusable card for displaying one food item.
+import { routerKey, routeLocationKey } from 'vue-router'
+
 import FoodItemCard from '../../components/fridge/FoodItemCard.vue'
 import FoodItemForm from '../../components/fridge/FoodItemForm.vue'
 import FoodDragActions from '../../components/fridge/FoodDragActions.vue'
@@ -44,6 +46,8 @@ const props = defineProps({
     inventoryItems: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['inventory-change', 'reload'])
+const router = inject(routerKey, null)
+const route = inject(routeLocationKey, null)
 const localItems = ref([])
 // The embedded dashboard owns its inventory; send successful changes back to it.
 const items = computed({
@@ -57,8 +61,8 @@ const items = computed({
 // These values let the page show progress and useful error messages.
 const loading = ref(false)
 const saving = ref(false)
+const shiftingFood = ref(false)
 const errorMessage = ref('')
-const successMessage = ref('')
 
 // Convert a date from the API into YYYY-MM-DD for <input type="date">.
 // Returning an empty string for a missing date keeps the form happy.
@@ -94,7 +98,7 @@ function defaultZoneFor(storage) {
 // Older scanned items may have inherited the model's fridge-only default.
 function compatibleZone(storage, zone) {
     if (storage === 'pantry' || storage === 'freezer') return defaultZoneFor(storage)
-    return ['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'crisper'].includes(zone) ? zone : 'middle-shelf'
+    return ['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'door-lower', 'crisper'].includes(zone) ? zone : 'middle-shelf'
 }
 
 // Turn the form's date fields into values that can safely be sent to the API.
@@ -120,7 +124,6 @@ async function loadInventory() {
     if (props.embedded) { emit('reload'); return }
     loading.value = true
     errorMessage.value = ''
-    successMessage.value = ''
 
     try {
         // GET asks the backend for the signed-in user's inventory.
@@ -153,7 +156,31 @@ async function loadInventory() {
 }
 
 // Automatically load inventory when this page first appears.
-onMounted(() => { if (!props.embedded) loadInventory() })
+onMounted(async () => {
+    if (!props.embedded) {
+        await loadInventory()
+        openLinkedCompartment()
+    }
+})
+watch(() => route?.query?.location, () => {
+    if (!props.embedded) openLinkedCompartment()
+})
+function openLinkedCompartment() {
+    const locations = {
+        'middle-shelf': { title: 'Shelves', storage: 'fridge' },
+        'freezer-main': { title: 'Freezer', storage: 'freezer' },
+        crisper: { title: 'Crisper drawer', storage: 'fridge' },
+        door: { title: 'Upper door shelf', storage: 'fridge' },
+        'door-lower': { title: 'Lower door shelf', storage: 'fridge' },
+        'dry-storage': { title: 'Pantry', storage: 'pantry' },
+    }
+    const zone = route?.query?.location
+    const location = locations[zone]
+    if (!location) return
+    fridgeDoorOpen.value = true
+    openCompartment({ id: zone, zone, ...location })
+}
+
 
 // ============================================================
 // 3. SEARCH AND STORAGE FILTERING
@@ -161,6 +188,105 @@ onMounted(() => { if (!props.embedded) loadInventory() })
 
 // v-model connects this value to the search input in the template.
 const searchQuery = ref('')
+
+const selectedFoodIds = ref(new Set())
+const selectionBox = ref(null)
+let selectionGesture = null
+let selectionRoot = null
+let suppressSelectionClick = false
+let selectionClickTimer
+function beginFoodSelection(event) {
+    if (event.button !== 0 || event.pointerType === 'touch' || shiftingFood.value) return
+    if (event.target.closest('[draggable="true"], input, .fridge-close-button, .primary-button')) return
+    if (event.target.closest('.fridge-door') && !event.target.closest('.door-bin')) return
+    selectionRoot = event.currentTarget
+    selectionGesture = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY, additive: event.ctrlKey || event.metaKey || event.shiftKey, previous: new Set(selectedFoodIds.value), moved: false }
+    // Door shelves should select food without also starting a door gesture.
+    event.stopPropagation()
+    event.preventDefault()
+}
+function updateFoodSelection(event) {
+    if (!selectionGesture) return
+    const gesture = selectionGesture
+    const x = event.clientX + window.scrollX
+    const y = event.clientY + window.scrollY
+    if (!gesture.moved && Math.hypot(x - gesture.x, y - gesture.y) < 5) return
+    gesture.moved = true
+    const box = { left: Math.min(x, gesture.x) - window.scrollX, top: Math.min(y, gesture.y) - window.scrollY, right: Math.max(x, gesture.x) - window.scrollX, bottom: Math.max(y, gesture.y) - window.scrollY }
+    selectionBox.value = box
+    foodTooltip.value = null
+    const selected = gesture.additive ? new Set(gesture.previous) : new Set()
+    for (const icon of selectionRoot.querySelectorAll('[data-food-id]')) {
+        if (icon.closest('[inert]:not([inert="false"])')) continue
+        const rect = icon.getBoundingClientRect()
+        let visible = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+        for (let parent = icon.parentElement; parent && parent !== selectionRoot; parent = parent.parentElement) {
+            const style = getComputedStyle(parent)
+            const bounds = parent.getBoundingClientRect()
+            if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { visible.left = Math.max(visible.left, bounds.left); visible.right = Math.min(visible.right, bounds.right) }
+            if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { visible.top = Math.max(visible.top, bounds.top); visible.bottom = Math.min(visible.bottom, bounds.bottom) }
+        }
+        if (visible.right > visible.left && visible.bottom > visible.top && visible.left < box.right && visible.right > box.left && visible.top < box.bottom && visible.bottom > box.top) selected.add(icon.dataset.foodId)
+    }
+    selectedFoodIds.value = selected
+}
+function endFoodSelection(event) {
+    if (!selectionGesture) return
+    if (event?.type === 'pointercancel') selectedFoodIds.value = selectionGesture.previous
+    else if (selectionGesture.moved) {
+        suppressSelectionClick = true
+        clearTimeout(selectionClickTimer)
+        selectionClickTimer = setTimeout(() => { suppressSelectionClick = false }, 0)
+    } else if (!selectionGesture.additive) selectedFoodIds.value = new Set()
+    selectionGesture = null
+    selectionBox.value = null
+}
+function stopSelectionClick(event) {
+    if (!suppressSelectionClick) return
+    event.preventDefault()
+    event.stopPropagation()
+    suppressSelectionClick = false
+}
+function clearFoodSelection(event) {
+    if (event.key === 'Escape') {
+        selectedFoodIds.value = new Set()
+        selectionGesture = null
+        selectionBox.value = null
+    }
+}
+onMounted(() => {
+    document.addEventListener('pointermove', updateFoodSelection)
+    document.addEventListener('pointerup', endFoodSelection)
+    document.addEventListener('pointercancel', endFoodSelection)
+    document.addEventListener('keydown', clearFoodSelection)
+})
+onBeforeUnmount(() => {
+    clearTimeout(selectionClickTimer)
+    document.removeEventListener('pointermove', updateFoodSelection)
+    document.removeEventListener('pointerup', endFoodSelection)
+    document.removeEventListener('pointercancel', endFoodSelection)
+    document.removeEventListener('keydown', clearFoodSelection)
+})
+
+
+const foodTooltip = ref(null)
+function showFoodName(item, event) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    foodTooltip.value = { name: item.name, x: Math.max(100, Math.min(window.innerWidth - 100, rect.left + rect.width / 2)), y: rect.top }
+}
+
+function scrollCompartment(event) {
+    if (event.ctrlKey) return
+    const container = event.currentTarget
+    const row = container.matches('.door-bin') ? container : container.querySelector('.food-preview, .pantry-all-foods')
+    if (!row || row.scrollWidth <= row.clientWidth) return
+    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
+    const multiplier = event.deltaMode === 1 ? 24 : event.deltaMode === 2 ? row.clientWidth : 1
+    event.preventDefault()
+    foodTooltip.value = null
+    row.scrollLeft += delta * multiplier
+}
+
 
 // `computed` updates this list automatically when the inventory or
 // search text changes. An empty query matches every item.
@@ -189,6 +315,10 @@ const itemsByZone = computed(() => {
 })
 
 function itemsInZone(storage, storageZone) {
+    if (storage === 'fridge' && storageZone === 'middle-shelf') {
+        return filteredItems.value.filter(item => item.storage === 'fridge' && ['upper-shelf', 'middle-shelf', 'lower-shelf'].includes(item.storageZone))
+            .sort((a, b) => (a.expiresAt || '9999').localeCompare(b.expiresAt || '9999'))
+    }
     return itemsByZone.value.get(`${storage}:${storageZone}`) || []
 }
 
@@ -317,7 +447,6 @@ async function saveItem(formData) {
 
     saving.value = true
     errorMessage.value = ''
-    successMessage.value = ''
 
     const isEditing = Boolean(editingItem.value)
     const itemId = editingItem.value?.id
@@ -359,7 +488,6 @@ async function saveItem(formData) {
         }
 
         closeForm()
-        successMessage.value = isEditing ? 'Food item updated successfully.' : ''
     } catch (error) {
         console.error('Failed to save inventory item:', error)
         errorMessage.value = error.message || 'Unable to save this food item. Please check the backend and try again.'
@@ -376,9 +504,11 @@ async function saveItem(formData) {
 // Partial changes use PATCH; removing the entire item uses DELETE.
 async function changeFoodQuantity(item, action, onAnimationSuccess) {
 
+    const group = selectedFoodsFor(item)
+    if (group.length > 1) return changeSelectedFoods(group, action, onAnimationSuccess)
     const actionLabel = action === 'consume' ? 'consume' : 'discard'
 
-    const input = await showPrompt({
+    const input = Number(item.quantity) > 1 ? await showPrompt({
         title: `How many ${item.unit} of ${item.name} would you like to ${actionLabel}?`,
         message: `Current quantity: ${item.quantity}`,
         label: `Quantity (${item.unit})`,
@@ -393,7 +523,7 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
             }
             return ''
         }
-    })
+    }) : String(item.quantity)
 
     // Cancel was clicked.
     if (input === null) return
@@ -402,7 +532,7 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
     const remainingQuantity = Number(item.quantity) - amount
 
     // Confirm before discarding food.
-    if (action === 'discard') {
+    if (action === 'discard' && Number(item.quantity) > 1) {
         const confirmed = await showConfirm({
             title: remainingQuantity === 0
                 ? `Discard all ${item.name}?`
@@ -418,7 +548,6 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
     }
 
     errorMessage.value = ''
-    successMessage.value = ''
 
     try {
         let response
@@ -469,10 +598,6 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
                 ? { ...existingItem, quantity: remainingQuantity } : existingItem)
         }
 
-        successMessage.value =
-            remainingQuantity === 0
-                ? `${item.name} ${action === 'consume' ? 'consumed' : 'discarded'} completely.`
-                : `${amount} ${item.unit} of ${item.name} ${action === 'consume' ? 'consumed' : 'discarded'}. ${remainingQuantity} remain.`
         // Start the animation only after the backend update succeeds.
         if (typeof onAnimationSuccess === 'function') {
             onAnimationSuccess({
@@ -516,7 +641,6 @@ async function removeItem(item) {
     if (!confirmed) return
 
     errorMessage.value = ''
-    successMessage.value = ''
 
     try {
         const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
@@ -532,7 +656,6 @@ async function removeItem(item) {
         items.value = items.value.filter(existingItem => existingItem.id !== item.id)
         await nextTick()
         if (selectedCompartment.value) dialogRef.value?.focus()
-        successMessage.value = `${item.name} removed from your inventory.`
     } catch (error) {
         console.error('Failed to remove inventory item:', error)
         errorMessage.value = `Unable to remove ${item.name}. Please try again.`
@@ -548,11 +671,20 @@ async function removeItem(item) {
 const draggedItemId = ref(null)
 const dragPosition = ref(null)
 const dragAnchor = ref(null)
+const dragPlacement = ref('')
+const windowWidth = ref(1024)
 const actionPending = ref(false)
 const draggedFood = computed(() => items.value.find(item => item.id === draggedItemId.value))
 function trackFoodDrag(event) {
     if (!draggedItemId.value) return
     dragPosition.value = { x: event.clientX, y: event.clientY }
+    windowWidth.value = window.innerWidth
+    const target = event.target.closest?.('[data-drop-zone]')
+    const names = {
+        'middle-shelf': 'Shelves', 'freezer-main': 'Freezer', crisper: 'Crisper drawer',
+        door: 'Upper door shelf', 'door-lower': 'Lower door shelf', 'dry-storage': 'Pantry',
+    }
+    dragPlacement.value = target ? names[target.dataset.dropZone] || '' : ''
 }
 onMounted(() => document.addEventListener('dragover', trackFoodDrag))
 onBeforeUnmount(() => document.removeEventListener('dragover', trackFoodDrag))
@@ -592,16 +724,19 @@ function setStageEmojiDragImage(event) {
 }
 
 function startDrag(item, event) {
+    if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set()
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
         dragAnchor.value = { ...dragPosition.value }
     }
+    foodTooltip.value = null
     draggedItemId.value = item.id
     draggingFromModal.value = false
     draggingOutsideModal.value = false
 }
 
 function startModalDrag(item, event) {
+    if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set()
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
         dragAnchor.value = { ...dragPosition.value }
@@ -631,6 +766,7 @@ function updateModalDragVisibility(event) {
 
 function finishDrag() {
     draggedItemId.value = null
+    dragPlacement.value = ''
     dragPosition.value = null
     draggingFromModal.value = false
     draggingOutsideModal.value = false
@@ -676,84 +812,69 @@ function dropFromModalBackdrop(event) {
     dropOnArea({ storage, storageZone }, event)
 }
 
+function selectedFoodsFor(item) {
+    return selectedFoodIds.value.has(item.id)
+        ? items.value.filter(food => selectedFoodIds.value.has(food.id)) : [item]
+}
+
+async function saveFoodGroup(group, method, payload) {
+    const results = await Promise.allSettled(group.map(async item => {
+        const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
+            method, credentials: 'include',
+            ...(payload ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) } : {}),
+        })
+        if (!response.ok) throw new Error(`Could not update ${item.name}.`)
+        if (method === 'DELETE') return item
+        const data = await response.json()
+        return normaliseItem(data.item || data)
+    }))
+    const succeeded = new Set()
+    results.forEach((result, index) => {
+        if (result.status !== 'fulfilled') return
+        const id = group[index].id
+        succeeded.add(id)
+        items.value = method === 'DELETE' ? items.value.filter(item => item.id !== id)
+            : items.value.map(item => item.id === id ? result.value : item)
+    })
+    selectedFoodIds.value = new Set([...selectedFoodIds.value].filter(id => !succeeded.has(id)))
+    const failed = results.filter(result => result.status === 'rejected').length
+    if (failed) errorMessage.value = `${failed} food item(s) could not be updated. They remain selected; please try again.`
+    return succeeded.size
+}
+
+async function changeSelectedFoods(group, action, onAnimationSuccess) {
+    const confirmed = await showConfirm({
+        title: `${action === 'consume' ? 'Consume' : 'Discard'} ${group.length} selected foods?`,
+        message: `This uses the full quantity of each selected food: ${group.map(item => `${item.name} (${item.quantity} ${item.unit})`).join(', ')}.`,
+        confirmLabel: action === 'consume' ? 'Consume all' : 'Discard all',
+        danger: action === 'discard',
+    })
+    if (!confirmed) return
+    errorMessage.value = ''
+    actionPending.value = true
+    try {
+        const count = await saveFoodGroup(group, 'DELETE')
+        if (count && typeof onAnimationSuccess === 'function') onAnimationSuccess({ proportion: 1 })
+    } finally { actionPending.value = false }
+}
+
 async function dropOnArea(area, event) {
     event.preventDefault()
-    // The card may put its ID into the browser's drag data.
-    // Fall back to draggedItemId if the browser data is empty.
-    const transferredId = event.dataTransfer?.getData('text/plain')
-    const itemId = transferredId || draggedItemId.value
-
-    if (!itemId) {
-        finishDrag()
-        return
-    }
-
+    if (shiftingFood.value || actionPending.value) return
+    const itemId = event.dataTransfer?.getData('text/plain') || draggedItemId.value
     const item = items.value.find(food => food.id === String(itemId))
-    if (!item) {
-        finishDrag()
-        return
-    }
-
-    // If the drag began in the inventory modal, let the drop pass through to the stage.
+    if (!item) { finishDrag(); return }
+    const storage = area.storage
+    const storageZone = storage === 'fridge' ? area.storageZone || 'middle-shelf'
+        : storage === 'freezer' ? 'freezer-main' : 'dry-storage'
+    const group = selectedFoodsFor(item).filter(food => food.storage !== storage || food.storageZone !== storageZone)
     if (draggingFromModal.value) selectedCompartment.value = null
-    // The modal may unmount its card before the browser sends dragend, so a
-    // valid drop must complete the drag lifecycle here as well.
     finishDrag()
-
-    // Decide the exact main storage and compartment for the destination.
-    const newStorage = area.storage
-    let newStorageZone
-
-    if (newStorage === 'fridge') {
-        // Dropping onto the main fridge area (not a shelf) uses middle shelf.
-        newStorageZone = area.storageZone || 'middle-shelf'
-    } else if (newStorage === 'freezer') {
-        newStorageZone = 'freezer-main'
-    } else {
-        newStorageZone = 'dry-storage'
-    }
-
-    // Do not make a network request if the item is already in that location.
-    if (item.storage === newStorage && item.storageZone === newStorageZone) {
-        return
-    }
-
+    if (!group.length) return
     errorMessage.value = ''
-    successMessage.value = ''
-
-    try {
-        // Persist the move first. The backend controller must allow
-        // `storageZone` in its PATCH allowed-fields list.
-        const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                storage: newStorage,
-                storageZone: newStorageZone
-            })
-        })
-
-        if (!response.ok) {
-            throw new Error(`Could not move item (HTTP ${response.status}).`)
-        }
-
-        const responseData = await response.json()
-        const movedApiItem = responseData.item || responseData
-        const movedItem = normaliseItem(movedApiItem)
-
-        // Replace the local item with the backend's saved version.
-        items.value = items.value.map(food => food.id === item.id ? movedItem : food)
-    } catch (error) {
-        console.error('Failed to move inventory item:', error)
-        errorMessage.value = `Unable to move ${item.name}. Please try again.`
-        // Reload to ensure the screen matches what is saved in the database.
-        await loadInventory()
-    } finally {
-        finishDrag()
-    }
+    shiftingFood.value = true
+    try { await saveFoodGroup(group, 'PATCH', { storage, storageZone }) }
+    finally { shiftingFood.value = false; finishDrag() }
 }
 
 // ============================================================
@@ -811,7 +932,7 @@ function startDoorGesture(event) {
 function moveDoorGesture(event) {
     const gesture = doorGesture.value
     if (!gesture) return
-    const delta = gesture.x - event.clientX
+    const delta = event.clientX - gesture.x
     if (Math.abs(delta) > 6) gesture.moved = true
     if (gesture.moved) doorAngle.value = Math.max(0, Math.min(170, gesture.angle + delta / Math.max(gesture.width, 1) * 170))
 }
@@ -829,6 +950,11 @@ function toggleDoor() {
 }
 
 function openCompartment(compartment) {
+    if (props.embedded && router) {
+        finishDrag()
+        router.push({ name: 'fridge', query: { location: compartment.zone } })
+        return
+    }
     // Clear any drag that ended while its source card was being unmounted.
     finishDrag()
     cancelActionReaction()
@@ -847,7 +973,9 @@ function closeCompartment() {
 function itemsForCompartment(compartment) {
     const list = filteredItems.value.filter(item => {
         if (compartment.storage === 'fridge') {
-            return item.storage === 'fridge' && item.storageZone === compartment.zone
+            return item.storage === 'fridge' && (compartment.zone === 'middle-shelf'
+                ? ['upper-shelf', 'middle-shelf', 'lower-shelf'].includes(item.storageZone)
+                : item.storageZone === compartment.zone)
         }
         if (compartment.storage === 'freezer') {
             return item.storage === 'freezer'
@@ -908,7 +1036,8 @@ function locationLabel(item) {
         'upper-shelf': 'Upper shelf',
         'middle-shelf': 'Middle shelf',
         'lower-shelf': 'Lower shelf',
-        door: 'Door shelves',
+        door: 'Upper door shelf',
+        'door-lower': 'Lower door shelf',
         crisper: 'Crisper drawer'
     }
     return names[item.storageZone] || 'Main fridge'
@@ -1005,9 +1134,6 @@ onBeforeUnmount(cancelActionReaction)
             <span>{{ errorMessage }}</span>
             <button type="button" @click="loadInventory">Retry loading inventory</button>
         </div>
-        <p v-if="successMessage" class="status-message success-message" role="status">
-            {{ successMessage }}
-        </p>
 
         <!-- The paper hero makes the page title and main action read like the other feature pages. -->
         <header v-if="!embedded" class="page-header paper hero">
@@ -1047,16 +1173,15 @@ onBeforeUnmount(cancelActionReaction)
         </section>
 
         <!-- Search filters shelf previews and the full compartment list below. -->
-        <section class="toolbar">
+        <section v-if="!embedded" class="toolbar">
             <label for="inventory-search">🔎</label>
             <input id="inventory-search" v-model="searchQuery" type="search" placeholder="Search milk, rice, carrots...">
-            <button v-if="embedded" type="button" class="primary-button" @click="openAddForm('fridge')">＋ Add food</button>
             <div class="inventory-total" aria-live="polite">
                 {{ searchQuery.trim() ? `${searchResultCount} matching foods` : `${totalItems} tracked foods` }}
             </div>
         </section>
 
-        <section class="kitchen-stage" aria-label="Food storage" @dragstart.capture="setStageEmojiDragImage($event)">
+        <section class="kitchen-stage" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dragstart.capture="setStageEmojiDragImage($event)">
 
 
             <div class="carousel-window">
@@ -1064,44 +1189,46 @@ onBeforeUnmount(cancelActionReaction)
                     <!-- Refrigerator unit -->
                     <section class="storage-unit fridge-unit" aria-label="Refrigerator">
                         <div class="storage-unit-content">
-                        <div class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
-                        <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn }" :style="{ '--door-angle': `${-doorAngle}deg`, '--open-progress': doorAngle / 170 }">
+                        <div v-if="!embedded" class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
+                        <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn }" :style="{ '--door-angle': `${doorAngle}deg`, '--open-progress': doorAngle / 170 }">
                             <div class="fridge-cabinet">
+                                <div v-for="side in (fridgeLightOn ? ['left', 'right'] : [])" :key="side" class="cold-air" :class="`cold-air-${side}`" aria-hidden="true">
+                                    <svg v-for="n in 3" :key="n" class="cold-air-puff" :style="{ '--puff-index': n - 1 }" viewBox="0 0 150 100">
+                                        <path class="cold-air-cloud" d="M12 63 C-1 52 6 34 22 35 C18 16 45 8 56 25 C69 6 99 15 98 35 C122 24 141 42 130 59 C151 71 133 91 114 82 C95 99 75 89 68 83 C45 97 23 83 28 74 C19 77 12 72 12 63Z" />
+                                        <path class="cold-air-curl" d="M13 57 H60 C85 57 90 31 73 31 C59 31 59 47 70 47 M27 72 H96 C115 72 119 51 106 49" />
+                                        <path class="cold-air-spark" d="M119 12 V30 M110 21 H128 M113 15 L125 27 M113 27 L125 15" />
+                                    </svg>
+                                    <span v-for="n in 4" :key="'flake-' + n" class="cold-air-flake" :style="{ '--flake-index': n - 1 }">❄</span>
+                                </div>
                                 <div class="fridge-interior" :inert="!fridgeDoorOpen">
-                                    <div v-if="fridgeLightOn" class="cold-air" aria-hidden="true"><i></i><i></i><i></i></div>
                                     <div class="interior-header">
                                         <span>YOUR FRIDGE</span>
                                         <span class="temperature">❄ 4°C</span>
                                     </div>
                                     <div class="fridge-compartments">
-                                        <button type="button" class="compartment freezer-compartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
+                                        <button type="button" class="compartment freezer-compartment" @wheel="scrollCompartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
                                             <span class="compartment-heading">❄️ Freezer <small>{{ countItems('freezer') }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone('freezer', 'freezer-main').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
-                                                <span v-if="itemsInZone('freezer', 'freezer-main').length > 3" class="more-food">+{{ itemsInZone('freezer', 'freezer-main').length - 3 }}</span>
+                                                <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
 
                                         <button v-for="compartment in [
-                                            { id: 'upper-shelf', title: 'Upper shelf', storage: 'fridge', zone: 'upper-shelf', icon: 'bowl' },
-                                            { id: 'middle-shelf', title: 'Middle shelf', storage: 'fridge', zone: 'middle-shelf', icon: 'carton' },
-                                            { id: 'lower-shelf', title: 'Lower shelf', storage: 'fridge', zone: 'lower-shelf', icon: 'box' }
-                                        ]" :key="compartment.id" type="button" class="compartment shelf-compartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
+                                            { id: 'main-fridge', title: 'Shelves', storage: 'fridge', zone: 'middle-shelf', icon: 'carton' }
+                                        ]" :key="compartment.id" type="button" class="compartment shelf-compartment" @wheel="scrollCompartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon :kind="compartment.icon" /> {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone).slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
-                                                <span v-if="itemCount(compartment) > 3" class="more-food">+{{ itemCount(compartment) - 3 }}</span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
 
                                         <div class="fridge-bottom">
-                                            <button type="button" class="compartment crisper-compartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: '🥬' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
+                                            <button type="button" class="compartment crisper-compartment" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: '🥬' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
                                                 <span class="compartment-heading"><span><FoodIcon kind="leaf" /> Crisper drawer</span> <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
                                                 <span class="food-preview">
-                                                <span v-for="item in itemsInZone('fridge', 'crisper').slice(0,3)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
-                                                    <span v-if="itemsInZone('fridge', 'crisper').length > 3" class="more-food">+{{ itemsInZone('fridge', 'crisper').length - 3 }}</span>
+                                                <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                                 </span>
                                             </button>
@@ -1121,13 +1248,13 @@ onBeforeUnmount(cancelActionReaction)
                                     <span class="door-hint">{{ fridgeDoorOpen ? 'DOOR OPEN' : 'OPEN FRIDGE' }}</span>
                                     <span class="door-inner" :inert="!fridgeDoorOpen">
                                         <span class="door-inner-title">DOOR SHELVES</span>
-                                        <span class="door-bin" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" title="View all food stored in the fridge door" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door').slice(0,3)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
+                                        <span class="door-bin" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" aria-label="Upper door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })">
+                                            <span v-for="item in itemsInZone('fridge', 'door')" :key="item.id" class="door-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                             <span v-if="itemsInZone('fridge', 'door').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
-                                        <span class="door-bin door-bin-small" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" title="View all food stored in the fridge door" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Door shelves', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door').slice(3,6)" :key="item.id" class="door-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
-                                            <span v-if="itemsInZone('fridge', 'door').length <= 3" class="door-empty">{{ itemsInZone('fridge', 'door').length === 0 ? (searchQuery ? 'No matches' : 'Empty shelf') : 'Tap to view door items' }}</span>
+                                        <span class="door-bin door-bin-small" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door-lower" role="button" tabindex="0" aria-label="Lower door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door-lower' }, $event)" @click.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.enter.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.space.prevent.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })">
+                                            <span v-for="item in itemsInZone('fridge', 'door-lower')" :key="item.id" class="door-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                            <span v-if="itemsInZone('fridge', 'door-lower').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span v-if="fridgeDoorOpen" class="fridge-close-button" role="button" tabindex="0" aria-label="Close refrigerator door" @click.stop="fridgeDoorOpen = false" @keydown.enter.stop="fridgeDoorOpen = false" @keydown.space.prevent.stop="fridgeDoorOpen = false">✕ Close door</span>
                                     </span>
@@ -1146,11 +1273,10 @@ onBeforeUnmount(cancelActionReaction)
                         <div class="unit-top-label pantry-label"><span><FoodIcon kind="can" /></span> DRY &amp; SHELF-STABLE</div>
                         <div class="pantry-cabinet pantry-single-storage">
                             <div class="pantry-top"><span>THE PANTRY</span><span>🌾</span></div>
-                            <button type="button" class="pantry-shelf pantry-whole-storage" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
+                            <button type="button" class="pantry-shelf pantry-whole-storage" @wheel="scrollCompartment" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
                                 <span class="pantry-shelf-label">ALL PANTRY ITEMS · {{ countItems('pantry') }}</span>
                                 <span class="pantry-foods pantry-all-foods">
-                                <span v-for="item in itemsInZone('pantry', 'dry-storage').slice(0,12)" :key="item.id" class="mini-food" :class="{ 'food-being-dragged': draggedItemId === item.id }" :title="item.name" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /></span>
-                                    <span v-if="itemsInZone('pantry', 'dry-storage').length > 12" class="more-food">+{{ itemsInZone('pantry', 'dry-storage').length - 12 }}</span>
+                                <span v-for="item in itemsInZone('pantry', 'dry-storage')" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                     <span v-if="itemsInZone('pantry', 'dry-storage').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Drop pantry food here' }}</span>
                                 </span>
                                 <span class="pantry-storage-hint">Click to view all pantry items</span>
@@ -1192,7 +1318,7 @@ onBeforeUnmount(cancelActionReaction)
                     <div><p class="eyebrow">FULL COMPARTMENT</p><h2 id="compartment-title">{{ selectedCompartment.title }}</h2><p>{{ compartmentItems.length }} matching food(s), sorted by expiry date</p></div>
                     <button type="button" class="modal-close" aria-label="Close compartment" @click="closeCompartment">✕</button>
                 </header>
-                <div class="modal-toolbar">
+                <div v-if="!embedded" class="modal-toolbar">
                     <button type="button" class="primary-button small-button" @click="openAddForm(selectedCompartment.storage, selectedCompartment.zone)">＋ Add to this compartment</button>
                 </div>
                 <div v-if="compartmentItems.length" class="modal-food-list">
@@ -1218,8 +1344,39 @@ onBeforeUnmount(cancelActionReaction)
             :position="dragPosition" :anchor="dragAnchor" :reaction="actionReaction" :pending="actionPending"
             @action-drop="dropOnAction" />
         <Teleport to="body">
+            <div v-if="selectionBox" class="food-selection-box" aria-hidden="true" :style="{ left: selectionBox.left + 'px', top: selectionBox.top + 'px', width: (selectionBox.right - selectionBox.left) + 'px', height: (selectionBox.bottom - selectionBox.top) + 'px' }"></div>
+            <div v-if="selectedFoodIds.size" class="food-selection-count" role="status">{{ selectedFoodIds.size }} selected · Esc to clear</div>
+            <div v-if="shiftingFood" class="shifting-food-overlay" role="status" aria-live="polite" aria-label="Shifting food">
+                <div class="shifting-food-card">
+                    <svg class="shifting-egg" viewBox="0 0 220 230" aria-hidden="true">
+                        <ellipse cx="111" cy="215" rx="57" ry="8" fill="#183d3920" />
+                        <g class="egg-legs" fill="#ffc95d" stroke="#234d50" stroke-width="4" stroke-linejoin="round">
+                            <path d="M90 174 L81 199 L63 205 Q53 218 90 214 L103 183" />
+                            <path d="M126 177 L140 199 L159 204 Q177 217 137 214 L113 185" />
+                        </g>
+                        <g class="egg-body" stroke="#234d50" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M65 110 Q32 112 32 68" fill="none" />
+                            <g class="egg-wave" fill="#fff8de">
+                                <path d="M32 76 Q19 65 17 56 Q16 50 22 51 L29 60 L25 39 Q25 32 30 35 L38 55 L40 37 Q43 31 46 38 L47 58 Q60 46 62 54 L49 72Z" />
+                            </g>
+                            <path d="M159 111 Q189 134 174 157 L153 150" fill="none" />
+                            <path d="M110 24 C81 24 51 91 51 135 C51 199 168 203 171 137 C174 94 140 24 110 24Z" fill="#fff8de" />
+                            <path d="M87 43 Q69 67 64 89" fill="none" stroke="#fff" stroke-width="8" />
+                            <path d="M58 91 H164 M65 92 L70 115 Q87 128 99 112 L104 95 H117 L123 113 Q143 128 154 111 L158 92" fill="#183d39" />
+                            <path d="M78 98 L83 104 M132 98 L137 104" stroke="#d5f7f5" stroke-width="3" />
+                            <ellipse cx="75" cy="133" rx="10" ry="5" fill="#ffb5a1" stroke="none" />
+                            <ellipse cx="149" cy="133" rx="10" ry="5" fill="#ffb5a1" stroke="none" />
+                            <path d="M94 139 Q111 158 129 137 Q116 171 94 139Z" fill="#fff" />
+                        </g>
+                        <g class="egg-speed" fill="none" stroke="#65bbb4" stroke-width="4" stroke-linecap="round"><path d="M14 151 H35 M8 166 H30 M182 80 H204" /></g>
+                    </svg>
+                    <strong>Shifting food<span class="shifting-dots">…</span></strong>
+                </div>
+            </div>
+            <span v-if="dragPlacement && dragPosition" class="drag-placement-hint" role="status"
+                :style="{ left: `${Math.max(95, Math.min(dragPosition.x, windowWidth - 95))}px`, top: `${Math.max(12, dragPosition.y - 72)}px` }">Place at {{ dragPlacement }}</span>
             <div v-if="draggedFood && dragPosition" class="held-food" aria-hidden="true"
-                :style="{ left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }"><FoodIcon :food="draggedFood.name" /></div>
+                :style="{ left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }"><span v-if="selectedFoodIds.size > 1" class="drag-group-count">{{ selectedFoodIds.size }} foods</span><FoodIcon :food="draggedFood.name" /><span v-if="Number(draggedFood.quantity) > 1" class="food-quantity-badge">×{{ draggedFood.quantity }}</span></div>
         </Teleport>
 
         <!-- Expired items across the fridge, freezer and pantry. -->
@@ -1231,7 +1388,7 @@ onBeforeUnmount(cancelActionReaction)
                 </header>
                 <div v-if="expiryItems.length" class="modal-food-list">
                     <button v-for="item in expiryItems" :key="item.id" type="button" class="expiry-food-row" @click="jumpToItem(item)">
-                        <span class="modal-food-emoji"><FoodIcon :food="item.name" /></span>
+                        <span class="modal-food-emoji"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                         <span class="modal-food-info"><strong>{{ item.name }}</strong><span>{{ locationLabel(item) }} · {{ item.quantity }} {{ item.unit }}</span></span>
                         <span class="expiry-label" :class="{ 'is-expired': expiryDays(item) < 0 }">{{ expiryLabel(item) }}</span>
                         <span aria-hidden="true">›</span>
@@ -1253,6 +1410,9 @@ onBeforeUnmount(cancelActionReaction)
 
         <footer v-if="!embedded" class="page-footer"><p>Full Circle · Interactive Smart Fridge</p><p>Your inventory is loaded from and saved to the backend.</p></footer>
         </div></div>
+    <Teleport to="body">
+        <span v-if="foodTooltip" role="tooltip" class="fridge-food-tooltip" :style="{ left: foodTooltip.x + 'px', top: foodTooltip.y + 'px' }">{{ foodTooltip.name }}</span>
+    </Teleport>
 </template>
 
 <style scoped>
@@ -1265,7 +1425,7 @@ onBeforeUnmount(cancelActionReaction)
     --line: #a5c9c0;
     max-width: 1320px;
     margin: 0 auto;
-    padding: 28px clamp(14px, 3vw, 36px) 22px;
+    padding: 16px clamp(8px, 1.5vw, 20px) 16px;
     color: var(--ink);
     font-family: var(--font-sans, "Patrick Hand", cursive, sans-serif);
 }
@@ -1431,7 +1591,6 @@ onBeforeUnmount(cancelActionReaction)
 .status-message { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin:0 0 14px; padding:12px 14px; border:2px solid var(--line); border-radius:10px; background:#fff; font-size:13px; }
 .error-message { border-color:#bd554b; background:#fff0ed; color:#8d2525; }
 .error-message button { padding:7px 10px; border:2px solid #8d2525; border-radius:7px; background:white; color:#8d2525; cursor:pointer; }
-.success-message { border-color:#7cae66; background:#eff9df; color:#285b30; }
 .modal-backdrop { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(15,38,34,.56); backdrop-filter:blur(4px); }
 /* Once the pointer leaves the popup, keep it hidden AND remove the overlay
    from hit-testing. This lets the actual fridge/pantry compartments receive
@@ -1656,11 +1815,11 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 
 /* Each storage unit stands on the page without a shared display case. */
 .kitchen-stage, .kitchen-stage.storage-pantry {
-    display:block; min-height:0; padding:28px 0 12px; overflow:visible;
+    display:block; min-height:0; padding:8px 0; overflow:visible;
     border:0; border-radius:0; background:transparent; box-shadow:none;
 }
 .kitchen-stage .carousel-arrow { display:none; }
-.kitchen-stage .carousel-window { width:100%; max-width:1000px; margin:auto; overflow:visible; }
+.kitchen-stage .carousel-window { width:100%; max-width:1120px; margin:auto; overflow:visible; }
 .kitchen-stage .carousel-track, .kitchen-stage .carousel-track.show-pantry {
     display:block; width:100%; transform:none; transition:none;
 }
@@ -1683,12 +1842,7 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .kitchen-stage .mini-food,.kitchen-stage .door-food { min-width:34px; width:34px; height:34px; font-size:25px; cursor:grab; }
 .food-being-dragged { outline:3px solid #edb935; background:#fff0a9!important; animation:food-held-shake .25s ease-in-out infinite alternate; }
 .held-food { position:fixed; z-index:3000; pointer-events:none; width:64px; height:64px; display:grid; place-items:center; margin:-32px 0 0 -32px; font-size:46px; border-radius:50%; background:#fff9dbdd; border:2px solid #e6b533; box-shadow:0 0 0 7px #ffd95840,0 9px 25px #213a3633; animation:food-held-shake .25s ease-in-out infinite alternate; }
-.cold-air { position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden; border-radius:8px; }
-.cold-air i { position:absolute; left:15%; top:15%; width:70%; height:100px; border-radius:50%; background:radial-gradient(ellipse,#fff9 0%,#d4f3ff55 35%,transparent 70%); filter:blur(8px); animation:cold-breath 2s ease-out both; }
-.cold-air i:nth-child(2) { top:42%; animation-delay:.15s; }
-.cold-air i:nth-child(3) { top:70%; animation-delay:.3s; }
 @keyframes food-held-shake { from { transform:scale(1.2) rotate(-7deg); } to { transform:scale(1.2) rotate(7deg); } }
-@keyframes cold-breath { 0% { opacity:0; transform:scale(.5) translateY(0); } 25% { opacity:1; } 100% { opacity:0; transform:scale(2) translateY(75px); } }
 @keyframes storage-arrive { from { opacity:0; translate:0 12px; } to { opacity:1; translate:0 0; } }
 @media(max-width:600px) {
     .kitchen-stage .fridge-body { padding:6px; }
@@ -1698,7 +1852,7 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     .kitchen-stage .fridge-is-open .mini-food { min-width:28px; width:28px; height:28px; font-size:22px; }
 }
 @media(prefers-reduced-motion:reduce) {
-    .held-food,.cold-air i,.kitchen-stage .storage-unit.unit-current { animation:none!important; }
+    .held-food,.kitchen-stage .storage-unit.unit-current { animation:none!important; }
     .held-food,.food-being-dragged { transform:scale(1.2); }
 }
 
@@ -1711,13 +1865,13 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .smart-fridge-page .inventory-total,.smart-fridge-page .unit-caption,.smart-fridge-page .storage-hint p,.smart-fridge-page .recommendation-section p,.smart-fridge-page .page-footer,.smart-fridge-page .modal-footnote { font-size:16px; }
 .smart-fridge-page .toolbar input { font-size:18px; min-height:48px; }
 .kitchen-stage .storage-unit { display:block; animation:none; }
-.kitchen-stage .pantry-unit { margin-top:72px; padding-top:28px; }
+.kitchen-stage .pantry-unit { margin-top:32px; padding-top:12px; }
 .storage-heading { text-align:center; font-family:var(--font-display); font-size:36px; margin:0 0 8px; }
 .storage-intro { text-align:center; font-size:18px; color:var(--muted); }
 .pantry-add { display:flex; width:fit-content; margin:0 auto 24px; }
 .kitchen-stage .unit-top-label { font-size:16px; }
-.kitchen-stage .fridge-body { --closed-width:min(82vw,430px); --open-width:min(42vw,400px); width:calc(var(--closed-width) * (1 - var(--open-progress)) + var(--open-width) * var(--open-progress)); transform:translateX(calc(46% * var(--open-progress))); }
-.kitchen-stage .fridge-body.fridge-is-open { width:calc(var(--closed-width) * (1 - var(--open-progress)) + var(--open-width) * var(--open-progress)); transform:translateX(calc(46% * var(--open-progress))); }
+.kitchen-stage .fridge-body { --closed-width:min(100%,520px); --open-width:min(49%,540px); width:calc(var(--closed-width) * (1 - var(--open-progress)) + var(--open-width) * var(--open-progress)); transform:translateX(calc(-46% * var(--open-progress))); }
+.kitchen-stage .fridge-body.fridge-is-open { width:calc(var(--closed-width) * (1 - var(--open-progress)) + var(--open-width) * var(--open-progress)); transform:translateX(calc(-46% * var(--open-progress))); }
 .kitchen-stage .fridge-door,.kitchen-stage .fridge-door.door-open { transform:rotateY(var(--door-angle)); touch-action:pan-y; user-select:none; cursor:ew-resize; }
 .kitchen-stage .door-moving,.kitchen-stage .door-moving .fridge-door { transition:none; }
 .kitchen-stage .fridge-cabinet { height:680px; min-height:680px; }
@@ -1755,7 +1909,7 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .is-embedded .toolbar { margin-bottom:8px; }
 .is-embedded .kitchen-stage { padding:0; }
 .is-embedded .kitchen-stage .unit-top-label { margin-bottom:8px; }
-.is-embedded .kitchen-stage .fridge-body { --closed-width:calc(100% - 16px); --open-width:calc(50% - 8px); }
+.is-embedded .kitchen-stage .fridge-body { --closed-width:100%; --open-width:49%; }
 .is-embedded .kitchen-stage .fridge-cabinet { min-height:var(--dashboard-fridge-height,600px); height:var(--dashboard-fridge-height,600px); }
 .is-embedded .kitchen-stage .pantry-unit { margin-top:20px; padding-top:0; }
 .is-embedded .kitchen-stage .pantry-cabinet { max-width:100%; }
@@ -1766,4 +1920,329 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     .is-embedded .fridge-compartments { gap:6px; }
     .is-embedded .compartment { padding:5px 7px; }
 }
+
+/* Keep every product accessible in a single horizontally scrolling shelf. */
+.kitchen-stage .food-preview,
+.kitchen-stage .pantry-all-foods,
+.kitchen-stage .fridge-door .door-bin {
+    flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; max-width:100%;
+    min-width:0; gap:10px; scrollbar-width:thin; overscroll-behavior-x:contain;
+}
+.kitchen-stage .food-preview { min-height:80px; padding:3px 0 7px; }
+.kitchen-stage .mini-food,
+.kitchen-stage .door-food,
+.kitchen-stage .fridge-is-open .mini-food {
+    flex:0 0 68px; min-width:68px; width:68px; height:68px; font-size:50px;
+}
+.kitchen-stage .fridge-cabinet { min-height:760px; height:760px; }
+.kitchen-stage .interior-header,
+.kitchen-stage .compartment-heading,
+.kitchen-stage .fridge-is-open .compartment-heading { font-size:19px; }
+.kitchen-stage .compartment-heading small,
+.kitchen-stage .fridge-is-open .compartment-heading small,
+.kitchen-stage .temperature,
+.kitchen-stage .empty-mini,
+.kitchen-stage .door-empty { font-size:16px; }
+.kitchen-stage .fridge-door .door-inner-title,
+.kitchen-stage .fridge-door .fridge-close-button { font-size:17px; }
+.smart-fridge-page .storage-intro,
+.smart-fridge-page .unit-caption,
+.smart-fridge-page .inventory-total { font-size:19px; }
+.kitchen-stage .pantry-shelf-label { font-size:20px; }
+.fridge-food-tooltip {
+    position:fixed; z-index:4000; transform:translate(-50%, calc(-100% - 9px));
+    max-width:190px; padding:8px 12px; border-radius:8px; background:#173d39;
+    color:white; font-size:17px; line-height:1.3; text-align:center; pointer-events:none;
+    box-shadow:0 3px 12px #173d3933; overflow-wrap:anywhere;
+}
+
+
+/* The dashboard has less room than the full fridge page: keep food inside its shelf. */
+.is-embedded .kitchen-stage .fridge-cabinet {
+    min-height:680px;
+    height:max(680px,var(--dashboard-fridge-height,600px));
+}
+.is-embedded .kitchen-stage .compartment {
+    display:flex; flex-direction:column; gap:3px;
+}
+.is-embedded .kitchen-stage .compartment-heading,
+.is-embedded .kitchen-stage .fridge-is-open .compartment-heading {
+    flex:0 0 auto; width:100%; font-size:15px; line-height:1.15;
+}
+.is-embedded .kitchen-stage .compartment-heading small,
+.is-embedded .kitchen-stage .fridge-is-open .compartment-heading small {
+    font-size:13px;
+}
+.is-embedded .kitchen-stage .food-preview {
+    flex:1 1 auto; width:100%; min-height:0; margin-top:0;
+    padding:2px 0 4px; align-items:center;
+}
+.is-embedded .kitchen-stage .mini-food,
+.is-embedded .kitchen-stage .door-food,
+.is-embedded .kitchen-stage .fridge-is-open .mini-food {
+    flex:0 0 56px; min-width:56px; width:56px; height:56px; font-size:44px;
+}
+.is-embedded .kitchen-stage .mini-food :deep(.food-icon),
+.is-embedded .kitchen-stage .door-food :deep(.food-icon) {
+    width:100%; height:100%; max-width:100%; max-height:100%;
+}
+
+
+/* A continuous moulded liner, glass ledges and transparent produce drawer. */
+.kitchen-stage .fridge-interior {
+    padding:18px 16px 14px; border:5px solid #b0c4ca; border-radius:22px 22px 15px 15px;
+    background:linear-gradient(90deg,#bbd1d8 0%,#edf7fa 7%,#fff 18%,#f2f9fa 82%,#bfd5dc 100%);
+    box-shadow:inset 0 0 18px #638a9c55;
+}
+.kitchen-stage .light-on .fridge-interior {
+    background:radial-gradient(ellipse at 50% 0%,#fffde3 0%,transparent 55%),linear-gradient(90deg,#c2dce4,#faffff 12%,#f4fafb 88%,#bcd7df);
+    box-shadow:inset 0 0 25px #8bb8c955;
+}
+.kitchen-stage .interior-header {
+    height:42px; margin:0 0 10px; padding:0 4px 12px;
+    color:#567480; font-size:12px; letter-spacing:1px;
+    border-bottom:5px solid #eefeff; box-shadow:0 4px 12px #e5ffff;
+}
+.kitchen-stage .fridge-compartments { height:calc(100% - 52px); gap:18px; }
+.kitchen-stage .fridge-compartments .compartment {
+    position:relative; display:flex; flex-direction:column; padding:14px 8px 18px;
+    border:0; border-radius:0; background:transparent; box-shadow:none;
+    transform:none; transition:background .2s;
+}
+.kitchen-stage .fridge-compartments .compartment:hover { background:#ffffff55; transform:none; }
+.kitchen-stage .compartment::after {
+    content:''; position:absolute; left:-6px; right:-6px; bottom:0; height:9px;
+    border:1px solid #92b2bf; border-radius:3px;
+    background:linear-gradient(#faffff,#c9e5ec 45%,#85aab8 50%,#d8edf2);
+    box-shadow:0 8px 10px #476c7d22;
+}
+.kitchen-stage .fridge-compartments > button.freezer-compartment,
+.kitchen-stage .fridge-compartments > button.freezer-compartment:hover {
+    flex:0 0 24%!important; border:2px solid #b3ccd7; border-radius:14px 14px 5px 5px;
+    background:linear-gradient(135deg,#e5f6ffcc,#c5e3f288)!important;
+    box-shadow:inset 0 5px 14px #8fb8ce44!important;
+}
+.kitchen-stage .shelf-compartment { flex:1 1 auto; justify-content:space-between; }
+.kitchen-stage .shelf-compartment::before {
+    content:''; position:absolute; top:20px; left:50%; width:70px; height:20px;
+    transform:translateX(-50%); opacity:.3;
+    background:repeating-linear-gradient(to bottom,#668995 0 2px,transparent 2px 5px);
+}
+.kitchen-stage .compartment-heading { position:relative; z-index:1; font-size:17px; color:#476974; }
+.kitchen-stage .shelf-compartment .food-preview { flex:0 0 auto; margin-top:auto; }
+.kitchen-stage .fridge-compartments > .fridge-bottom { flex:0 0 25%; }
+.kitchen-stage .fridge-bottom .crisper-compartment,
+.kitchen-stage .fridge-bottom .crisper-compartment:hover {
+    border:2px solid #a3c4c8!important; border-radius:5px 5px 14px 14px;
+    background:linear-gradient(180deg,#effbf555,#b5d8cf88)!important;
+    box-shadow:inset 0 3px 0 #fff, inset 0 -12px 22px #83ada733!important;
+}
+.kitchen-stage .crisper-compartment::after {
+    left:25%; right:25%; top:5px; bottom:auto; height:5px;
+    background:#b6cfd0; border:0; border-radius:0 0 5px 5px; box-shadow:0 2px 1px #fff;
+}
+.kitchen-stage .mini-food,.kitchen-stage .door-food { background:transparent; border:0; border-radius:0; }
+.kitchen-stage .mini-food :deep(.food-icon),.kitchen-stage .door-food :deep(.food-icon) {
+    filter:drop-shadow(0 4px 2px #3c62652b);
+}
+.is-embedded .kitchen-stage .fridge-interior { padding:12px 9px; }
+.is-embedded .kitchen-stage .interior-header { font-size:11px; }
+.is-embedded .kitchen-stage .fridge-compartments { gap:12px; }
+.is-embedded .kitchen-stage .compartment { padding:10px 5px 16px; }
+
+
+/* Blue enamel cabinet and sculpted ice-blue liner, inspired by the reference. */
+.kitchen-stage .fridge-body {
+    padding:12px 12px 46px; border:3px solid #233e54; border-radius:13px 16px 18px 14px;
+    background:linear-gradient(90deg,#739ab7,#bad9e8 4%,#7195b2 10%,#4c7395 90%,#2c506f);
+    box-shadow:inset 0 3px 0 #e6f7ff,inset 0 -7px 0 #365775,8px 10px 0 #193c5233;
+    position:relative;
+}
+.kitchen-stage .fridge-body::after {
+    content:''; position:absolute; bottom:12px; right:22px; width:54px; height:20px;
+    border:2px solid #284b65; border-radius:3px;
+    background:repeating-linear-gradient(#86b0c9 0 2px,#365c79 2px 5px);
+}
+.kitchen-stage .fridge-interior,
+.kitchen-stage .light-on .fridge-interior {
+    border:3px solid #335b70; border-radius:22px 22px 14px 14px;
+    background:linear-gradient(90deg,#5b9bb0 0%,#94d6df 5%,#b8e9eb 9%,#7dbdcd 13%,#85c9d5 84%,#b2e3e7 92%,#619caf);
+    box-shadow:inset 0 0 0 8px #b9e9eb88,inset 14px 9px 15px #235d7470,inset -10px -7px 12px #316d7f55;
+}
+.kitchen-stage .interior-header {
+    color:#2c566b; border-bottom:0; box-shadow:none;
+    background:radial-gradient(ellipse at 50% 0%,#edffffaa,transparent 65%);
+}
+.kitchen-stage .fridge-compartments { gap:16px; }
+.kitchen-stage .fridge-compartments .compartment { padding:16px 10px 22px; }
+.kitchen-stage .fridge-compartments > button.freezer-compartment,
+.kitchen-stage .fridge-compartments > button.freezer-compartment:hover {
+    border:2px solid #548ea2; border-radius:12px 12px 3px 3px;
+    background:linear-gradient(145deg,#b7e4e977,#67aabd66)!important;
+    box-shadow:inset 5px 6px 9px #316e8444!important;
+}
+.kitchen-stage .compartment::after {
+    left:-8px; right:-8px; height:15px; border:2px solid #31596d;
+    border-radius:50% 50% 7px 7px / 9px 9px 5px 5px;
+    background:linear-gradient(175deg,#d2f8f5,#a0dce2 40%,#6faebe 48%,#c6eeee 62%,#8bc1d1);
+    box-shadow:0 7px 0 #41768b55,inset 0 2px 0 #e7ffff;
+}
+.kitchen-stage .shelf-compartment::before {
+    top:16%; left:8%; width:84%; height:65%; transform:none;
+    opacity:.35; border-radius:18px; border:1px solid #2f7894;
+    background:linear-gradient(145deg,#c1eff3,transparent 50%,#4b91ab55);
+}
+.kitchen-stage .fridge-bottom .crisper-compartment,
+.kitchen-stage .fridge-bottom .crisper-compartment:hover {
+    border:2px solid #36687c!important; border-radius:18px 18px 10px 10px;
+    background:linear-gradient(150deg,#c5eeeb99,#8fc9d5aa)!important;
+    box-shadow:inset 4px 5px 0 #d7faff77,inset -5px -8px 14px #46869b66!important;
+}
+.kitchen-stage .compartment-heading { color:#214c61; }
+.kitchen-stage .fridge-door {
+    transform-origin:right center; border:3px solid #294c66;
+    border-radius:18px 12px 12px 18px;
+    background:linear-gradient(100deg,#badce9,#789fbc 9%,#567da0 70%,#2e5375);
+    box-shadow:inset 5px 0 0 #d7edf5,inset -7px 0 0 #375c7c,5px 0 0 #294a65;
+}
+.kitchen-stage .fridge-door .door-inner {
+    border:3px solid #355a71; border-radius:19px 14px 14px 19px;
+    padding:18px 14px; background:linear-gradient(100deg,#7db6c8,#c6f1f0 14%,#a1dbe2 80%,#5f9cb3);
+    box-shadow:inset 0 0 0 6px #d3f5f1aa,inset 10px 0 15px #4b8b9f66;
+}
+.kitchen-stage .fridge-door .door-bin {
+    border:2px solid #568da2; border-bottom:10px solid #9cd2de;
+    border-radius:12px 12px 6px 6px;
+    background:linear-gradient(135deg,#e6ffff66,#a8dfe655);
+    box-shadow:inset 2px 2px 0 #e7ffff99,0 3px 0 #3e7188;
+}
+.kitchen-stage .door-handle { right:auto; left:15px; background:linear-gradient(90deg,#294a65,#bdd9e8,#355c7a); }
+
+
+/* One shared shelves area with three fixed rows, extending sideways as needed. */
+.kitchen-stage .shelf-compartment .food-preview,
+.is-embedded .kitchen-stage .shelf-compartment .food-preview {
+    display:grid; grid-template-rows:repeat(3,minmax(76px,1fr));
+    grid-auto-flow:column; grid-auto-columns:68px; align-items:end;
+    justify-content:start; column-gap:12px; row-gap:5px;
+    flex:1 1 auto; min-height:243px; width:100%; margin-top:8px; padding:0 0 7px;
+    background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(33.333% - 6px),#daf6f6 calc(33.333% - 6px),#6c9faf calc(33.333% - 3px),#a4d9e1 33.333%);
+}
+.kitchen-stage .shelf-compartment .empty-mini { grid-row:1 / -1; align-self:center; }
+.kitchen-stage .mini-food,.kitchen-stage .door-food { position:relative; }
+.food-quantity-badge {
+    position:absolute; right:0; bottom:0; z-index:1;
+    padding:1px 5px; border:1px solid #52768a; border-radius:6px;
+    background:#f1ffff; color:#214c61; font:700 14px/1.3 sans-serif;
+    box-shadow:0 2px 3px #244b6333; pointer-events:none;
+}
+.is-embedded .kitchen-stage .shelf-compartment .food-preview {
+    grid-template-rows:repeat(3,minmax(62px,1fr)); grid-auto-columns:56px; min-height:201px;
+}
+
+
+/* Animate the body-level drag preview, outside the shelves' scroll clipping. */
+.kitchen-stage .food-being-dragged {
+    outline:none; background:transparent!important; animation:none;
+    transform:none; opacity:.35;
+}
+.held-food {
+    z-index:10000; overflow:visible; border-radius:9px;
+    background:#fff0a9!important; border:3px solid #edb935;
+    box-shadow:0 0 0 4px #ffd95840,0 9px 25px #213a3633;
+}
+
+
+/* Outlined cartoon puffs replace the blurred mist. */
+.cold-air {
+    position:absolute; right:-16px; top:7%; width:92px; height:85%;
+    z-index:6; pointer-events:none; overflow:visible;
+}
+.cold-air-puff {
+    position:absolute; left:-35px; top:calc(10% + var(--puff-index) * 29%);
+    width:clamp(95px,12vw,150px); height:auto; overflow:visible;
+    opacity:0; animation:cartoon-cold-puff 7s ease-out infinite;
+    animation-delay:calc(var(--puff-index) * -2.3s);
+}
+.cold-air-cloud { fill:#8be1ff; fill-opacity:.75; stroke:#329dcc; stroke-width:2.5; stroke-linejoin:round; }
+.cold-air-curl { fill:none; stroke:#e2fbff; stroke-width:5; stroke-linecap:round; }
+.cold-air-spark { fill:none; stroke:#258bc5; stroke-width:2.5; stroke-linecap:round; }
+.cold-air-flake {
+    position:absolute; left:10px; top:calc(7% + var(--flake-index) * 23%);
+    color:#35baff; font-size:25px; text-shadow:1px 1px 0 #e1faff,-1px -1px 0 #e1faff;
+    opacity:0; animation:cartoon-cold-flake 8s ease-out infinite;
+    animation-delay:calc(var(--flake-index) * -2s);
+}
+@keyframes cartoon-cold-puff {
+    0% { opacity:0; transform:translate(-18px,0) scale(.4) rotate(-8deg); }
+    12% { opacity:.85; }
+    35% { opacity:.55; }
+    55%,100% { opacity:0; transform:translate(35px,35px) scale(1.05) rotate(6deg); }
+}
+@keyframes cartoon-cold-flake {
+    0% { opacity:0; transform:translate(-10px,0) rotate(0); }
+    12% { opacity:1; }
+    50%,100% { opacity:0; transform:translate(55px,65px) rotate(100deg); }
+}
+@media(prefers-reduced-motion:reduce) {
+    .cold-air-puff,.cold-air-flake { display:none; animation:none!important; }
+}
+
+
+.cold-air-left { right:auto; left:-16px; transform:scaleX(-1); }
+/* Keep animated SVG bounds from briefly creating an overflow line/scrollbar. */
+.cold-air { clip-path:inset(-30px -55px -70px -55px); }
+.cold-air-puff { overflow:hidden; }
+
+/* The left side releases smaller rising curls on a separate rhythm. */
+.cold-air-left .cold-air-puff {
+    top:calc(16% + var(--puff-index) * 25%);
+    width:clamp(80px,10vw,125px);
+    animation-name:cartoon-cold-puff-left;
+    animation-duration:9s;
+    animation-delay:calc(-1.4s - var(--puff-index) * 2.8s);
+}
+.cold-air-left .cold-air-flake {
+    animation-name:cartoon-cold-flake-left;
+    animation-duration:10s;
+    animation-delay:calc(-2.7s - var(--flake-index) * 2.2s);
+}
+@keyframes cartoon-cold-puff-left {
+    0% { opacity:0; transform:translate(-12px,15px) scale(.35) rotate(12deg); }
+    15% { opacity:.7; }
+    32% { opacity:.5; transform:translate(20px,-8px) scale(.85) rotate(-5deg); }
+    55%,100% { opacity:0; transform:translate(48px,-45px) scale(1.1) rotate(-14deg); }
+}
+@keyframes cartoon-cold-flake-left {
+    0% { opacity:0; transform:translate(-5px,12px) rotate(15deg); }
+    15% { opacity:.8; }
+    48%,100% { opacity:0; transform:translate(48px,-60px) rotate(-100deg); }
+}
+
+.drag-placement-hint {
+    position:fixed; z-index:10001; transform:translateX(-50%); pointer-events:none;
+    padding:7px 12px; max-width:190px; border:2px solid #317d72; border-radius:9px;
+    background:#effff8; color:#173d39; font-size:17px; font-weight:700; line-height:1.25;
+    text-align:center; box-shadow:0 3px 9px #173d392b;
+}
+
+.shifting-food-overlay { position:fixed; inset:0; z-index:11000; display:grid; place-items:center; background:#e9faf655; backdrop-filter:blur(2px); cursor:progress; }
+.shifting-food-card { display:flex; flex-direction:column; align-items:center; padding:18px 32px 26px; border:2px solid #234d50; border-radius:24px; background:#f6fffc; box-shadow:5px 6px 0 #234d5033; color:#234d50; }
+.shifting-egg { width:180px; height:190px; overflow:visible; }
+.shifting-food-card strong { font-size:24px; }
+.egg-body { transform-origin:110px 185px; animation:egg-strut .65s ease-in-out infinite alternate; }
+.egg-wave { transform-origin:36px 73px; animation:egg-wave .45s ease-in-out infinite alternate; }
+.egg-legs { transform-origin:110px 184px; animation:egg-step .65s ease-in-out infinite alternate; }
+.egg-speed { animation:egg-speed .8s ease-in-out infinite; }
+@keyframes egg-strut { from { transform:translateY(0) rotate(-4deg); } to { transform:translateY(-7px) rotate(4deg); } }
+@keyframes egg-wave { from { transform:rotate(-12deg); } to { transform:rotate(18deg); } }
+@keyframes egg-step { from { transform:skewX(-9deg); } to { transform:skewX(9deg); } }
+@keyframes egg-speed { 0%,100% { opacity:.2; transform:translateX(4px); } 50% { opacity:1; transform:translateX(-4px); } }
+@media(prefers-reduced-motion:reduce) { .shifting-egg * { animation:none!important; } }
+
+.food-selection-box { position:fixed; z-index:10002; pointer-events:none; border:1px solid #168dc7; background:#49b9f333; }
+.kitchen-stage .mini-food.food-selected,.kitchen-stage .door-food.food-selected { background:#9cdeff88; outline:2px solid #168dc7; outline-offset:-2px; border-radius:7px; }
+.food-selection-count { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); z-index:1900; pointer-events:none; padding:7px 14px; border-radius:20px; background:#173d39; color:#fff; font-size:16px; }
+.kitchen-stage { user-select:none; }
+.drag-group-count { position:absolute; bottom:calc(100% + 8px); white-space:nowrap; padding:3px 8px; border-radius:12px; background:#173d39; color:white; font:700 14px sans-serif; }
 </style>

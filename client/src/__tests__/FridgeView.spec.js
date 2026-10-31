@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import FridgeView from '../views/fridge/FridgeView.vue'
 import FoodDragActions from '../components/fridge/FoodDragActions.vue'
@@ -56,7 +57,7 @@ describe('Fridge interactions', () => {
     door.element.releasePointerCapture = vi.fn()
     wrapper.get('.fridge-body').element.getBoundingClientRect = () => ({ width: 400 })
     const pointer = async (type, clientX) => {
-      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX })
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: 800 - clientX })
       Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } })
       door.element.dispatchEvent(event)
       await flushPromises()
@@ -193,5 +194,220 @@ describe('Fridge interactions', () => {
     await wrapper.setProps({ anchor: { x: 2, y: 740 } })
     expect(dock.style.left).toBe('12px')
     expect(parseFloat(dock.style.top)).toBeLessThan(window.innerHeight - 170)
+  })
+})
+
+
+describe('scrollable food previews', () => {
+  it('renders every food and scrolls the hovered compartment in both directions', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => Array.from({ length: 8 }, (_, i) => ({ ...food, _id: `food-${i}`, name: `Apple ${i}`, storage: 'freezer', storageZone: 'freezer-main' })) })
+    await openFridge()
+    const freezer = wrapper.get('.freezer-compartment')
+    expect(freezer.findAll('.mini-food')).toHaveLength(8)
+    expect(freezer.find('.more-food').exists()).toBe(false)
+    const row = freezer.get('.food-preview').element
+    Object.defineProperties(row, { scrollWidth: { value: 700 }, clientWidth: { value: 200 } })
+    await freezer.trigger('wheel', { deltaY: 120 })
+    expect(row.scrollLeft).toBe(120)
+    await freezer.trigger('wheel', { deltaY: -80 })
+    expect(row.scrollLeft).toBe(40)
+    await freezer.get('.mini-food').trigger('mouseenter')
+    expect(document.querySelector('.fridge-food-tooltip').textContent).toBe('Apple 0')
+    await freezer.get('.mini-food').trigger('mouseleave')
+    expect(document.querySelector('.fridge-food-tooltip')).toBeNull()
+  })
+})
+
+
+describe('single-portion actions', () => {
+  it.each(['consume', 'discard'])('immediately %s a single item without quantity or confirmation dialogs', async (action) => {
+    request.mockImplementation(async (_url, options) => ({ ok: true, json: async () => options?.method === 'DELETE' ? {} : [{ ...food, quantity: 1 }] }))
+    showPrompt.mockClear()
+    showConfirm.mockClear()
+    await openFridge()
+    expect(wrapper.find('.food-quantity-badge').exists()).toBe(false)
+    await beginDrag()
+    const target = document.querySelector(`[data-food-action="${action}"]`)
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: transfer() })
+    target.dispatchEvent(event)
+    await flushPromises()
+    expect(showPrompt).not.toHaveBeenCalled()
+    expect(showConfirm).not.toHaveBeenCalled()
+    expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({ method: 'DELETE' }))
+    expect(wrapper.find('.mini-food').exists()).toBe(false)
+  })
+})
+
+
+describe('unified fridge interior', () => {
+  it('shows foods from all legacy shelves together in the main area and its dialog', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => ['upper-shelf', 'middle-shelf', 'lower-shelf'].map((storageZone, i) => ({ ...food, _id: `shelf-${i}`, name: `Food ${i}`, storageZone })) })
+    await openFridge()
+    expect(wrapper.findAll('.shelf-compartment')).toHaveLength(1)
+    const shelf = wrapper.get('.shelf-compartment')
+    expect(shelf.findAll('.mini-food')).toHaveLength(3)
+    expect(shelf.findAll('.food-quantity-badge').map(badge => badge.text())).toEqual(['×3', '×3', '×3'])
+    expect(shelf.text()).toContain('Shelves')
+    await shelf.trigger('click')
+    expect(wrapper.findAll('.food-card')).toHaveLength(3)
+  })
+})
+
+
+describe('independent door shelves', () => {
+  it('opens only the items belonging to each door shelf', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => [
+      { ...food, _id: 'upper', name: 'Milk', storageZone: 'door' },
+      { ...food, _id: 'lower', name: 'Juice', storageZone: 'door-lower' },
+    ] })
+    await openFridge()
+    expect(wrapper.get('.door-bin:not(.door-bin-small) .door-food').attributes('aria-label')).toBe('Milk')
+    expect(wrapper.get('.door-bin-small .door-food').attributes('aria-label')).toBe('Juice')
+    await wrapper.get('.door-bin-small').trigger('click')
+    expect(wrapper.get('#compartment-title').text()).toBe('Lower door shelf')
+    expect(wrapper.findAll('.food-card')).toHaveLength(1)
+    expect(wrapper.get('.food-card').text()).toContain('Juice')
+    await wrapper.get('.modal-close').trigger('click')
+    await wrapper.get('.door-bin:not(.door-bin-small)').trigger('click')
+    expect(wrapper.get('#compartment-title').text()).toBe('Upper door shelf')
+    expect(wrapper.get('.food-card').text()).toContain('Milk')
+  })
+})
+
+
+describe('drag placement hints', () => {
+  it('names the hovered destination and clears the hint after dragging ends', async () => {
+    await openFridge()
+    await beginDrag()
+    await wrapper.get('.shelf-compartment').trigger('dragover', { clientX: 300, clientY: 350 })
+    expect(document.querySelector('.drag-placement-hint').textContent).toBe('Place at Shelves')
+    await wrapper.get('.freezer-compartment').trigger('dragover', { clientX: 300, clientY: 200 })
+    expect(document.querySelector('.drag-placement-hint').textContent).toBe('Place at Freezer')
+    await wrapper.get('.mini-food').trigger('dragend')
+    expect(document.querySelector('.drag-placement-hint')).toBeNull()
+  })
+})
+
+
+describe('dashboard compartment links', () => {
+  it.each([
+    ['middle-shelf', 'Shelves'], ['freezer-main', 'Freezer'],
+    ['crisper', 'Crisper drawer'], ['door', 'Upper door shelf'], ['door-lower', 'Lower door shelf'],
+  ])('opens the selected %s location on the full fridge page', async (zone, title) => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/dashboard', name: 'dashboard', component: { template: '<div />' } },
+      { path: '/fridge', name: 'fridge', component: FridgeView },
+    ] })
+    await router.push('/dashboard')
+    wrapper = mount(FridgeView, { attachTo: document.body, props: { embedded: true, inventoryItems: [food] }, global: { plugins: [router] } })
+    await wrapper.get('.fridge-door').trigger('click')
+    await wrapper.get(`[data-drop-zone="${zone}"]`).trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('fridge')
+    expect(router.currentRoute.value.query.location).toBe(zone)
+    expect(wrapper.find('.inventory-modal').exists()).toBe(false)
+    wrapper.unmount()
+    wrapper = mount(FridgeView, { attachTo: document.body, global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.get('#compartment-title').text()).toBe(title)
+    expect(wrapper.get('.modal-toolbar').text()).toContain('Add to this compartment')
+    expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
+  })
+})
+
+
+describe('shifting food loader', () => {
+  it('shows the animated egg only while the move is being saved', async () => {
+    await openFridge()
+    let completeMove
+    request.mockImplementationOnce(() => new Promise(resolve => { completeMove = resolve }))
+    await beginDrag()
+    await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
+    expect(document.querySelector('.shifting-food-overlay').textContent).toContain('Shifting food')
+    expect(document.querySelector('.shifting-egg')).not.toBeNull()
+    completeMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    await flushPromises()
+    expect(document.querySelector('.shifting-food-overlay')).toBeNull()
+    expect(wrapper.get('.freezer-compartment .mini-food').attributes('aria-label')).toBe('Apples')
+  })
+})
+
+
+describe('food rectangle selection', () => {
+  it('highlights food across locations and clears with Escape', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => [food, { ...food, _id: 'frozen', storage: 'freezer', storageZone: 'freezer-main' }] })
+    await openFridge()
+    const rect = (left, top, right, bottom) => ({ left, top, right, bottom, width: right - left, height: bottom - top })
+    const stage = wrapper.get('.kitchen-stage')
+    for (const element of stage.element.querySelectorAll('*')) element.getBoundingClientRect = () => rect(0, 0, 800, 800)
+    wrapper.get('.freezer-compartment .mini-food').element.getBoundingClientRect = () => rect(100, 100, 150, 150)
+    wrapper.get('.shelf-compartment .mini-food').element.getBoundingClientRect = () => rect(100, 250, 150, 300)
+    stage.element.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 70, clientY: 70, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 180, clientY: 330, bubbles: true }))
+    await flushPromises()
+    expect(wrapper.findAll('.food-selected')).toHaveLength(2)
+    expect(document.querySelector('.food-selection-box')).not.toBeNull()
+    document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('.food-selection-box')).toBeNull()
+    expect(wrapper.findAll('.food-selected')).toHaveLength(2)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.findAll('.food-selected')).toHaveLength(0)
+    expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(0)
+  })
+})
+
+
+describe('selected food group actions', () => {
+  async function selectGroup() {
+    const foods = [food, { ...food, _id: 'pear-2', name: 'Pears', storageZone: 'crisper' }]
+    request.mockImplementation(async (url, options) => ({ ok: true, json: async () => options?.method === 'PATCH'
+      ? { ...foods.find(item => url.endsWith(item._id)), ...JSON.parse(options.body) }
+      : options?.method === 'DELETE' ? {} : foods }))
+    await openFridge()
+    const stage = wrapper.get('.kitchen-stage')
+    const rect = { left: 100, top: 100, right: 150, bottom: 150, width: 50, height: 50 }
+    for (const element of stage.element.querySelectorAll('*')) element.getBoundingClientRect = () => rect
+    stage.element.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 80, clientY: 80, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 170, clientY: 170, bubbles: true }))
+    document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.findAll('.food-selected')).toHaveLength(2)
+    await beginDrag()
+  }
+  it('moves the whole selection to the hovered location', async () => {
+    await selectGroup()
+    await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
+    await flushPromises()
+    expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(2)
+    expect(wrapper.findAll('.freezer-compartment .mini-food')).toHaveLength(2)
+    expect(wrapper.findAll('.food-selected')).toHaveLength(0)
+  })
+  it.each(['consume', 'discard'])('%s uses a single confirmation for the full selection', async (action) => {
+    await selectGroup()
+    showConfirm.mockClear()
+    showPrompt.mockClear()
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: transfer() })
+    document.querySelector(`[data-food-action="${action}"]`).dispatchEvent(event)
+    await flushPromises()
+    expect(showConfirm).toHaveBeenCalledTimes(1)
+    expect(showConfirm.mock.calls[0][0].message).toContain('Pears')
+    expect(showPrompt).not.toHaveBeenCalled()
+    expect(request.mock.calls.filter(([, options]) => options?.method === 'DELETE')).toHaveLength(2)
+    expect(wrapper.findAll('.mini-food')).toHaveLength(0)
+  })
+  it('leaves failed items selected when only part of a group move succeeds', async () => {
+    await selectGroup()
+    const original = request.getMockImplementation()
+    request.mockImplementation((url, options) => url.endsWith('pear-2') && options?.method === 'PATCH'
+      ? Promise.resolve({ ok: false, status: 500 }) : original(url, options))
+    await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
+    await flushPromises()
+    expect(wrapper.findAll('.freezer-compartment .mini-food')).toHaveLength(1)
+    expect(wrapper.findAll('.food-selected')).toHaveLength(1)
+    expect(wrapper.get('.error-message').text()).toContain('remain selected')
   })
 })

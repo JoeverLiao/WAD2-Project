@@ -70,7 +70,7 @@ function leave(event) {
               <path d="M47 55 L49 98 M60 55 V100 M73 55 L71 98" stroke="#6d9990" stroke-width="4" stroke-linecap="round" />
               <g class="bin-lid"><path d="M24 39 Q60 29 96 39 V45 H24Z" fill="#76aaa0" stroke="#354c48" stroke-width="4" stroke-linejoin="round" /><path d="M49 33 V24 Q60 18 71 24 V33" fill="none" stroke="#354c48" stroke-width="4" /></g>
             </svg>
-            <strong>Discard</strong><small>{{ binOpen ? 'Drop into the bin' : 'Only what you cannot save' }}</small>
+            <strong>Discard</strong><small>{{ binOpen ? 'Drop into the bin' : 'Unsavable food only' }}</small>
           </div>
         </div>
       </div>

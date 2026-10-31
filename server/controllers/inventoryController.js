@@ -81,7 +81,7 @@ function validateItemFields(fields, { creating = false } = {}) {
 
   if (Object.prototype.hasOwnProperty.call(fields, 'storageZone')) {
     const validZones = [
-      'upper-shelf', 'middle-shelf', 'lower-shelf', 'door',
+      'upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'door-lower',
       'crisper', 'freezer-main', 'dry-storage',
     ]
     if (!validZones.includes(fields.storageZone)) {
@@ -258,7 +258,7 @@ async function updateItem(req, res, next) {
     // Repair the legacy fridge-only default when no explicit zone was requested.
     if (!Object.prototype.hasOwnProperty.call(fields, 'storageZone')) {
       const validZones = combined.storage === 'pantry' ? ['dry-storage'] : combined.storage === 'freezer'
-        ? ['freezer-main'] : ['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'crisper']
+        ? ['freezer-main'] : ['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'door-lower', 'crisper']
       if (!validZones.includes(combined.storageZone)) {
         combined.storageZone = combined.storage === 'fridge' ? 'middle-shelf' : validZones[0]
         fields.storageZone = combined.storageZone

@@ -63,7 +63,7 @@ const inventoryItemSchema = new mongoose.Schema(
         'upper-shelf',
         'middle-shelf',
         'lower-shelf',
-        'door',
+        'door', 'door-lower',
         'crisper',
         'freezer-main',
         'dry-storage',

@@ -350,8 +350,9 @@ function handleDialogKeydown(event) {
                                 Crisper Drawer
                             </option>
 
+                            <option value="door-lower">Lower door shelf</option>
                             <option value="door">
-                                Door Shelves
+                                Upper door shelf
                             </option>
                         </template>
 

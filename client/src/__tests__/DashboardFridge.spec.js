@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import DashboardView from '../views/account/DashboardView.vue'
-import FoodItemForm from '../components/fridge/FoodItemForm.vue'
 import { useInventoryStore } from '../stores/inventory.js'
 import { showConfirm, showPrompt } from '../utils/dialog.js'
 
@@ -64,15 +63,12 @@ describe('Dashboard Smart Fridge', () => {
     expect(wrapper.find('.food-card').exists()).toBe(false)
   })
 
-  it('hides the pantry and still adds fridge food to the dashboard expiry list', async () => {
+  it('hides the pantry, search and add-food controls in the dashboard fridge', async () => {
     await openShelf()
-    await wrapper.get('.modal-close').trigger('click')
     expect(wrapper.find('.pantry-unit').exists()).toBe(false)
-    await wrapper.get('.toolbar .primary-button').trigger('click')
-    wrapper.findComponent(FoodItemForm).vm.$emit('save', { name: 'Yoghurt', quantity: 2, unit: 'cups', storage: 'fridge', storageZone: 'middle-shelf' })
-    await flushPromises()
-    expect(useInventoryStore(pinia).items).toHaveLength(2)
-    expect(wrapper.get('.stamp-title').text()).toBe('2 items tracked.')
-    expect(wrapper.get('.expiry-table').text()).toContain('Yoghurt')
+    expect(wrapper.find('#inventory-search').exists()).toBe(false)
+    expect(wrapper.find('.toolbar').exists()).toBe(false)
+    expect(wrapper.find('.modal-toolbar').exists()).toBe(false)
+    expect(wrapper.get('.food-card').text()).toContain('Apples')
   })
 })
