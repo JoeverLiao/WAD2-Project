@@ -19,6 +19,12 @@
       --shadow-paper: 6px 8px 0 var(--ink);
       --shadow-small: 3px 4px 0 var(--ink);
       --bg-grid-color: rgba(18, 63, 59, 0.08);
+      --page-background-color: #eafaf7;
+      --page-grid-color: rgb(33 144 133 / 7%);
+      --page-background-image:
+        linear-gradient(var(--page-grid-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--page-grid-color) 1px, transparent 1px);
+      --page-background-size: 32px 32px;
     }
 
 html,
@@ -33,6 +39,23 @@ body {
   max-width: none;
   margin: 0;
   padding: 0;
+}
+
+/* One full-width page background for every route, including login prompts. */
+body {
+  --bs-body-bg: var(--page-background-color);
+}
+
+body,
+.site-content {
+  background-color: var(--page-background-color);
+  background-image: var(--page-background-image);
+  background-size: var(--page-background-size);
+}
+
+.site-content {
+  min-height: 100svh;
+  display: flow-root;
 }
 
 h1, h2, h3, h4 {

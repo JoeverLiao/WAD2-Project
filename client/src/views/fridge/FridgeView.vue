@@ -36,7 +36,20 @@ import FoodDragActions from '../../components/fridge/FoodDragActions.vue'
 // Start with an empty list. We will fill it using GET /api/inventory.
 // Each MongoDB document has an `_id`; we also create an `id` property
 // because the existing FoodItemCard/template uses `item.id`.
-const items = ref([])
+const props = defineProps({
+    embedded: { type: Boolean, default: false },
+    inventoryItems: { type: Array, default: () => [] },
+})
+const emit = defineEmits(['inventory-change', 'reload'])
+const localItems = ref([])
+// The embedded dashboard owns its inventory; send successful changes back to it.
+const items = computed({
+    get: () => props.embedded ? props.inventoryItems.map(normaliseItem) : localItems.value,
+    set: (updated) => {
+        if (props.embedded) emit('inventory-change', updated)
+        else localItems.value = updated
+    },
+})
 
 // These values let the page show progress and useful error messages.
 const loading = ref(false)
@@ -101,6 +114,7 @@ function prepareItemForApi(formData) {
 // ============================================================
 
 async function loadInventory() {
+    if (props.embedded) { emit('reload'); return }
     loading.value = true
     errorMessage.value = ''
     successMessage.value = ''
@@ -136,7 +150,7 @@ async function loadInventory() {
 }
 
 // Automatically load inventory when this page first appears.
-onMounted(loadInventory)
+onMounted(() => { if (!props.embedded) loadInventory() })
 
 // ============================================================
 // 3. SEARCH AND STORAGE FILTERING
@@ -335,15 +349,14 @@ async function saveItem(formData) {
 
         if (isEditing) {
             // Replace the old version with the version returned by MongoDB.
-            const index = items.value.findIndex(item => item.id === String(itemId))
-            if (index !== -1) items.value.splice(index, 1, savedItem)
+            items.value = items.value.map(item => item.id === String(itemId) ? savedItem : item)
         } else {
             // Show a newly created item at the top of the inventory.
-            items.value.unshift(savedItem)
+            items.value = [savedItem, ...items.value]
         }
 
         closeForm()
-        successMessage.value = isEditing ? 'Food item updated successfully.' : 'Food item added successfully.'
+        successMessage.value = isEditing ? 'Food item updated successfully.' : ''
     } catch (error) {
         console.error('Failed to save inventory item:', error)
         errorMessage.value = error.message || 'Unable to save this food item. Please check the backend and try again.'
@@ -446,16 +459,8 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
             await nextTick()
             if (selectedCompartment.value) dialogRef.value?.focus()
         } else {
-            const index = items.value.findIndex(
-                existingItem => existingItem.id === item.id
-            )
-
-            if (index !== -1) {
-                items.value[index] = {
-                    ...items.value[index],
-                    quantity: remainingQuantity
-                }
-            }
+            items.value = items.value.map(existingItem => existingItem.id === item.id
+                ? { ...existingItem, quantity: remainingQuantity } : existingItem)
         }
 
         successMessage.value =
@@ -729,8 +734,7 @@ async function dropOnArea(area, event) {
         const movedItem = normaliseItem(movedApiItem)
 
         // Replace the local item with the backend's saved version.
-        const index = items.value.findIndex(food => food.id === item.id)
-        if (index !== -1) items.value.splice(index, 1, movedItem)
+        items.value = items.value.map(food => food.id === item.id ? movedItem : food)
     } catch (error) {
         console.error('Failed to move inventory item:', error)
         errorMessage.value = `Unable to move ${item.name}. Please try again.`
@@ -1006,7 +1010,7 @@ onBeforeUnmount(cancelActionReaction)
 </script>
 
 <template>
-    <div class="fridge-page-shell"><div class="smart-fridge-page">
+    <div class="fridge-page-shell" :class="{ 'is-embedded': embedded }"><div class="smart-fridge-page">
         <p v-if="loading" class="status-message" role="status">
             Loading your saved inventory from MongoDB...
         </p>
@@ -1020,7 +1024,7 @@ onBeforeUnmount(cancelActionReaction)
         </p>
 
         <!-- The paper hero makes the page title and main action read like the other feature pages. -->
-        <header class="page-header paper hero">
+        <header v-if="!embedded" class="page-header paper hero">
             <div>
                 <p class="eyebrow">FULL CIRCLE · INVENTORY MANAGEMENT</p>
                 <h1>My Smart Kitchen</h1>
@@ -1038,7 +1042,7 @@ onBeforeUnmount(cancelActionReaction)
         </header>
 
         <!-- Keep the three main storage counts visible above the fridge and pantry. -->
-        <section class="inventory-summary" aria-label="Inventory summary">
+        <section v-if="!embedded" class="inventory-summary" aria-label="Inventory summary">
             <article class="summary-card summary-total">
                 <span class="summary-icon" aria-hidden="true">📦</span>
                 <span class="summary-label">Tracked foods</span>
@@ -1060,6 +1064,7 @@ onBeforeUnmount(cancelActionReaction)
         <section class="toolbar">
             <label for="inventory-search">🔎</label>
             <input id="inventory-search" v-model="searchQuery" type="search" placeholder="Search milk, rice, carrots...">
+            <button v-if="embedded" type="button" class="primary-button" @click="openAddForm('fridge')">＋ Add food</button>
             <div class="inventory-total" aria-live="polite">
                 {{ searchQuery.trim() ? `${searchResultCount} matching foods` : `${totalItems} tracked foods` }}
             </div>
@@ -1149,7 +1154,7 @@ onBeforeUnmount(cancelActionReaction)
                     </section>
 
                     <!-- Pantry unit -->
-                    <section class="storage-unit pantry-unit" aria-label="Pantry">
+                    <section v-if="!embedded" class="storage-unit pantry-unit" aria-label="Pantry">
                         <div class="storage-unit-content">
                         <h2 class="storage-heading">The pantry</h2><p class="storage-intro">Dry goods, snacks and everyday staples, all in one place.</p><button type="button" class="primary-button pantry-add" @click="openAddForm('pantry')">＋ Add pantry food</button>
                         <div class="unit-top-label pantry-label"><span>🥫</span> DRY &amp; SHELF-STABLE</div>
@@ -1178,12 +1183,12 @@ onBeforeUnmount(cancelActionReaction)
 
 
 
-        <section class="storage-hint">
+        <section v-if="!embedded" class="storage-hint">
             <span>💡</span>
             <p><strong>Tip:</strong> Food closest to its expiry date appears first. Click any shelf or drawer to see its complete inventory, then drag an item to Consume or Discard.</p>
         </section>
 
-        <section class="recommendation-section">
+        <section v-if="!embedded" class="recommendation-section">
             <h2>Storage Guidance</h2>
             <p>Some foods may need a different storage location. Check product packaging and food-specific guidance.</p>
             <div class="recommendation-list">
@@ -1260,7 +1265,7 @@ onBeforeUnmount(cancelActionReaction)
             @close="closeForm"
         />
 
-        <footer class="page-footer"><p>Full Circle · Interactive Smart Fridge</p><p>Your inventory is loaded from and saved to the backend.</p></footer>
+        <footer v-if="!embedded" class="page-footer"><p>Full Circle · Interactive Smart Fridge</p><p>Your inventory is loaded from and saved to the backend.</p></footer>
         </div></div>
 </template>
 
@@ -1276,9 +1281,6 @@ onBeforeUnmount(cancelActionReaction)
     margin: 0 auto;
     padding: 28px clamp(14px, 3vw, 36px) 22px;
     color: var(--ink);
-    background: var(--paper);
-    background-image: radial-gradient(rgba(15,168,156,.08) 1px, transparent 1px);
-    background-size: 14px 14px;
     font-family: var(--font-sans, "Patrick Hand", cursive, sans-serif);
 }
 .smart-fridge-page * { box-sizing: border-box; }
@@ -1716,7 +1718,7 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 
 
 /* Shared Home/Dashboard grid-paper shell, with readable inventory text. */
-.fridge-page-shell { min-height:100svh; color:var(--ink,#173d39); background-color:#eafaf7; background-image:linear-gradient(rgb(33 144 133 / 7%) 1px,transparent 1px),linear-gradient(90deg,rgb(33 144 133 / 7%) 1px,transparent 1px); background-size:32px 32px; }
+.fridge-page-shell { min-height:100svh; color:var(--ink,#173d39); background:transparent; }
 .smart-fridge-page { background:transparent; font-size:18px; }
 .smart-fridge-page .page-description { font-size:20px; }
 .smart-fridge-page .summary-label,.smart-fridge-page .primary-button,.smart-fridge-page .expiry-button { font-size:18px; }
@@ -1757,4 +1759,25 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     .smart-fridge-page .summary-label { font-size:16px; }
 }
 
+
+/* The dashboard uses the same interactions in its narrower left column. */
+.fridge-page-shell.is-embedded { min-height:0; }
+.is-embedded .smart-fridge-page { max-width:none; padding:0; }
+.is-embedded .toolbar { flex-wrap:wrap; }
+.is-embedded .toolbar input { min-width:0; flex:1 1 180px; width:100%; }
+.is-embedded .inventory-total { width:100%; margin-left:0; }
+.is-embedded .toolbar { margin-bottom:8px; }
+.is-embedded .kitchen-stage { padding:0; }
+.is-embedded .kitchen-stage .unit-top-label { margin-bottom:8px; }
+.is-embedded .kitchen-stage .fridge-body { --closed-width:calc(100% - 16px); --open-width:calc(50% - 8px); }
+.is-embedded .kitchen-stage .fridge-cabinet { min-height:var(--dashboard-fridge-height,600px); height:var(--dashboard-fridge-height,600px); }
+.is-embedded .kitchen-stage .pantry-unit { margin-top:20px; padding-top:0; }
+.is-embedded .kitchen-stage .pantry-cabinet { max-width:100%; }
+.is-embedded .storage-heading { font-size:28px; }
+@media(min-width:992px) {
+    .is-embedded .inventory-total { display:none; }
+    .is-embedded .kitchen-stage .fridge-interior { padding:8px; }
+    .is-embedded .fridge-compartments { gap:6px; }
+    .is-embedded .compartment { padding:5px 7px; }
+}
 </style>

@@ -12,7 +12,7 @@ const needsLogin = computed(() => !route.meta.public && auth.checked && !auth.is
 
 <template>
   <AppNavbar />
-  <main>
+  <main class="site-content">
     <LoginPrompt
       v-if="needsLogin"
       :feature="route.meta.promptLabel || route.meta.navLabel || 'this page'"

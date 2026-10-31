@@ -120,11 +120,7 @@ async function handleLogin() {
   min-height: 100svh;
   padding: clamp(80px, 5vw, 96px) clamp(24px, 4.4vw, 80px) 24px;
   color: var(--ink);
-  background-color: #eafaf7;
-  background-image:
-    linear-gradient(rgb(33 144 133 / 7%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(33 144 133 / 7%) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background: transparent;
   font-family: var(--font-sans);
 }
 :global(body:has(.home-page)) {

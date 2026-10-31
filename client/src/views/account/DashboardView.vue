@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { useInventoryStore, storageAreas, isInArea } from '../../stores/inventory.js'
 import { getDaysRemaining, getExpiryStatus } from '../../utils/expiryUtils.js'
 import { useAuthStore } from '../../stores/auth.js'
+import SmartKitchen from '../fridge/FridgeView.vue'
 
 const authStore = useAuthStore()
 const { user, isAuthenticated } = storeToRefs(authStore)
@@ -32,20 +33,6 @@ const allExpiryItems = computed(() => {
 
 // Not expired yet, soonest first: still worth cooking
 const urgentItems = computed(() => allExpiryItems.value.filter((i) => i.status === 'eat-soon' || i.status === 'fresh').slice(0, 3))
-
-// Per-area summary for the storage cards
-const areaSummaries = computed(() =>
-  storageAreas.map((area) => {
-    const areaItems = allExpiryItems.value.filter((i) => isInArea(i, area))
-    const healthy = areaItems.filter((i) => i.status === 'fresh').length
-    return {
-      ...area,
-      count: areaItems.length,
-      healthyPercent: areaItems.length ? Math.round((healthy / areaItems.length) * 100) : null,
-      expiringSoon: areaItems.filter((i) => i.status === 'eat-soon' || i.status === 'expired'),
-    }
-  }),
-)
 
 // Real TheMealDB recipes ranked by how many of the user's ingredients they use.
 // Ingredients that expire soonest go first, so suggestions help use them up.
@@ -138,12 +125,9 @@ function animateCount(target) {
 }
 watch(() => allExpiryItems.value.length, animateCount)
 
-// Healthy bars grow from 0 once the page has painted
-const barsReady = ref(false)
 onMounted(() => {
   inventoryStore.loadInventory()
   animateCount(allExpiryItems.value.length)
-  requestAnimationFrame(() => (barsReady.value = true))
 })
 
 // v-reveal: fade/slide an element in when it scrolls into view
@@ -173,128 +157,41 @@ const vReveal = {
 
 <template>
   <div class="dashboard-page">
-  <section aria-label="Dashboard" class="dashboard container-xl py-4">
-      <!-- ================= HERO ================= -->
-      <header class="hero row align-items-center g-4 mb-5">
-        <div v-reveal class="col-lg-7">
-          <p class="eyebrow">
-              ✿ {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} KITCHEN AT A GLANCE
-          </p>
-          <h1 class="hero-title">
-            Good food, <span class="scribble">well kept.</span>
-          </h1>
-          <p class="hero-sub">
-            See what's in your storage, what needs eating soon,<br class="d-none d-md-inline" />
-            and what you can cook with it tonight.
-          </p>
+  <section aria-label="Dashboard" class="dashboard container-xl py-3">
+      <header class="dashboard-header">
+        <div>
+          <p class="eyebrow">✿ {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} KITCHEN AT A GLANCE</p>
+          <h1 class="hero-title">Good food, <span class="scribble">well kept.</span></h1>
+          <p class="stamp-title" :aria-label="`${allExpiryItems.length} items tracked.`">{{ displayedCount }} items tracked.</p>
         </div>
-
-        <div v-reveal="150" class="col-lg-5 d-flex align-items-center justify-content-lg-end gap-4 flex-wrap">
-          <div class="stamp">
-            <svg class="stamp-heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" /></svg>
-            <p class="stamp-title" :aria-label="`${allExpiryItems.length} items tracked.`">{{ displayedCount }} items tracked.</p>
-            <p class="stamp-sub">across {{ storageAreas.length }} storage areas</p>
-          </div>
-          <RouterLink :to="{ name: 'fridge' }" class="btn-cta">
-            <span aria-hidden="true">+</span> Add food
-          </RouterLink>
-        </div>
+        <aside class="quick-bites" aria-labelledby="quick-bites-heading">
+          <h2 id="quick-bites-heading">◷ Quick Bites <span>Use these up first</span></h2>
+          <ul v-if="urgentItems.length" class="quick-bites-list">
+            <li v-for="item in urgentItems" :key="item.id">
+              <strong>{{ item.name }}</strong>
+              <span>{{ useByLabel(item.daysRemaining) }}</span>
+              <RouterLink :to="{ name: 'freshness-recipes', query: { search: item.name } }">Cook →</RouterLink>
+            </li>
+          </ul>
+          <p v-else class="mb-0">{{ loading ? 'Checking your food…' : !allExpiryItems.length ? 'Add food to see what to use first.' : 'Nothing to use up right now.' }}</p>
+        </aside>
       </header>
 
-      <p v-if="loading" class="status-note mb-4" role="status">Loading your Smart Fridge…</p>
-      <div v-else-if="error" class="status-note status-error mb-4" role="alert">
+      <p v-if="loading" class="status-note mb-2" role="status">Loading your Smart Fridge…</p>
+      <div v-else-if="error" class="status-note status-error mb-2" role="alert">
         {{ error }}
         <button type="button" class="chip ms-2" @click="inventoryStore.loadInventory()">Retry</button>
       </div>
 
-      <!-- ================= TIME LEFT PANEL ================= -->
-      <section v-reveal class="panel panel-tint mb-5" aria-labelledby="time-left-heading">
-        <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
-          <div class="d-flex align-items-center gap-3">
-            <span class="clock-badge" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="8" />
-                <path class="clock-hand clock-hand-hour" d="M12 12V8" />
-                <path class="clock-hand clock-hand-minute" d="M12 12l2.5 1.5" />
-              </svg>
-            </span>
-            <div>
-              <h2 id="time-left-heading" class="panel-title">Quick Bites. Use them before they're gone!</h2>
-              <p class="panel-sub">From your storage · Use them up first</p>
-            </div>
-          </div>
-          <p class="scrawl d-none d-md-block">Let's save these! ↘</p>
-        </div>
-
-        <div v-if="urgentItems.length" class="row g-3">
-          <div v-for="(item, index) in urgentItems" :key="item.id" v-reveal="120 + index * 110" class="col-md-4">
-            <article class="item-card">
-              <span class="item-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M5 19C5 10 11 5 20 4c-1 9-6 15-15 15Zm0 0 8-8" /></svg>
-              </span>
-              <div class="flex-grow-1 min-w-0">
-                <h3 class="item-name">{{ item.name }}</h3>
-                <p class="item-meta">Qty {{ item.quantity }}{{ item.unit ? ` ${item.unit}` : '' }} · {{ item.storageLabel }}</p>
-                <span class="pill" :class="[pillClass(item.daysRemaining), { 'pill-pulse': item.daysRemaining !== null && item.daysRemaining <= 1 }]">
-                  {{ useByLabel(item.daysRemaining) }}
-                </span>
-              </div>
-              <RouterLink :to="{ name: 'freshness-recipes', query: { search: item.name } }" class="link-arrow">
-                Cook <span aria-hidden="true">→</span>
-              </RouterLink>
-            </article>
-          </div>
-        </div>
-        <p v-else-if="!allExpiryItems.length" class="empty">Your fridge is empty. Add some food to start tracking.</p>
-        <p v-else class="empty">Nothing urgent. Your fridge is in great shape!</p>
-      </section>
-
-      <div class="row g-4">
+      <div class="row g-3 dashboard-workspace">
         <!-- ================= LEFT COLUMN ================= -->
-        <div class="col-lg-7 d-flex flex-column gap-4">
-          <h2 class="section-title">Your storage units</h2>
-
-          <article v-for="(area, index) in areaSummaries" :key="area.id" v-reveal="index * 100" class="panel storage-card">
-            <div class="d-flex gap-3">
-              <div class="preview-box" aria-hidden="true">{{ area.icon }}</div>
-
-              <div class="flex-grow-1">
-                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                  <div>
-                    <h3 class="storage-name">{{ area.title }}</h3>
-                    <p class="area-meta">{{ area.count }} {{ area.count === 1 ? 'item' : 'items' }} · {{ area.subtitle }}</p>
-                  </div>
-                  <span v-if="area.healthyPercent !== null" class="pill pill-aqua">Healthy {{ area.healthyPercent }}%</span>
-                </div>
-
-                <div
-                  v-if="area.healthyPercent !== null"
-                  class="health-bar mb-3"
-                  role="progressbar"
-                  :aria-valuenow="area.healthyPercent"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  :aria-label="`${area.title} freshness`"
-                >
-                  <span class="health-fill" :style="{ width: barsReady ? `${area.healthyPercent}%` : '0%' }" />
-                </div>
-
-                <p class="label">Expiring soon</p>
-                <div v-if="area.expiringSoon.length" class="d-flex flex-wrap gap-2">
-                  <span v-for="item in area.expiringSoon" :key="item.id" class="pill pill-coral">
-                    {{ item.name }}
-                  </span>
-                </div>
-                <p v-else class="empty m-0">{{ area.count ? 'None. Nice work!' : 'Empty for now.' }}</p>
-              </div>
-            </div>
-
-            <div class="storage-foot">
-              <RouterLink :to="{ name: 'fridge' }" class="link-arrow">
-                Open {{ area.title }} <span aria-hidden="true">→</span>
-              </RouterLink>
-            </div>
-          </article>
+        <div class="col-lg-7 d-flex flex-column gap-3">
+          <section aria-labelledby="dashboard-fridge-heading">
+            <h2 id="dashboard-fridge-heading" class="section-title">Your Smart Fridge</h2>
+            <p class="panel-sub fridge-instruction">Open the door or select a shelf to manage your food.</p>
+            <SmartKitchen embedded :inventory-items="items"
+              @inventory-change="items = $event" @reload="inventoryStore.loadInventory()" />
+          </section>
 
           <!-- Recipe suggestions from the user's ingredients -->
           <section v-reveal class="panel" aria-labelledby="recipes-heading">
@@ -321,7 +218,7 @@ const vReveal = {
         </div>
 
         <!-- ================= RIGHT COLUMN ================= -->
-        <div class="col-lg-5 d-flex flex-column gap-4">
+        <div class="col-lg-5 d-flex flex-column gap-3">
           <h2 class="section-title">Expiry list</h2>
 
           <div v-reveal class="filter-chips" role="group" aria-label="Filter expiry list">
@@ -385,11 +282,7 @@ const vReveal = {
   --aqua-dark: #087d73;
   min-height: 100svh;
   color: var(--ink);
-  background-color: #eafaf7;
-  background-image:
-    linear-gradient(rgb(33 144 133 / 7%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(33 144 133 / 7%) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background: transparent;
   font-family: var(--font-sans);
   font-size: 1.1rem;
 }
@@ -1025,5 +918,31 @@ svg {
   .item-card {
     flex-wrap: wrap;
   }
+}
+
+/* Keep the fridge and expiry list in the first desktop viewport. */
+.dashboard-header { display:grid; grid-template-columns:1fr minmax(320px,440px); align-items:center; gap:24px; margin-bottom:16px; }
+.dashboard-header .eyebrow { margin:0 0 8px; padding:4px 10px; font-size:13px; }
+.dashboard-header .hero-title { margin:0 0 6px; font-size:clamp(30px,3.1vw,43px); }
+.dashboard-header .stamp-title { margin:0; color:var(--muted); font-family:var(--font-sans); font-size:17px; font-weight:400; }
+.quick-bites { padding:12px 16px; background:#fff9df; border:1px solid #c7b77c; border-left:4px solid var(--aqua); border-radius:12px; box-shadow:2px 3px 0 #123f3b10; }
+.quick-bites h2 { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; margin:0 0 6px; font-size:19px; }
+.quick-bites h2 span { font:400 15px var(--font-sans); color:var(--muted); }
+.quick-bites p { font-size:16px; }
+.quick-bites-list { margin:0; padding:0; list-style:none; }
+.quick-bites-list li { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:10px; padding:3px 0; font-size:15px; }
+.quick-bites-list strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.quick-bites-list span { color:#526f65; }
+.quick-bites-list a { color:var(--aqua-dark); font-weight:700; white-space:nowrap; }
+.dashboard-workspace .section-title { font-size:27px; margin-bottom:4px; }
+.fridge-instruction { font-size:16px; margin-bottom:8px; }
+@media(min-width:992px) {
+  .dashboard-page { --dashboard-fridge-height:clamp(370px,calc(100svh - 380px),600px); }
+  .expiry-wrap { max-height:calc(100svh - 280px); overflow:auto; }
+  .expiry-table thead { position:sticky; top:0; z-index:1; background:var(--paper-bright); }
+}
+@media(max-width:991px) {
+  .dashboard-header { grid-template-columns:1fr; gap:12px; }
+  .quick-bites { max-width:100%; }
 }
 </style>

@@ -127,7 +127,8 @@ function normaliseItem(apiItem) {
         ...apiItem,
         id: String(apiItem._id || apiItem.id),
         expiresAt: apiItem.expiresAt ? String(apiItem.expiresAt).slice(0, 10) : '',
-        storageZone: apiItem.storageZone || defaultZoneFor(apiItem.storage)
+        storageZone: apiItem.storage === 'pantry' || apiItem.storage === 'freezer'
+            ? defaultZoneFor(apiItem.storage) : apiItem.storageZone || 'middle-shelf'
     }
 }
 
