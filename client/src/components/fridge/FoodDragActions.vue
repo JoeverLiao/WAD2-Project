@@ -12,16 +12,17 @@ const emit = defineEmits(['action-drop'])
 const face = ref(null)
 const bin = ref(null)
 const hovered = ref('')
-// Anchor once at drag start so targets stay close without chasing the food.
+// Keep a vertical dock outside the source side, stable throughout the drag.
 const dockPosition = computed(() => {
   if (!props.anchor) return {}
-  const width = Math.min(340, window.innerWidth - 24)
-  const height = 170
-  const above = props.anchor.y + 90 + height > window.innerHeight - 12
+  const width = window.innerWidth <= 480 ? 100 : 130
+  const height = window.innerWidth <= 480 ? 280 : 330
+  const edge = props.anchor.edge ?? props.anchor.x
+  const left = props.anchor.side === 'right' ? edge + 16 : edge - width - 16
   return {
     width: `${width}px`,
-    left: `${Math.max(12, Math.min(window.innerWidth - width - 12, props.anchor.x - width / 2))}px`,
-    top: `${Math.max(12, Math.min(window.innerHeight - height - 12, above ? props.anchor.y - height - 65 : props.anchor.y + 65))}px`,
+    left: `${Math.max(8, Math.min(window.innerWidth - width - 8, left))}px`,
+    top: `${Math.max(8, Math.min(window.innerHeight - height - 8, props.anchor.y - height / 2))}px`,
     bottom: 'auto', transform: 'none',
   }
 })
@@ -80,10 +81,10 @@ function leave(event) {
 
 <style scoped>
 .food-action-dock { position:fixed; bottom:max(16px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); z-index:2000; width:min(440px,100%); pointer-events:none; color:#243e37; text-align:center; }
-.dock-instruction { display:inline-block; margin:0 0 5px; padding:5px 15px; background:#fffffff2; border-radius:30px; box-shadow:0 2px 15px #16382e20; font-size:16px; font-weight:800; }
-.dock-targets { display:flex; justify-content:space-around; gap:30px; }
-.food-drop-target { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; width:170px; padding:8px; border-radius:50%; pointer-events:auto; transition:background .2s,filter .2s; }
-.target-art { width:88px; height:88px; overflow:visible; filter:drop-shadow(0 5px 6px #16382e30); animation:target-wiggle .7s ease-in-out infinite alternate; }
+.dock-instruction { display:inline-block; margin:0 0 5px; padding:5px 8px; background:#fffffff2; border-radius:30px; box-shadow:0 2px 15px #16382e20; font-size:16px; font-weight:800; }
+.dock-targets { display:flex; flex-direction:column; align-items:center; gap:14px; }
+.food-drop-target { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; width:100%; box-sizing:border-box; padding:6px; border-radius:50%; pointer-events:auto; transition:background .2s,filter .2s; }
+.target-art { width:72px; height:72px; overflow:visible; filter:drop-shadow(0 5px 6px #16382e30); animation:target-wiggle .7s ease-in-out infinite alternate; }
 .food-drop-target strong { padding:3px 13px; border-radius:20px; background:#fff; font-size:16px; }
 .food-drop-target small { margin-top:3px; padding:2px 6px; background:#fffffff0; border-radius:12px; font-size:14px; }
 .approaching { background:#fff8ccbb; filter:drop-shadow(0 0 12px #e6be4e); }
@@ -105,6 +106,6 @@ function leave(event) {
 @keyframes chew { from { transform:scaleY(1); } to { transform:scaleY(.25); } }
 @keyframes happy-bounce { 0%,100% { transform:translateY(0); } 40% { transform:translateY(-14px) rotate(-5deg); } 70% { transform:translateY(-5px) rotate(5deg); } }
 @keyframes bin-close { 0% { transform:rotate(-38deg); } 55% { transform:rotate(8deg); } 75% { transform:rotate(-8deg); } 100% { transform:rotate(0); } }
-@media(max-width:480px) { .target-art { width:90px; height:90px; } .dock-targets { gap:10px; } }
+@media(max-width:480px) { .target-art { width:56px; height:56px; } .dock-targets { gap:10px; } .dock-instruction { font-size:13px; } .food-drop-target strong { font-size:14px; } .food-drop-target small { font-size:12px; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
 </style>

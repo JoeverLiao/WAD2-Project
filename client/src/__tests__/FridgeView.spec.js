@@ -184,15 +184,15 @@ describe('Fridge interactions', () => {
     expect(bin.classList.contains('approaching')).toBe(true)
   })
 
-  it('keeps the action dock near the drag origin and inside the viewport', async () => {
-    wrapper = mount(FoodDragActions, { attachTo: document.body, props: { visible: true, anchor: { x: 450, y: 300 } } })
+  it('places a vertical dock on the source side and keeps it inside the viewport', async () => {
+    wrapper = mount(FoodDragActions, { attachTo: document.body, props: { visible: true, anchor: { x: 450, y: 300, edge: 400, side: 'left' }  } })
     const dock = document.querySelector('.food-action-dock')
-    expect(dock.style.top).toBe('365px')
-    expect(dock.style.left).toBe('280px')
+    expect(dock.style.top).toBe('135px')
+    expect(dock.style.left).toBe('254px')
     await wrapper.setProps({ position: { x: 900, y: 600 } })
-    expect(dock.style.left).toBe('280px')
-    await wrapper.setProps({ anchor: { x: 2, y: 740 } })
-    expect(dock.style.left).toBe('12px')
+    expect(dock.style.left).toBe('254px')
+    await wrapper.setProps({ anchor: { x: 450, y: 300, edge: 600, side: 'right' } })
+    expect(dock.style.left).toBe('616px')
     expect(parseFloat(dock.style.top)).toBeLessThan(window.innerHeight - 170)
   })
 })

@@ -726,11 +726,20 @@ function setStageEmojiDragImage(event) {
     if (emojiElement) setEmojiDragImage(event)
 }
 
+function foodActionAnchor(item, event) {
+    const root = event.currentTarget.closest('.fridge-page-shell')
+    const onDoor = item.storage === 'fridge' && ['door', 'door-lower'].includes(item.storageZone)
+    const selector = onDoor ? '.door-inner' : item.storage === 'pantry' ? '.pantry-cabinet' : '.fridge-interior'
+    const bounds = root?.querySelector(selector)?.getBoundingClientRect()
+    return { x: event.clientX, y: event.clientY, side: onDoor ? 'right' : 'left',
+        edge: bounds ? onDoor ? bounds.right : bounds.left : event.clientX }
+}
+
 function startDrag(item, event) {
     if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set()
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
-        dragAnchor.value = { ...dragPosition.value }
+        dragAnchor.value = foodActionAnchor(item, event)
     }
     foodTooltip.value = null
     draggedItemId.value = item.id
@@ -742,7 +751,7 @@ function startModalDrag(item, event) {
     if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set()
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
-        dragAnchor.value = { ...dragPosition.value }
+        dragAnchor.value = foodActionAnchor(item, event)
     }
     // Starting a drag must NOT hide the popup. It stays visible until the pointer
     // actually leaves the popup's bounds.
