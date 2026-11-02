@@ -38,15 +38,85 @@ afterEach(() => {
 })
 
 describe('Fridge interactions', () => {
-  it('opens and lights the fridge with the pantry always available below', async () => {
+  it.each(['stage', 'popup'])('offers Put in fridge for pantry food dragged from the %s and saves to shelves', async (source) => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, storage: 'pantry', storageZone: 'dry-storage' }] })
+    await openFridge()
+    await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
+    if (source === 'popup') await wrapper.get('.pantry-whole-storage').trigger('click')
+    let complete
+    request.mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
+    await wrapper.get(source === 'popup' ? '.food-card' : '.pantry-unit .mini-food').trigger('dragstart', { dataTransfer: transfer(), clientX: 400, clientY: 300 })
+    const target = document.querySelector('[data-food-action="fridge"]')
+    expect(target.textContent).toContain('Put in fridge')
+    expect(document.querySelector('[data-food-action="pantry"]')).toBeNull()
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: transfer() })
+    target.dispatchEvent(event)
+    await flushPromises()
+    expect(JSON.parse(request.mock.calls.at(-1)[1].body)).toEqual({ storage: 'fridge', storageZone: 'middle-shelf' })
+    expect(document.querySelector('[data-food-action="fridge"]')).not.toBeNull()
+    complete({ ok: true, json: async () => ({ item: food }) })
+    await flushPromises()
+    expect(wrapper.get('.shelf-compartment .mini-food').attributes('aria-label')).toBe('Apples')
+    expect(wrapper.findAll('.pantry-unit .mini-food')).toHaveLength(0)
+    expect(document.querySelector('.fridge-target.celebrating')).not.toBeNull()
+  })
+
+  it('opens and lights the default fridge slide with the pantry hidden', async () => {
     await openFridge()
     expect(wrapper.get('.fridge-body').classes()).toContain('fridge-is-open')
     expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
     expect(wrapper.find('.cold-air').exists()).toBe(true)
     expect(wrapper.get('.fridge-body').classes()).toContain('light-on')
-    expect(wrapper.get('.pantry-unit').attributes('inert')).toBeUndefined()
+    expect(wrapper.get('.pantry-unit').attributes('inert')).toBeDefined()
+    expect(wrapper.get('.pantry-unit').attributes('aria-hidden')).toBe('true')
     expect(wrapper.find('.carousel-nav').exists()).toBe(false)
     expect(document.querySelector('.food-action-dock')).toBeNull()
+  })
+
+  it('switches storage with arrows and direct buttons without reloading inventory', async () => {
+    await openFridge()
+    const calls = request.mock.calls.length
+    expect(wrapper.get('.fridge-unit').classes()).toContain('slide-active')
+    await wrapper.get('[aria-label="Next storage: Pantry"]').trigger('click')
+    expect(wrapper.get('.pantry-unit').classes()).toContain('slide-active')
+    expect(wrapper.get('.pantry-unit').attributes('inert')).toBeUndefined()
+    expect(wrapper.get('.fridge-unit').attributes('inert')).toBeDefined()
+    expect(wrapper.get('.storage-slide-status').text()).toBe('2 / 2')
+    await wrapper.get('[aria-label="Previous storage: Fridge"]').trigger('click')
+    expect(wrapper.get('.fridge-unit').classes()).toContain('slide-active')
+    expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
+    expect(wrapper.get('.pantry-unit').classes()).toContain('slide-active')
+    expect(request.mock.calls).toHaveLength(calls)
+  })
+
+  it('keeps the embedded dashboard as fridge only', async () => {
+    await openFridge({ embedded: true, inventoryItems: [food] })
+    expect(wrapper.find('.storage-switcher').exists()).toBe(false)
+    expect(wrapper.find('.pantry-unit').exists()).toBe(false)
+    expect(wrapper.get('.fridge-unit').attributes('inert')).toBeUndefined()
+  })
+
+  it('leaves all four illustrated pantry shelves empty without inventory', async () => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [] })
+    await openFridge()
+    await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
+    expect(wrapper.findAll('.open-pantry .pantry-whole-storage')).toHaveLength(4)
+    expect(wrapper.findAll('.open-pantry .mini-food')).toHaveLength(0)
+    expect(wrapper.findAll('.open-pantry .empty-mini')).toHaveLength(0)
+  })
+
+  it('places every real pantry food on a shelf without adding decorative food', async () => {
+    const foods = Array.from({ length: 29 }, (_, i) => ({ ...food, _id: `pantry-${i}`, storage: 'pantry', storageZone: 'dry-storage' }))
+    request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    await openFridge()
+    await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
+    const shelves = wrapper.findAll('.open-pantry .pantry-whole-storage')
+    expect(shelves.map(shelf => shelf.findAll('.mini-food').length)).toEqual([8, 7, 7, 7])
+    expect(new Set(wrapper.findAll('.open-pantry .mini-food').map(icon => icon.attributes('data-food-id'))).size).toBe(29)
+    await shelves[3].trigger('click')
+    expect(wrapper.findAll('.inventory-modal .food-card')).toHaveLength(29)
   })
 
   it('drags the door through the lighting threshold and snaps open or closed', async () => {
@@ -171,24 +241,29 @@ describe('Fridge interactions', () => {
     expect(wrapper.find('.inventory-modal').exists()).toBe(false)
   })
 
-  it('opens the mouth and bin lid when the dragged item approaches', async () => {
+  it('opens the mouth, bin lid and pantry door when the dragged item approaches', async () => {
     wrapper = mount(FoodDragActions, { attachTo: document.body, props: { visible: true } })
     const face = document.querySelector('.consume-target')
     const bin = document.querySelector('.discard-target')
+    const pantry = document.querySelector('.pantry-target')
     face.getBoundingClientRect = () => ({ left: 100, right: 230, top: 500, bottom: 650 })
     bin.getBoundingClientRect = () => ({ left: 300, right: 430, top: 500, bottom: 650 })
+    pantry.getBoundingClientRect = () => ({ left: 500, right: 630, top: 500, bottom: 650 })
     await wrapper.setProps({ position: { x: 160, y: 450 } })
     expect(face.classList.contains('approaching')).toBe(true)
     expect(bin.classList.contains('approaching')).toBe(false)
     await wrapper.setProps({ position: { x: 360, y: 450 } })
     expect(face.classList.contains('approaching')).toBe(false)
     expect(bin.classList.contains('approaching')).toBe(true)
+    await wrapper.setProps({ position: { x: 560, y: 450 } })
+    expect(pantry.classList.contains('approaching')).toBe(true)
+    expect(bin.classList.contains('approaching')).toBe(false)
   })
 
   it('places a vertical dock on the source side and keeps it inside the viewport', async () => {
     wrapper = mount(FoodDragActions, { attachTo: document.body, props: { visible: true, anchor: { x: 450, y: 300, edge: 400, side: 'left' }  } })
     const dock = document.querySelector('.food-action-dock')
-    expect(dock.style.top).toBe('135px')
+    expect(dock.style.top).toBe('60px')
     expect(dock.style.left).toBe('254px')
     await wrapper.setProps({ position: { x: 900, y: 600 } })
     expect(dock.style.left).toBe('254px')
@@ -518,6 +593,19 @@ describe('selected food group actions', () => {
     expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(2)
     expect(wrapper.findAll('.freezer-compartment .mini-food')).toHaveLength(2)
     expect(wrapper.findAll('.food-selected')).toHaveLength(0)
+  })
+  it('moves the selected group through the animated pantry target', async () => {
+    await selectGroup()
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: transfer() })
+    document.querySelector('[data-food-action="pantry"]').dispatchEvent(event)
+    await flushPromises()
+    const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+    expect(patches).toHaveLength(2)
+    expect(patches.every(([, options]) => JSON.parse(options.body).storageZone === 'dry-storage')).toBe(true)
+    expect(wrapper.findAll('.pantry-unit .mini-food')).toHaveLength(2)
+    expect(document.querySelector('.pantry-target.celebrating')).not.toBeNull()
+    expect(showConfirm).not.toHaveBeenCalled()
   })
   it('emits the entire moved group in one update when embedded', async () => {
     await selectGroup(true)

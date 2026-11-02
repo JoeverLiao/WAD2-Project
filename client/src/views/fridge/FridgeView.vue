@@ -53,6 +53,20 @@ const emit = defineEmits(['inventory-change', 'reload'])
 const router = inject(routerKey, null)
 const route = inject(routeLocationKey, null)
 const localItems = ref([])
+const activeStorage = ref('fridge')
+const animateStorageSlide = ref(true)
+function showStorage(storage, animate = false) {
+    if (props.embedded) return
+    animateStorageSlide.value = animate
+    activeStorage.value = storage === 'pantry' ? 'pantry' : 'fridge'
+}
+function changeStorage(storage) {
+    finishDrag()
+    cancelActionReaction()
+    selectedFoodIds.value = new Set()
+    foodTooltip.value = null
+    showStorage(storage, true)
+}
 // The embedded dashboard owns its inventory; send successful changes back to it.
 const items = computed({
     get: () => props.embedded ? props.inventoryItems.map(normaliseItem) : localItems.value,
@@ -358,6 +372,10 @@ function itemsInZone(storage, storageZone) {
     }
     return itemsByZone.value.get(`${storage}:${storageZone}`) || []
 }
+const pantryShelves = computed(() => {
+    const pantryItems = itemsInZone('pantry', 'dry-storage')
+    return Array.from({ length: 4 }, (_, shelf) => pantryItems.filter((_, index) => index % 4 === shelf))
+})
 
 // Count inventory records by broad location; quantity is shown separately.
 function countItems(storage) {
@@ -529,6 +547,7 @@ async function saveItem(formData) {
         closeForm()
         if (originalItem && (originalItem.storage !== savedItem.storage || originalItem.storageZone !== savedItem.storageZone)) {
             selectedCompartment.value = null
+            showStorage(savedItem.storage)
             await foodTransfer.play(origins, new Set([savedItem.id]), locationLabel(savedItem))
         }
     } catch (error) {
@@ -712,6 +731,7 @@ async function removeItem(item) {
 // This remembers the ID while an item is being dragged.
 // MongoDB IDs are strings, not numbers, so do not convert them to Number.
 const draggedItemId = ref(null)
+const storageAction = ref('pantry')
 const dragPosition = ref(null)
 const dragAnchor = ref(null)
 const dragPlacement = ref('')
@@ -776,6 +796,7 @@ function foodActionAnchor(item, event) {
 }
 
 function startDrag(item, event) {
+    storageAction.value = item.storage === 'pantry' ? 'fridge' : 'pantry'
     if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set([item.id])
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
@@ -788,6 +809,7 @@ function startDrag(item, event) {
 }
 
 function startModalDrag(item, event) {
+    storageAction.value = item.storage === 'pantry' ? 'fridge' : 'pantry'
     if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set([item.id])
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
@@ -914,7 +936,7 @@ async function changeSelectedFoods(group, action, onAnimationSuccess) {
     } finally { actionPending.value = false }
 }
 
-async function dropOnArea(area, event) {
+async function dropOnArea(area, event, onSuccess) {
     event.preventDefault()
     if (shiftingFood.value || actionPending.value) return
     const itemId = event.dataTransfer?.getData('text/plain') || draggedItemId.value
@@ -930,11 +952,14 @@ async function dropOnArea(area, event) {
     if (!group.length) return
     errorMessage.value = ''
     shiftingFood.value = true
+    if (onSuccess) actionPending.value = true
     try {
         const succeeded = await saveFoodGroup(group, 'PATCH', { storage, storageZone })
+        if (succeeded.size) showStorage(storage)
         await foodTransfer.play(origins, succeeded, locationLabel({ storage, storageZone }))
+        if (succeeded.size) onSuccess?.()
     }
-    finally { shiftingFood.value = false; finishDrag() }
+    finally { shiftingFood.value = false; if (onSuccess) actionPending.value = false; finishDrag() }
 }
 
 // ============================================================
@@ -1018,6 +1043,7 @@ function openCompartment(compartment) {
     // Clear any drag that ended while its source card was being unmounted.
     finishDrag()
     cancelActionReaction()
+    showStorage(compartment.storage)
     modalReturnFocus = document.activeElement
     selectedCompartment.value = compartment
     focusDialog()
@@ -1108,6 +1134,7 @@ function jumpToItem(item) {
     // this panel, since the clicked row disappears when the panel closes.
     expiryPanelOpen.value = false
     cancelActionReaction()
+    showStorage(item.storage)
     if (item.storage === 'pantry') {
         selectedCompartment.value = { id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' }
         focusDialog()
@@ -1127,6 +1154,12 @@ function jumpToItem(item) {
 
 async function dropOnAction(action, event) {
     event.preventDefault()
+    if (action === 'pantry' || action === 'fridge') {
+        const requestId = ++actionReactionRequestId
+        await dropOnArea({ storage: action, storageZone: action === 'fridge' ? 'middle-shelf' : 'dry-storage' }, event,
+            () => triggerActionReaction(action, requestId))
+        return
+    }
     const transferredId = event.dataTransfer?.getData('text/plain')
     const itemId = transferredId || draggedItemId.value
     if (!itemId) {
@@ -1200,7 +1233,7 @@ onBeforeUnmount(cancelActionReaction)
             <div>
                 <p class="eyebrow">FULL CIRCLE · INVENTORY MANAGEMENT</p>
                 <h1>My Smart Kitchen</h1>
-                <p class="page-description">Your fridge above, your pantry below. Keep food visible, fresh and organised.</p>
+                <p class="page-description">Switch between your fridge and pantry. Keep food visible, fresh and organised.</p>
             </div>
             <div class="header-actions">
                 <span class="hero-doodle" aria-hidden="true">🧊</span>
@@ -1241,13 +1274,22 @@ onBeforeUnmount(cancelActionReaction)
             </div>
         </section>
 
-        <section ref="kitchenStage" class="kitchen-stage" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dblclick.capture="openFoodCompartment" @keydown.capture="selectFoodWithKeyboard" @dragstart.capture="setStageEmojiDragImage($event)">
+        <nav v-if="!embedded" class="storage-switcher" aria-label="Storage slideshow">
+            <button type="button" class="storage-slide-arrow" :aria-label="`Previous storage: ${activeStorage === 'fridge' ? 'Pantry' : 'Fridge'}`" @click="changeStorage(activeStorage === 'fridge' ? 'pantry' : 'fridge')"><span aria-hidden="true">‹</span></button>
+            <div class="storage-slide-options">
+                <button type="button" :aria-pressed="activeStorage === 'fridge'" @click="changeStorage('fridge')">Fridge</button>
+                <button type="button" :aria-pressed="activeStorage === 'pantry'" @click="changeStorage('pantry')">Pantry</button>
+                <span class="storage-slide-status" role="status">{{ activeStorage === 'fridge' ? '1 / 2' : '2 / 2' }}</span>
+            </div>
+            <button type="button" class="storage-slide-arrow" :aria-label="`Next storage: ${activeStorage === 'fridge' ? 'Pantry' : 'Fridge'}`" @click="changeStorage(activeStorage === 'fridge' ? 'pantry' : 'fridge')"><span aria-hidden="true">›</span></button>
+        </nav>
+        <section ref="kitchenStage" class="kitchen-stage storage-slideshow" :class="{ 'instant-storage-slide': !animateStorageSlide }" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dblclick.capture="openFoodCompartment" @keydown.capture="selectFoodWithKeyboard" @dragstart.capture="setStageEmojiDragImage($event)">
 
 
             <div class="carousel-window">
                 <div class="carousel-track">
                     <!-- Refrigerator unit -->
-                    <section class="storage-unit fridge-unit" aria-label="Refrigerator">
+                    <section class="storage-unit fridge-unit" :class="{ 'slide-active': activeStorage === 'fridge' }" :inert="activeStorage !== 'fridge' ? true : undefined" :aria-hidden="activeStorage !== 'fridge'" aria-label="Refrigerator">
                         <div class="storage-unit-content">
                         <div v-if="!embedded" class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
                         <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn }" :style="{ '--door-angle': `${doorAngle}deg`, '--open-progress': doorAngle / 170 }">
@@ -1327,23 +1369,19 @@ onBeforeUnmount(cancelActionReaction)
                     </section>
 
                     <!-- Pantry unit -->
-                    <section v-if="!embedded" class="storage-unit pantry-unit" aria-label="Pantry">
+                    <section v-if="!embedded" class="storage-unit pantry-unit" :class="{ 'slide-active': activeStorage === 'pantry' }" :inert="activeStorage !== 'pantry' ? true : undefined" :aria-hidden="activeStorage !== 'pantry'" aria-label="Pantry">
                         <div class="storage-unit-content">
-                        <h2 class="storage-heading">The pantry</h2><p class="storage-intro">Dry goods, snacks and everyday staples, all in one place.</p><button type="button" class="primary-button pantry-add" @click="openAddForm('pantry')">＋ Add pantry food</button>
-                        <div class="unit-top-label pantry-label"><span><FoodIcon kind="can" /></span> DRY &amp; SHELF-STABLE</div>
-                        <div class="pantry-cabinet pantry-single-storage">
-                            <div class="pantry-top"><span>THE PANTRY</span><span>🌾</span></div>
-                            <button type="button" class="pantry-shelf pantry-whole-storage" @wheel="scrollCompartment" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
-                                <span class="pantry-shelf-label">ALL PANTRY ITEMS · {{ countItems('pantry') }}</span>
+                        <div class="unit-top-label pantry-label">{{ countItems('pantry') }} pantry items · Four open shelves</div>
+                        <div class="pantry-cabinet pantry-single-storage open-pantry">
+                            <div class="open-pantry-shelves">
+                            <button v-for="(shelf, index) in pantryShelves" :key="index" type="button" class="pantry-shelf pantry-whole-storage" :aria-label="`Pantry shelf ${index + 1}, ${shelf.length} foods. View pantry items`" @wheel="scrollCompartment" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
                                 <span class="pantry-foods pantry-all-foods">
-                                <span v-for="item in itemsInZone('pantry', 'dry-storage')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
-                                    <span v-if="itemsInZone('pantry', 'dry-storage').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Drop pantry food here' }}</span>
+                                <span v-for="item in shelf" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                 </span>
-                                <span class="pantry-storage-hint">Click to view all pantry items</span>
                             </button>
-                            <div class="pantry-feet"><span></span><span></span></div>
+                            </div>
                         </div>
-                        <p class="unit-caption">Click the pantry to view all items</p>
+                        <p class="unit-caption">{{ searchQuery && !pantryShelves.some(shelf => shelf.length) ? 'No pantry foods match your search.' : 'Click a shelf to view pantry items · Drag empty space to select foods' }}</p>
                         </div>
 
                     </section>
@@ -1396,11 +1434,12 @@ onBeforeUnmount(cancelActionReaction)
                     />
                 </div>
                 <div v-else class="modal-empty"><span>{{ searchQuery ? '🔎' : '🧺' }}</span><strong>{{ searchQuery ? 'No foods match this search' : 'This compartment is empty' }}</strong><p>{{ searchQuery ? 'Try a different food name, unit, or location.' : 'Add food to see it here.' }}</p></div>
-                <p class="modal-footnote">Drag a food to the smiley or bin that appears beside your food, or to another storage area.</p>
+                <p class="modal-footnote">Drag a food to the smiley, bin or pantry that appears beside your food, or to another storage area.</p>
             </section>
         </div>
 
         <FoodDragActions :visible="Boolean(draggedItemId) || actionPending || Boolean(actionReaction)"
+            :storage-action="storageAction"
             :position="dragPosition" :anchor="dragAnchor" :reaction="actionReaction" :pending="actionPending"
             @action-drop="dropOnAction" />
         <FoodTransferOverlay :flights="foodTransfer.flights.value" :announcement="foodTransfer.announcement.value" @complete="foodTransfer.finish" />
@@ -2263,6 +2302,51 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 
 .drag-group-count { position:absolute; bottom:calc(100% + 8px); white-space:nowrap; padding:3px 8px; border-radius:12px; background:#173d39; color:white; font:700 14px sans-serif; }
 .food-transfer-incoming { opacity:.2; transition:opacity .18s ease; }
+/* Open illustrated shelving; only real inventory supplies the contents. */
+.kitchen-stage .pantry-cabinet.open-pantry {
+    position:relative; display:block; width:min(100%,820px); aspect-ratio:1;
+    min-height:0; padding:0; border:0; border-radius:0; margin:0 auto;
+    background:url('/images/pantry-shelves.svg') center / 100% 100% no-repeat;
+    box-shadow:none; filter:drop-shadow(5px 9px 3px #273f3820);
+}
+.open-pantry-shelves { position:absolute; inset:7.5% 9.5% 8%; display:grid; grid-template-rows:repeat(4,minmax(0,1fr)); }
+.open-pantry .pantry-whole-storage {
+    display:flex; align-items:stretch; justify-content:flex-end; min-height:0;
+    padding:0 0 9px; gap:0; border:0; border-radius:0; background:transparent;
+    box-shadow:none; transform:none; outline:2px dashed transparent; outline-offset:-4px;
+}
+.open-pantry .pantry-whole-storage:hover { background:#f4f1cb12; transform:none; }
+.open-pantry .pantry-whole-storage:focus-visible { outline-color:#fff2a9; }
+.kitchen-stage .open-pantry .pantry-all-foods {
+    display:flex; align-items:flex-end; align-content:flex-end; flex:1 1 auto;
+    width:100%; height:100%; min-height:0; padding:8px 8px 5px; gap:18px;
+    overflow-x:auto; overflow-y:hidden; scrollbar-color:#d7b790 #37585a;
+}
+.kitchen-stage .open-pantry .mini-food {
+    flex:0 0 clamp(42px,7vw,90px); min-width:0; width:clamp(42px,7vw,90px);
+    height:clamp(42px,7vw,90px); margin:0 0 3px;
+}
+.kitchen-stage .open-pantry .mini-food :deep(.food-icon) { width:100%; height:100%; filter:drop-shadow(0 5px 2px #10282c55); }
+@media(max-width:600px) {
+    .kitchen-stage .open-pantry .pantry-all-foods { gap:12px; padding:3px 4px; }
+    .open-pantry .pantry-whole-storage { padding-bottom:4px; }
+}
+.storage-switcher { display:flex; align-items:center; justify-content:center; gap:16px; margin:12px auto 24px; }
+.storage-slide-arrow { display:grid; place-items:center; width:48px; height:48px; border:2px solid var(--ink); border-radius:50%; background:var(--paper); color:var(--ink); font-size:38px; line-height:1; box-shadow:2px 3px 0 #173d3920; cursor:pointer; }
+.storage-slide-arrow:hover { background:#def2e9; }
+.storage-slide-options { display:flex; align-items:center; flex-wrap:wrap; justify-content:center; gap:8px; }
+.storage-slide-options button { padding:8px 18px; border:2px solid transparent; border-radius:24px; background:transparent; color:var(--ink); font:inherit; font-size:19px; cursor:pointer; }
+.storage-slide-options button[aria-pressed="true"] { border-color:var(--ink); background:#e3f3ed; font-weight:800; }
+.storage-slide-status { flex:0 0 100%; text-align:center; font-size:14px; color:var(--muted); }
+.storage-switcher button:focus-visible { outline:3px solid #168dc7; outline-offset:4px; }
+.kitchen-stage.storage-slideshow { overflow:hidden; }
+.storage-slideshow .carousel-track { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; }
+.storage-slideshow .storage-unit { grid-area:1 / 1; visibility:hidden; opacity:0; pointer-events:none; transition:transform .4s ease, opacity .4s ease, visibility .4s; }
+.storage-slideshow .fridge-unit { transform:translateX(-8%); }
+.storage-slideshow .pantry-unit { margin-top:0; padding-top:0; transform:translateX(8%); }
+.storage-slideshow .storage-unit.slide-active { visibility:visible; opacity:1; pointer-events:auto; transform:translateX(0); }
+.instant-storage-slide .storage-unit { transition:none; }
+@media(prefers-reduced-motion:reduce) { .storage-slideshow .storage-unit { transition:none; } }
 .kitchen-stage { user-select:none; }
 .food-selection-box { position:fixed; z-index:10003; pointer-events:none; border:1px solid #168dc7; background:#49b9f333; box-shadow:inset 0 0 0 1px #ffffff55; }
 .kitchen-stage .mini-food.food-selected,.kitchen-stage .door-food.food-selected { background:#9cdeffbb; outline:2px solid #168dc7; outline-offset:1px; border-radius:7px; box-shadow:0 0 0 4px #49b9f32b; }
