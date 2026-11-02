@@ -3,6 +3,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import FridgeView from '../views/fridge/FridgeView.vue'
 import FoodDragActions from '../components/fridge/FoodDragActions.vue'
+import FoodItemForm from '../components/fridge/FoodItemForm.vue'
 import { showConfirm, showPrompt } from '../utils/dialog.js'
 
 vi.mock('../utils/dialog.js')
@@ -13,8 +14,8 @@ let request
 function transfer() {
   return { setData: vi.fn(), getData: () => food._id, setDragImage: vi.fn(), effectAllowed: '' }
 }
-async function openFridge() {
-  wrapper = mount(FridgeView, { attachTo: document.body })
+async function openFridge(props = {}) {
+  wrapper = mount(FridgeView, { attachTo: document.body, props })
   await flushPromises()
   await wrapper.get('.fridge-door').trigger('click')
 }
@@ -333,8 +334,141 @@ describe('shifting food loader', () => {
   })
 })
 
+describe('food transfer animations', () => {
+  function mockLayout() {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const small = this.matches('.mini-food, .door-food, .food-emoji')
+      const top = small ? this.closest('.freezer-compartment') ? 120 : 400 : 80
+      const left = small ? 350 : 100
+      const width = small ? 40 : 600
+      const height = small ? 40 : 520
+      return { top, left, width, height, right: left + width, bottom: top + height }
+    })
+  }
+  async function saveMove(response) {
+    request.mockResolvedValueOnce(response)
+    await beginDrag()
+    await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
+    await flushPromises()
+  }
+
+  it('flies to the saved destination only after the request succeeds and cleans up on arrival', async () => {
+    await openFridge()
+    mockLayout()
+    let complete
+    request.mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
+    await beginDrag()
+    await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
+    expect(document.querySelector('.food-transfer-flight')).toBeNull()
+    complete({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    await flushPromises()
+    const flight = document.querySelector('.food-transfer-flight')
+    expect(flight).not.toBeNull()
+    expect(flight.style.getPropertyValue('--from-y')).toBe('420px')
+    expect(flight.style.getPropertyValue('--to-y')).toBe('140px')
+    expect(wrapper.get('.freezer-compartment .mini-food').classes()).toContain('food-transfer-incoming')
+    expect(document.querySelector('.food-transfer-layer').getAttribute('aria-hidden')).toBe('true')
+    flight.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('.food-transfer-flight')).toBeNull()
+    expect(wrapper.get('.freezer-compartment .mini-food').classes()).not.toContain('food-transfer-incoming')
+    expect(wrapper.get('.freezer-compartment').classes()).not.toContain('food-transfer-arrival')
+  })
+
+  it('does not animate a rejected move or remove the original food', async () => {
+    await openFridge()
+    mockLayout()
+    await saveMove({ ok: false, status: 500 })
+    expect(document.querySelector('.food-transfer-flight')).toBeNull()
+    expect(wrapper.get('.shelf-compartment .mini-food').attributes('aria-label')).toBe('Apples')
+    expect(wrapper.get('.error-message').text()).toContain('could not be updated')
+  })
+
+  it('uses a static destination highlight for reduced motion', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    await openFridge()
+    mockLayout()
+    await saveMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    expect(document.querySelector('.food-transfer-flight')).toBeNull()
+    expect(wrapper.get('.freezer-compartment').classes()).toContain('food-transfer-arrival')
+    expect(document.body.textContent).toContain('Moved 1 food item to Freezer.')
+  })
+
+  it('restores the destination when scrolling interrupts the flight', async () => {
+    await openFridge()
+    mockLayout()
+    await saveMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
+    window.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect(document.querySelector('.food-transfer-flight')).toBeNull()
+    expect(wrapper.get('.freezer-compartment .mini-food').classes()).not.toContain('food-transfer-incoming')
+  })
+
+  it('animates a location change made with the edit form', async () => {
+    await openFridge()
+    mockLayout()
+    await wrapper.get('.shelf-compartment').trigger('click')
+    await wrapper.get('.food-card .icon-button').trigger('click')
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storage: 'freezer', storageZone: 'freezer-main' } }) })
+    wrapper.findComponent(FoodItemForm).vm.$emit('save', { ...food, storage: 'freezer', storageZone: 'freezer-main' })
+    await flushPromises()
+    expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
+    expect(wrapper.find('.inventory-modal').exists()).toBe(false)
+    expect(wrapper.get('.freezer-compartment .mini-food').attributes('aria-label')).toBe('Apples')
+  })
+
+  it('keeps lower-door flights running when shelf contents scroll', async () => {
+    await openFridge()
+    mockLayout()
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ ...food, storageZone: 'door-lower' }) })
+    await beginDrag()
+    await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: transfer() })
+    await flushPromises()
+    expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
+    const lower = wrapper.get('[data-drop-zone="door-lower"]')
+    lower.element.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
+    expect(lower.get('.door-food').classes()).toContain('food-transfer-incoming')
+    document.querySelector('.food-transfer-flight').dispatchEvent(new Event('animationend', { bubbles: true }))
+    await flushPromises()
+    expect(lower.get('.door-food').classes()).not.toContain('food-transfer-incoming')
+  })
+
+  it('cleans up even if the browser never sends animationend', async () => {
+    await openFridge()
+    mockLayout()
+    vi.useFakeTimers()
+    try {
+      await saveMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+      expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
+      await vi.advanceTimersByTimeAsync(1600)
+      expect(document.querySelector('.food-transfer-flight')).toBeNull()
+      expect(wrapper.get('.freezer-compartment .mini-food').classes()).not.toContain('food-transfer-incoming')
+    } finally { vi.useRealTimers() }
+  })
+})
+
 
 describe('food rectangle selection', () => {
+  it('selects with clicks, toggles with modifiers and opens details with a double-click', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => [food, { ...food, _id: 'pear-2', name: 'Pears' }] })
+    await openFridge()
+    const icons = wrapper.findAll('.shelf-compartment .mini-food')
+    await icons[0].trigger('click')
+    expect(icons[0].attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('.inventory-modal').exists()).toBe(false)
+    await icons[1].trigger('click', { ctrlKey: true })
+    expect(wrapper.findAll('.food-selected')).toHaveLength(2)
+    await icons[0].trigger('click', { metaKey: true })
+    expect(wrapper.findAll('.food-selected')).toHaveLength(1)
+    await icons[0].trigger('keydown', { key: ' ', ctrlKey: true })
+    expect(wrapper.findAll('.food-selected')).toHaveLength(2)
+    await icons[0].trigger('dblclick')
+    expect(wrapper.find('.inventory-modal').exists()).toBe(true)
+  })
+
   it('highlights food across locations and clears with Escape', async () => {
     request.mockResolvedValue({ ok: true, json: async () => [food, { ...food, _id: 'frozen', storage: 'freezer', storageZone: 'freezer-main' }] })
     await openFridge()
@@ -361,12 +495,12 @@ describe('food rectangle selection', () => {
 
 
 describe('selected food group actions', () => {
-  async function selectGroup() {
+  async function selectGroup(embedded = false) {
     const foods = [food, { ...food, _id: 'pear-2', name: 'Pears', storageZone: 'crisper' }]
     request.mockImplementation(async (url, options) => ({ ok: true, json: async () => options?.method === 'PATCH'
       ? { ...foods.find(item => url.endsWith(item._id)), ...JSON.parse(options.body) }
       : options?.method === 'DELETE' ? {} : foods }))
-    await openFridge()
+    await openFridge(embedded ? { embedded: true, inventoryItems: foods } : {})
     const stage = wrapper.get('.kitchen-stage')
     const rect = { left: 100, top: 100, right: 150, bottom: 150, width: 50, height: 50 }
     for (const element of stage.element.querySelectorAll('*')) element.getBoundingClientRect = () => rect
@@ -384,6 +518,15 @@ describe('selected food group actions', () => {
     expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(2)
     expect(wrapper.findAll('.freezer-compartment .mini-food')).toHaveLength(2)
     expect(wrapper.findAll('.food-selected')).toHaveLength(0)
+  })
+  it('emits the entire moved group in one update when embedded', async () => {
+    await selectGroup(true)
+    await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
+    await flushPromises()
+    const updates = wrapper.emitted('inventory-change')
+    expect(updates).toHaveLength(1)
+    expect(updates[0][0]).toHaveLength(2)
+    expect(updates[0][0].every(item => item.storage === 'freezer' && item.storageZone === 'freezer-main')).toBe(true)
   })
   it.each(['consume', 'discard'])('%s uses a single confirmation for the full selection', async (action) => {
     await selectGroup()
@@ -409,5 +552,6 @@ describe('selected food group actions', () => {
     expect(wrapper.findAll('.freezer-compartment .mini-food')).toHaveLength(1)
     expect(wrapper.findAll('.food-selected')).toHaveLength(1)
     expect(wrapper.get('.error-message').text()).toContain('remain selected')
+    expect(document.querySelectorAll('.food-transfer-flight')).toHaveLength(1)
   })
 })

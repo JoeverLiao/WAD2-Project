@@ -47,9 +47,4 @@ defineProps({ visible: Boolean, label: { type: String, default: 'Loading' } })
 @keyframes egg-speed { 0%,100% { opacity:.2; transform:translateX(4px); } 50% { opacity:1; transform:translateX(-4px); } }
 @media(prefers-reduced-motion:reduce) { .shifting-egg * { animation:none!important; } }
 
-.food-selection-box { position:fixed; z-index:10002; pointer-events:none; border:1px solid #168dc7; background:#49b9f333; }
-.kitchen-stage .mini-food.food-selected,.kitchen-stage .door-food.food-selected { background:#9cdeff88; outline:2px solid #168dc7; outline-offset:-2px; border-radius:7px; }
-.food-selection-count { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); z-index:1900; pointer-events:none; padding:7px 14px; border-radius:20px; background:#173d39; color:#fff; font-size:16px; }
-.kitchen-stage { user-select:none; }
-
 </style>

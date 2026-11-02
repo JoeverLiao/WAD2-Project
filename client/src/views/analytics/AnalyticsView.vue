@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
+import VegetableCompanions from '../../components/analytics/VegetableCompanions.vue'
 import {
   foodKey,
   summarizeFoodEvents,
@@ -1011,12 +1012,16 @@ function saveDay() {
         </div>
       </form>
     </dialog>
+    <VegetableCompanions :events="visibleEvents" />
   </section>
 </template>
 
 <style scoped>
 .analytics-page {
   max-width: 1200px;
+}
+@media (min-width: 1200px) {
+  .analytics-page { max-width: min(1200px, 54vw); }
 }
 
 .activity-editor {

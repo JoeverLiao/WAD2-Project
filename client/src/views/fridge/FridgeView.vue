@@ -32,6 +32,8 @@ import EggLoader from '../../components/EggLoader.vue'
 import FoodItemCard from '../../components/fridge/FoodItemCard.vue'
 import FoodItemForm from '../../components/fridge/FoodItemForm.vue'
 import FoodDragActions from '../../components/fridge/FoodDragActions.vue'
+import FoodTransferOverlay from '../../components/fridge/FoodTransferOverlay.vue'
+import { useFoodTransfer } from '../../utils/foodTransfer.js'
 import FoodIcon from '../../components/FoodIcon.vue'
 import NoticeIcon from '../../components/NoticeIcon.vue'
 import { showConfirm, showPrompt } from '../../utils/dialog.js'
@@ -66,6 +68,8 @@ usePageLoading(loading, 'Loading your food')
 const saving = ref(false)
 const shiftingFood = ref(false)
 const errorMessage = ref('')
+const kitchenStage = ref(null)
+const foodTransfer = useFoodTransfer(kitchenStage)
 
 // Convert a date from the API into YYYY-MM-DD for <input type="date">.
 // Returning an empty string for a missing date keeps the form happy.
@@ -245,10 +249,40 @@ function endFoodSelection(event) {
     selectionBox.value = null
 }
 function stopSelectionClick(event) {
-    if (!suppressSelectionClick) return
+    if (suppressSelectionClick) {
+        event.preventDefault()
+        event.stopPropagation()
+        suppressSelectionClick = false
+        return
+    }
+    const icon = event.target.closest('[data-food-id]')
+    if (!icon || !event.currentTarget.contains(icon)) return
     event.preventDefault()
     event.stopPropagation()
-    suppressSelectionClick = false
+    selectFood(icon.dataset.foodId, event.ctrlKey || event.metaKey || event.shiftKey)
+}
+function selectFood(id, additive) {
+    const selected = additive ? new Set(selectedFoodIds.value) : new Set()
+    if (additive && selected.has(id)) selected.delete(id)
+    else selected.add(id)
+    selectedFoodIds.value = selected
+}
+function selectFoodWithKeyboard(event) {
+    const icon = event.target.closest('[data-food-id]')
+    if (!icon || !['Enter', ' '].includes(event.key)) return
+    event.preventDefault()
+    event.stopPropagation()
+    selectFood(icon.dataset.foodId, event.ctrlKey || event.metaKey || event.shiftKey)
+}
+function openFoodCompartment(event) {
+    const icon = event.target.closest('[data-food-id]')
+    if (!icon) return
+    event.preventDefault()
+    event.stopPropagation()
+    const area = icon.closest('[data-drop-zone]')
+    if (!area) return
+    openCompartment({ id: area.dataset.dropZone, zone: area.dataset.dropZone,
+        storage: area.dataset.dropStorage, title: locationLabel({ storage: area.dataset.dropStorage, storageZone: area.dataset.dropZone }) })
 }
 function clearFoodSelection(event) {
     if (event.key === 'Escape') {
@@ -454,6 +488,8 @@ async function saveItem(formData) {
     const isEditing = Boolean(editingItem.value)
     const itemId = editingItem.value?.id
     const payload = prepareItemForApi(formData)
+    const originalItem = editingItem.value
+    const origins = originalItem ? foodTransfer.capture([originalItem]) : []
 
     try {
         // Editing uses PATCH; adding uses POST.
@@ -491,6 +527,10 @@ async function saveItem(formData) {
         }
 
         closeForm()
+        if (originalItem && (originalItem.storage !== savedItem.storage || originalItem.storageZone !== savedItem.storageZone)) {
+            selectedCompartment.value = null
+            await foodTransfer.play(origins, new Set([savedItem.id]), locationLabel(savedItem))
+        }
     } catch (error) {
         console.error('Failed to save inventory item:', error)
         errorMessage.value = error.message || 'Unable to save this food item. Please check the backend and try again.'
@@ -736,7 +776,7 @@ function foodActionAnchor(item, event) {
 }
 
 function startDrag(item, event) {
-    if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set()
+    if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set([item.id])
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
         dragAnchor.value = foodActionAnchor(item, event)
@@ -748,7 +788,7 @@ function startDrag(item, event) {
 }
 
 function startModalDrag(item, event) {
-    if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set()
+    if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set([item.id])
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
         dragAnchor.value = foodActionAnchor(item, event)
@@ -841,17 +881,21 @@ async function saveFoodGroup(group, method, payload) {
         return normaliseItem(data.item || data)
     }))
     const succeeded = new Set()
+    const updates = new Map()
     results.forEach((result, index) => {
         if (result.status !== 'fulfilled') return
         const id = group[index].id
         succeeded.add(id)
-        items.value = method === 'DELETE' ? items.value.filter(item => item.id !== id)
-            : items.value.map(item => item.id === id ? result.value : item)
+        updates.set(id, result.value)
     })
+    // Commit the whole group once so an embedded parent's props cannot lag between items.
+    if (succeeded.size) items.value = method === 'DELETE'
+        ? items.value.filter(item => !succeeded.has(item.id))
+        : items.value.map(item => updates.get(item.id) || item)
     selectedFoodIds.value = new Set([...selectedFoodIds.value].filter(id => !succeeded.has(id)))
     const failed = results.filter(result => result.status === 'rejected').length
     if (failed) errorMessage.value = `${failed} food item(s) could not be updated. They remain selected; please try again.`
-    return succeeded.size
+    return succeeded
 }
 
 async function changeSelectedFoods(group, action, onAnimationSuccess) {
@@ -865,8 +909,8 @@ async function changeSelectedFoods(group, action, onAnimationSuccess) {
     errorMessage.value = ''
     actionPending.value = true
     try {
-        const count = await saveFoodGroup(group, 'DELETE')
-        if (count && typeof onAnimationSuccess === 'function') onAnimationSuccess({ proportion: 1 })
+        const succeeded = await saveFoodGroup(group, 'DELETE')
+        if (succeeded.size && typeof onAnimationSuccess === 'function') onAnimationSuccess({ proportion: 1 })
     } finally { actionPending.value = false }
 }
 
@@ -880,12 +924,16 @@ async function dropOnArea(area, event) {
     const storageZone = storage === 'fridge' ? area.storageZone || 'middle-shelf'
         : storage === 'freezer' ? 'freezer-main' : 'dry-storage'
     const group = selectedFoodsFor(item).filter(food => food.storage !== storage || food.storageZone !== storageZone)
+    const origins = foodTransfer.capture(group, event)
     if (draggingFromModal.value) selectedCompartment.value = null
     finishDrag()
     if (!group.length) return
     errorMessage.value = ''
     shiftingFood.value = true
-    try { await saveFoodGroup(group, 'PATCH', { storage, storageZone }) }
+    try {
+        const succeeded = await saveFoodGroup(group, 'PATCH', { storage, storageZone })
+        await foodTransfer.play(origins, succeeded, locationLabel({ storage, storageZone }))
+    }
     finally { shiftingFood.value = false; finishDrag() }
 }
 
@@ -1193,7 +1241,7 @@ onBeforeUnmount(cancelActionReaction)
             </div>
         </section>
 
-        <section class="kitchen-stage" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dragstart.capture="setStageEmojiDragImage($event)">
+        <section ref="kitchenStage" class="kitchen-stage" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dblclick.capture="openFoodCompartment" @keydown.capture="selectFoodWithKeyboard" @dragstart.capture="setStageEmojiDragImage($event)">
 
 
             <div class="carousel-window">
@@ -1221,7 +1269,7 @@ onBeforeUnmount(cancelActionReaction)
                                         <button type="button" class="compartment freezer-compartment" @wheel="scrollCompartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
                                             <span class="compartment-heading">❄️ Freezer <small>{{ countItems('freezer') }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
@@ -1231,7 +1279,7 @@ onBeforeUnmount(cancelActionReaction)
                                         ]" :key="compartment.id" type="button" class="compartment shelf-compartment" @wheel="scrollCompartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon :kind="compartment.icon" /> {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
@@ -1240,7 +1288,7 @@ onBeforeUnmount(cancelActionReaction)
                                             <button type="button" class="compartment crisper-compartment" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: '🥬' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
                                                 <span class="compartment-heading"><span><FoodIcon kind="leaf" /> Crisper drawer</span> <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
                                                 <span class="food-preview">
-                                                <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                                 </span>
                                             </button>
@@ -1261,11 +1309,11 @@ onBeforeUnmount(cancelActionReaction)
                                     <span class="door-inner" :inert="!fridgeDoorOpen">
                                         <span class="door-inner-title">DOOR SHELVES</span>
                                         <span class="door-bin" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" aria-label="Upper door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door')" :key="item.id" class="door-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                            <span v-for="item in itemsInZone('fridge', 'door')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                             <span v-if="itemsInZone('fridge', 'door').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span class="door-bin door-bin-small" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door-lower" role="button" tabindex="0" aria-label="Lower door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door-lower' }, $event)" @click.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.enter.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.space.prevent.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door-lower')" :key="item.id" class="door-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                            <span v-for="item in itemsInZone('fridge', 'door-lower')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                             <span v-if="itemsInZone('fridge', 'door-lower').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span v-if="fridgeDoorOpen" class="fridge-close-button" role="button" tabindex="0" aria-label="Close refrigerator door" @click.stop="fridgeDoorOpen = false" @keydown.enter.stop="fridgeDoorOpen = false" @keydown.space.prevent.stop="fridgeDoorOpen = false">✕ Close door</span>
@@ -1273,7 +1321,7 @@ onBeforeUnmount(cancelActionReaction)
                                 </div>
                             </div>
                         </div>
-                        <p class="unit-caption">Click or drag the door to {{ fridgeDoorOpen ? 'close' : 'open' }} · Select a compartment to view everything</p>
+                        <p class="unit-caption">Click or drag the door to {{ fridgeDoorOpen ? 'close' : 'open' }} · Drag empty space to select foods · Ctrl/⌘-click to add · Double-click food for details</p>
                         </div>
 
                     </section>
@@ -1288,7 +1336,7 @@ onBeforeUnmount(cancelActionReaction)
                             <button type="button" class="pantry-shelf pantry-whole-storage" @wheel="scrollCompartment" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
                                 <span class="pantry-shelf-label">ALL PANTRY ITEMS · {{ countItems('pantry') }}</span>
                                 <span class="pantry-foods pantry-all-foods">
-                                <span v-for="item in itemsInZone('pantry', 'dry-storage')" :key="item.id" class="mini-food" :data-food-id="item.id" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                <span v-for="item in itemsInZone('pantry', 'dry-storage')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                     <span v-if="itemsInZone('pantry', 'dry-storage').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Drop pantry food here' }}</span>
                                 </span>
                                 <span class="pantry-storage-hint">Click to view all pantry items</span>
@@ -1355,9 +1403,10 @@ onBeforeUnmount(cancelActionReaction)
         <FoodDragActions :visible="Boolean(draggedItemId) || actionPending || Boolean(actionReaction)"
             :position="dragPosition" :anchor="dragAnchor" :reaction="actionReaction" :pending="actionPending"
             @action-drop="dropOnAction" />
+        <FoodTransferOverlay :flights="foodTransfer.flights.value" :announcement="foodTransfer.announcement.value" @complete="foodTransfer.finish" />
         <Teleport to="body">
             <div v-if="selectionBox" class="food-selection-box" aria-hidden="true" :style="{ left: selectionBox.left + 'px', top: selectionBox.top + 'px', width: (selectionBox.right - selectionBox.left) + 'px', height: (selectionBox.bottom - selectionBox.top) + 'px' }"></div>
-            <div v-if="selectedFoodIds.size" class="food-selection-count" role="status">{{ selectedFoodIds.size }} selected · Esc to clear</div>
+            <div v-if="selectedFoodIds.size" class="food-selection-count" role="status">{{ selectedFoodIds.size }} selected · Drag a highlighted food to move the group · Esc to clear</div>
             <EggLoader :visible="shiftingFood" label="Shifting food" />
             <span v-if="dragPlacement && dragPosition" class="drag-placement-hint" role="status"
                 :style="{ left: `${Math.max(95, Math.min(dragPosition.x, windowWidth - 95))}px`, top: `${Math.max(12, dragPosition.y - 72)}px` }">Place at {{ dragPlacement }}</span>
@@ -2213,4 +2262,12 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 }
 
 .drag-group-count { position:absolute; bottom:calc(100% + 8px); white-space:nowrap; padding:3px 8px; border-radius:12px; background:#173d39; color:white; font:700 14px sans-serif; }
+.food-transfer-incoming { opacity:.2; transition:opacity .18s ease; }
+.kitchen-stage { user-select:none; }
+.food-selection-box { position:fixed; z-index:10003; pointer-events:none; border:1px solid #168dc7; background:#49b9f333; box-shadow:inset 0 0 0 1px #ffffff55; }
+.kitchen-stage .mini-food.food-selected,.kitchen-stage .door-food.food-selected { background:#9cdeffbb; outline:2px solid #168dc7; outline-offset:1px; border-radius:7px; box-shadow:0 0 0 4px #49b9f32b; }
+.food-selection-count { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); z-index:10001; pointer-events:none; width:max-content; max-width:calc(100vw - 24px); padding:8px 14px; border-radius:20px; background:#173d39; color:#fff; font-size:15px; text-align:center; box-shadow:0 3px 12px #173d3933; }
+.food-transfer-arrival { outline:3px solid #73b999; outline-offset:3px; animation:food-transfer-arrival 1.1s ease-out; }
+@keyframes food-transfer-arrival { 0%,100% { box-shadow:0 0 0 0 #73b99900; } 55% { box-shadow:0 0 0 8px #73b99945; } }
+@media(prefers-reduced-motion:reduce) { .food-transfer-arrival { animation:none; } }
 </style>

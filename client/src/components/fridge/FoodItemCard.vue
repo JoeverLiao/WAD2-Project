@@ -95,6 +95,7 @@ function handleDragEnd() {
 <template>
     <article
         class="food-card"
+        :data-food-id="item.id"
         :class="{ 'food-is-held': dragging }"
         draggable="true"
         @dragstart="handleDragStart"
