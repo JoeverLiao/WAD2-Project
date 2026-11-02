@@ -9,8 +9,25 @@
 // (Soy Milk, Peanut Butter, Orange Juice) must come before general ones (Milk, Butter, Orange).
 import { CATEGORIES, shelfDays, ZONES } from './storageGuide.js'
 
-/** @type {Array<[string, string, string, { zone?: string, days?: number, kg?: number }?]>} */
+/** @type {Array<[string|null, string, string, { zone?: string, days?: number, kg?: number }?]>} */
 const FOODS = [
+  // Sauces and spreads come first: "Sweet Chilli Sauce" is a sauce, not a chilli; "Coconut Milk" is not milk.
+  ['Coconut Milk', 'coconut milk,coconut cream', 'condiments', { days: 365, kg: 0.4 }],
+  ['Coconut Water', 'coconut water', 'beverages', { days: 180, kg: 1 }],
+  ['Soy Sauce', 'soy sauce,soya sauce', 'condiments', { days: 365, kg: 0.5 }],
+  ['Ketchup', 'ketchup', 'condiments', { days: 180, kg: 0.5 }],
+  ['Mayonnaise', 'mayonnaise,mayo', 'condiments', { days: 60, kg: 0.4 }],
+  ['Peanut Butter', 'peanut butter', 'condiments', { days: 180, kg: 0.34 }],
+  ['Honey', 'honey', 'condiments', { days: 730, kg: 0.5 }],
+  ['Jam', 'jam,marmalade', 'condiments', { days: 365, kg: 0.34 }],
+  // Any other sauce keeps the name printed on the receipt.
+  [null, 'sauce,dressing,vinegar,paste,spread,seasoning,marinade,syrup', 'condiments', { days: 180 }],
+
+  // Flavoured products: "Blueberry Muffin" is a muffin and "Strawberry Yoghurt" is yoghurt, not fruit.
+  [null, 'muffin,muffins,cake,cakes,pie,pies,tart,tarts,pastry,pastries,donut,donuts,doughnut,doughnuts', 'bakery', { days: 3 }],
+  [null, 'cookie,cookies,biscuit,biscuits,cracker,crackers', 'snacks', { days: 90 }],
+  [null, 'yoghurt,yogurt', 'dairy', { days: 14 }],
+
   // Frozen
   ['Ice Cream', 'ice cream,gelato,popsicle', 'frozen', { days: 90, kg: 0.5 }],
 
@@ -27,7 +44,6 @@ const FOODS = [
   ['Yoghurt', 'yoghurt,yogurt', 'dairy', { days: 14, kg: 0.15 }],
   ['Cream Cheese', 'cream cheese', 'dairy', { days: 14, kg: 0.2 }],
   ['Cheese', 'cheese,mozzarella,cheddar,parmesan', 'dairy', { days: 28, kg: 0.2 }],
-  ['Peanut Butter', 'peanut butter', 'condiments', { days: 180, kg: 0.34 }],
   ['Butter', 'butter,margarine', 'dairy', { days: 30, kg: 0.25 }],
   ['Cream', 'cream,creamer', 'dairy', { days: 10, kg: 0.25 }],
   ['Eggs', 'egg,eggs', 'eggs', { days: 28, kg: 0.06 }],
@@ -45,6 +61,12 @@ const FOODS = [
   ['Bacon', 'bacon', 'meat', { days: 7, kg: 0.25 }],
   ['Sausage', 'sausage,sausages,hotdog,hot dog', 'meat', { days: 3, kg: 0.4 }],
   ['Ham', 'ham,luncheon meat', 'ready_to_eat', { days: 5, kg: 0.2 }],
+  ['Turkey', 'turkey', 'meat', { days: 2, kg: 1 }],
+  ['Duck', 'duck', 'meat', { days: 2, kg: 1.5 }],
+  ['Mussels', 'mussel,mussels', 'seafood', { days: 2, kg: 0.5 }],
+  ['Clams', 'clam,clams,cockles', 'seafood', { days: 2, kg: 0.5 }],
+  ['Oysters', 'oyster,oysters', 'seafood', { days: 2, kg: 0.3 }],
+  ['Scallops', 'scallop,scallops', 'seafood', { days: 2, kg: 0.2 }],
   ['Salmon', 'salmon', 'seafood', { days: 2, kg: 0.3 }],
   ['Tuna', 'tuna', 'seafood', { days: 2, kg: 0.3 }],
   ['Prawn', 'prawn,prawns,shrimp,shrimps', 'seafood', { days: 2, kg: 0.3 }],
@@ -73,6 +95,23 @@ const FOODS = [
   ['Kangkong', 'kangkong,water spinach', 'vegetables', { days: 3, kg: 0.3 }],
   ['Kailan', 'kailan,gai lan', 'vegetables', { days: 5, kg: 0.3 }],
   ['Beansprouts', 'beansprout,beansprouts,bean sprouts', 'vegetables', { days: 3, kg: 0.25 }],
+  ['Asparagus', 'asparagus', 'vegetables', { days: 4, kg: 0.25 }],
+  ['Kale', 'kale', 'vegetables', { days: 7, kg: 0.25 }],
+  ['Leek', 'leek,leeks', 'vegetables', { days: 14, kg: 0.2 }],
+  ['Spring Onion', 'spring onion,scallion,scallions,green onion', 'vegetables', { days: 7, kg: 0.1 }],
+  ['Coriander', 'coriander,cilantro', 'vegetables', { days: 5, kg: 0.05 }],
+  ['Parsley', 'parsley', 'vegetables', { days: 7, kg: 0.05 }],
+  ['Basil', 'basil', 'vegetables', { days: 5, kg: 0.03 }],
+  ['Mint', 'mint', 'vegetables', { days: 7, kg: 0.03 }],
+  ['Radish', 'radish,daikon', 'vegetables', { days: 10, kg: 0.15 }],
+  ['Beetroot', 'beetroot,beet', 'vegetables', { days: 21, kg: 0.15 }],
+  ['Turnip', 'turnip', 'vegetables', { days: 14, kg: 0.2 }],
+  ['Lotus Root', 'lotus root', 'vegetables', { days: 10, kg: 0.4 }],
+  ['Okra', 'okra,ladies finger,lady finger', 'vegetables', { days: 4, kg: 0.25 }],
+  ['Peas', 'peas,snow peas,sugar snap,edamame', 'vegetables', { days: 5, kg: 0.25 }],
+  ['Brussels Sprouts', 'brussels sprouts,brussel sprouts', 'vegetables', { days: 7, kg: 0.3 }],
+  ['Bitter Gourd', 'bitter gourd,bitter melon', 'vegetables', { days: 5, kg: 0.3 }],
+  ['Squash', 'squash', 'vegetables', { days: 10, kg: 0.5 }],
   ['Sweet Potato', 'sweet potato,sweet potatoes,yam', 'root_vegetables', { days: 21, kg: 0.3 }],
   ['Potato', 'potato,potatoes', 'root_vegetables', { days: 30, kg: 0.2 }],
   ['Onion', 'onion,onions', 'root_vegetables', { days: 30, kg: 0.15 }],
@@ -94,10 +133,33 @@ const FOODS = [
   ['Blueberry', 'blueberry,blueberries', 'fruit', { days: 7, kg: 0.125 }],
   ['Kiwi', 'kiwi,kiwifruit', 'fruit', { days: 7, kg: 0.08 }],
   ['Watermelon', 'watermelon', 'fruit', { days: 7, kg: 3 }],
-  ['Melon', 'melon,rockmelon,honeydew', 'fruit', { days: 5, kg: 1.2 }],
+  ['Melon', 'melon,rockmelon,honeydew,cantaloupe', 'fruit', { days: 5, kg: 1.2 }],
   ['Papaya', 'papaya', 'fruit', { zone: 'dry-storage', days: 3, kg: 0.8 }],
   ['Pineapple', 'pineapple', 'fruit', { zone: 'dry-storage', days: 3, kg: 1.2 }],
   ['Mango', 'mango,mangoes', 'fruit', { zone: 'dry-storage', days: 5, kg: 0.35 }],
+  ['Raspberry', 'raspberry,raspberries', 'fruit', { days: 3, kg: 0.125 }],
+  ['Blackberry', 'blackberry,blackberries', 'fruit', { days: 3, kg: 0.125 }],
+  ['Cranberry', 'cranberry,cranberries', 'fruit', { days: 14, kg: 0.25 }],
+  ['Cherry', 'cherry,cherries', 'fruit', { days: 5, kg: 0.4 }],
+  ['Fig', 'fig,figs', 'fruit', { days: 3, kg: 0.05 }],
+  ['Dates', 'date,dates,medjool', 'fruit', { zone: 'dry-storage', days: 180, kg: 0.5 }],
+  ['Pomegranate', 'pomegranate', 'fruit', { days: 21, kg: 0.4 }],
+  ['Coconut', 'coconut,coconuts', 'fruit', { zone: 'dry-storage', days: 14, kg: 0.6 }],
+  ['Lychee', 'lychee,lychees,litchi', 'fruit', { days: 5, kg: 0.5 }],
+  ['Longan', 'longan', 'fruit', { days: 5, kg: 0.5 }],
+  ['Rambutan', 'rambutan', 'fruit', { days: 5, kg: 0.5 }],
+  ['Durian', 'durian', 'fruit', { zone: 'dry-storage', days: 3, kg: 1.5 }],
+  ['Mangosteen', 'mangosteen', 'fruit', { days: 5, kg: 0.5 }],
+  ['Dragon Fruit', 'dragon fruit,dragonfruit,pitaya', 'fruit', { days: 5, kg: 0.4 }],
+  ['Jackfruit', 'jackfruit', 'fruit', { days: 4, kg: 1 }],
+  ['Guava', 'guava', 'fruit', { zone: 'dry-storage', days: 4, kg: 0.2 }],
+  ['Passionfruit', 'passionfruit,passion fruit', 'fruit', { days: 7, kg: 0.05 }],
+  ['Persimmon', 'persimmon', 'fruit', { days: 7, kg: 0.2 }],
+  ['Apricot', 'apricot,apricots', 'fruit', { days: 4, kg: 0.05 }],
+  ['Nectarine', 'nectarine,nectarines', 'fruit', { days: 4, kg: 0.15 }],
+  ['Mandarin', 'mandarin,mandarins,tangerine,tangerines,clementine,clementines', 'fruit', { days: 21, kg: 0.08 }],
+  ['Pomelo', 'pomelo', 'fruit', { days: 21, kg: 1 }],
+  ['Starfruit', 'starfruit,star fruit,carambola', 'fruit', { days: 5, kg: 0.15 }],
   ['Peach', 'peach,peaches', 'fruit', { days: 4, kg: 0.15 }],
   ['Plum', 'plum,plums', 'fruit', { days: 4, kg: 0.07 }],
 
@@ -112,6 +174,7 @@ const FOODS = [
   // Bakery
   ['Bread', 'bread,loaf,toast,baguette', 'bakery', { days: 5, kg: 0.6 }],
   ['Bun', 'bun,buns,roll,rolls', 'bakery', { days: 4, kg: 0.06 }],
+  ['Wrap', 'tortilla,tortillas,wrap,wraps,pita,naan,roti,prata', 'bakery', { days: 7, kg: 0.3 }],
   ['Bagel', 'bagel,bagels', 'bakery', { days: 5, kg: 0.1 }],
   ['Croissant', 'croissant,croissants', 'bakery', { days: 3, kg: 0.07 }],
   ['Muffin', 'muffin,muffins', 'bakery', { days: 3, kg: 0.1 }],
@@ -133,11 +196,6 @@ const FOODS = [
   ['Tea', 'tea', 'pantry_staples', { days: 365, kg: 0.1 }],
 
   // Sauces and spreads
-  ['Soy Sauce', 'soy sauce,soya sauce', 'condiments', { days: 365, kg: 0.5 }],
-  ['Ketchup', 'ketchup', 'condiments', { days: 180, kg: 0.5 }],
-  ['Mayonnaise', 'mayonnaise,mayo', 'condiments', { days: 60, kg: 0.4 }],
-  ['Honey', 'honey', 'condiments', { days: 730, kg: 0.5 }],
-  ['Jam', 'jam', 'condiments', { days: 365, kg: 0.34 }],
 
   // Snacks and drinks
   ['Biscuits', 'biscuit,biscuits,cookie,cookies,cracker,crackers', 'snacks', { days: 90, kg: 0.2 }],
@@ -148,6 +206,11 @@ const FOODS = [
   ['Soda', 'soda,cola,coke,sprite', 'beverages', { days: 180, kg: 0.33 }],
   ['Beer', 'beer', 'beverages', { days: 180, kg: 0.33 }],
   ['Wine', 'wine', 'beverages', { days: 365, kg: 0.75 }],
+
+  // Words that still tell us the category when the exact food is not in the list above
+  // (the receipt name is kept as it is).
+  [null, 'berry,berries,fruit,fruits', 'fruit', { days: 5 }],
+  [null, 'sprout,sprouts,greens,leaves,herb,herbs,leafy', 'vegetables', { days: 5 }],
 ]
 
 // Things people buy on the same receipt that are not food. They are listed in the review form

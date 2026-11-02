@@ -38,7 +38,7 @@ const FRIDGE_SHELVES = ['middle-shelf', 'upper-shelf']
 export const CATEGORIES = {
   dairy: {
     label: 'Dairy',
-    icons: ['🥛', '🧀', '🧈'],
+    icons: ['🥛', '🧀', '🧈', '🍼', '🥣'],
     zone: 'middle-shelf',
     allowed: FRIDGE_SHELVES,
     days: { fridge: 10, freezer: 90 },
@@ -46,7 +46,7 @@ export const CATEGORIES = {
   },
   eggs: {
     label: 'Eggs',
-    icons: ['🥚'],
+    icons: ['🥚', '🍳'],
     zone: 'middle-shelf',
     allowed: FRIDGE_SHELVES,
     days: { fridge: 28 },
@@ -54,7 +54,7 @@ export const CATEGORIES = {
   },
   meat: {
     label: 'Meat & poultry',
-    icons: ['🥩', '🍗', '🥓'],
+    icons: ['🥩', '🍗', '🥓', '🍖', '🌭'],
     zone: 'lower-shelf',
     allowed: ['lower-shelf'],
     days: { fridge: 3, freezer: 120 },
@@ -62,7 +62,7 @@ export const CATEGORIES = {
   },
   seafood: {
     label: 'Fish & seafood',
-    icons: ['🐟', '🦐', '🦑'],
+    icons: ['🐟', '🦐', '🦑', '🦀', '🦞', '🐙', '🍣', '🦪', '🐠'],
     zone: 'lower-shelf',
     allowed: ['lower-shelf'],
     days: { fridge: 2, freezer: 120 },
@@ -70,7 +70,7 @@ export const CATEGORIES = {
   },
   ready_to_eat: {
     label: 'Ready-to-eat & deli',
-    icons: ['🥪', '🍱', '🥗'],
+    icons: ['🥪', '🍱', '🥗', '🍕', '🌯', '🥙', '🍔', '🍜', '🍲', '🥟', '🍛', '🍝'],
     zone: 'upper-shelf',
     allowed: ['upper-shelf', 'middle-shelf'],
     days: { fridge: 4, freezer: 60 },
@@ -78,7 +78,7 @@ export const CATEGORIES = {
   },
   plant_protein: {
     label: 'Tofu & plant protein',
-    icons: ['🫘'],
+    icons: ['🫘', '🌱', '🥜'],
     zone: 'middle-shelf',
     allowed: FRIDGE_SHELVES,
     days: { fridge: 7, freezer: 90 },
@@ -86,7 +86,7 @@ export const CATEGORIES = {
   },
   vegetables: {
     label: 'Vegetables',
-    icons: ['🥬', '🥦', '🥕'],
+    icons: ['🥬', '🥦', '🥕', '🥒', '🌽', '🍅', '🍆', '🫑', '🌶️', '🍄', '🥗'],
     zone: 'crisper',
     allowed: ['crisper', 'lower-shelf'],
     days: { fridge: 7, freezer: 240, pantry: 4 },
@@ -94,7 +94,7 @@ export const CATEGORIES = {
   },
   root_vegetables: {
     label: 'Potatoes, onions & garlic',
-    icons: ['🥔', '🧅', '🧄'],
+    icons: ['🥔', '🧅', '🧄', '🍠', '🎃'],
     zone: 'dry-storage',
     allowed: ['dry-storage'],
     days: { pantry: 30 },
@@ -102,7 +102,7 @@ export const CATEGORIES = {
   },
   fruit: {
     label: 'Fruit',
-    icons: ['🍎', '🍊', '🍇', '🍓'],
+    icons: ['🍎', '🍏', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝'],
     zone: 'crisper',
     allowed: ['crisper', 'middle-shelf'],
     days: { fridge: 7, freezer: 240, pantry: 4 },
@@ -110,7 +110,7 @@ export const CATEGORIES = {
   },
   bakery: {
     label: 'Bread & bakery',
-    icons: ['🍞', '🥐', '🍰'],
+    icons: ['🍞', '🥐', '🥖', '🥯', '🥨', '🧇', '🥞', '🍰', '🎂', '🧁', '🥧', '🍩', '🍪'],
     zone: 'dry-storage',
     allowed: ['dry-storage', 'freezer-main'],
     days: { pantry: 4, freezer: 90 },
@@ -118,7 +118,7 @@ export const CATEGORIES = {
   },
   beverages: {
     label: 'Drinks',
-    icons: ['🧃', '🥤', '🍺'],
+    icons: ['🧃', '🥤', '🍺', '🍷', '☕', '🍵', '🧋', '💧', '🍶', '🍾', '🍹'],
     zone: 'dry-storage',
     allowed: ['dry-storage', 'door'],
     days: { pantry: 180, fridge: 7 },
@@ -126,7 +126,7 @@ export const CATEGORIES = {
   },
   condiments: {
     label: 'Sauces & spreads',
-    icons: ['🧂', '🫙', '🍯'],
+    icons: ['🧂', '🫙', '🍯', '🍶', '🥄'],
     zone: 'dry-storage',
     allowed: ['dry-storage', 'door'],
     days: { pantry: 180, fridge: 90 },
@@ -134,7 +134,7 @@ export const CATEGORIES = {
   },
   pantry_staples: {
     label: 'Dry goods',
-    icons: ['🍚', '🍝', '🥣', '☕'],
+    icons: ['🍚', '🍝', '🍜', '🥣', '🌾', '🫒', '☕', '🍵'],
     zone: 'dry-storage',
     allowed: ['dry-storage'],
     days: { pantry: 365 },
@@ -142,7 +142,7 @@ export const CATEGORIES = {
   },
   snacks: {
     label: 'Snacks & sweets',
-    icons: ['🍫', '🍪', '🥜'],
+    icons: ['🍫', '🍪', '🥜', '🍿', '🍬', '🍭', '🥨', '🍘', '🌰'],
     zone: 'dry-storage',
     allowed: ['dry-storage'],
     days: { pantry: 90 },
@@ -158,7 +158,7 @@ export const CATEGORIES = {
   },
   frozen: {
     label: 'Frozen food',
-    icons: ['🧊', '🍦'],
+    icons: ['🧊', '🍦', '🍨', '🍧', '❄️'],
     zone: 'freezer-main',
     allowed: ['freezer-main'],
     days: { freezer: 90 },
@@ -166,7 +166,7 @@ export const CATEGORIES = {
   },
   non_food: {
     label: 'Not food',
-    icons: ['📦'],
+    icons: ['📦', '🧴', '🧻', '🧽', '🐾'],
     zone: 'dry-storage',
     allowed: ['dry-storage'],
     days: {},
@@ -174,7 +174,7 @@ export const CATEGORIES = {
   },
   other: {
     label: 'Other / unknown',
-    icons: ['📦'],
+    icons: ['📦', '🍽️', '❓'],
     zone: 'dry-storage',
     allowed: ZONE_IDS,
     days: {},

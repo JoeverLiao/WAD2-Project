@@ -3,7 +3,7 @@
 import InventoryItem from '../models/inventoryItemModel.js'
 import { classifyItem } from './foodKnowledge.js'
 import { enrichWithRules } from './itemEnrichment.js'
-import { CATEGORIES, ZONES } from './storageGuide.js'
+import { ALL_ICONS, CATEGORIES, ZONES } from './storageGuide.js'
 
 /** The standard name for a common food ("Full cream milk 1L" -> "Milk"); other names are kept. */
 export function standardName(name) {
@@ -60,7 +60,8 @@ export function completeItems(items) {
     return {
       ...item,
       category,
-      icon: info.icons.includes(item.icon) ? item.icon : info.icons[0],
+      // Any icon from the full list is allowed (the user may pick one from another category).
+      icon: ALL_ICONS.includes(item.icon) ? item.icon : info.icons[0],
       suggestedLocation: suggested,
       allowedLocations: info.allowed.includes(suggested) ? info.allowed : [suggested, ...info.allowed],
       locationReason: info.reason,

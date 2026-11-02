@@ -217,6 +217,26 @@ describe('ReceiptReviewForm', () => {
       wrapper.unmount()
     })
 
+    it('offers every icon on every row, and keeps an icon picked from another category', async () => {
+      const wrapper = mount(ReceiptReviewForm, { props: { parsed: parsed() } })
+      const select = rows(wrapper)[0].get('[data-testid="icon"]')
+      const options = select.findAll('option').map((o) => o.element.value)
+      for (const icon of ['🥛', '🍓', '🫐', '🍒', '🥭', '🐟', '🍞', '🥫']) expect(options).toContain(icon)
+      expect(options.length).toBeGreaterThan(60)
+      await select.setValue('🍓')
+      await rows(wrapper)[0].get('[data-testid="category"]').setValue('fruit')
+      expect(select.element.value).toBe('🍓')
+      wrapper.unmount()
+    })
+
+    it('tells the user when unknown items could not be classified by the AI', () => {
+      const withStatus = (aiStatus) => mount(ReceiptReviewForm, { props: { parsed: { ...parsed(), aiStatus } } })
+      expect(withStatus('not_configured').get('[data-testid="ai-notice"]').text()).toContain('switched off')
+      expect(withStatus('failed').get('[data-testid="ai-notice"]').text()).toContain('could not be reached')
+      expect(withStatus('used').find('[data-testid="ai-notice"]').exists()).toBe(false)
+      expect(withStatus('not_needed').find('[data-testid="ai-notice"]').exists()).toBe(false)
+    })
+
     it('a weight is enough: the quantity can be left empty', async () => {
       const fetchMock = vi.fn(async () => jsonResponse(201, { saved: 1, added: 1, merged: 0 }))
       vi.stubGlobal('fetch', fetchMock)

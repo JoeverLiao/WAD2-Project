@@ -143,14 +143,15 @@ const TOOL = {
 }
 
 const SYSTEM = `You help a household food-inventory app. For each grocery item name, choose its category, the best place to keep it, a typical shelf life and a typical weight. Follow food-safety guidance (USDA FoodKeeper / FDA Food Code):
+Always identify the real food first. Examples: raspberry, blueberry, cherry, lychee, durian, jackfruit, pomelo and every other berry, melon, citrus and tropical fruit are category "fruit"; fresh herbs, sprouts and leafy greens are "vegetables"; a muffin, cake or pie is "bakery" even when named after a fruit; a sauce, paste or jam is "condiments". Use "other" only when you truly cannot tell what the item is.
 - Raw meat, poultry and fish: lower-shelf (below ready-to-eat food).
 - Milk, yoghurt, cheese, eggs: middle-shelf or upper-shelf, never the door.
 - Ready-to-eat food (deli, sandwiches, leftovers): upper-shelf.
-- Fresh vegetables and most fruit: crisper. Tropical fruit, tomatoes: dry-storage until ripe.
+- Fresh vegetables and most fruit (berries, grapes, cherries, apples, pears, citrus, melons, lychee): crisper. Fruit that ripens at room temperature (banana, avocado, mango, papaya, pineapple, durian, guava) and tomatoes: dry-storage.
 - Potatoes, onions, garlic, bread, dry goods, canned food, snacks: dry-storage.
 - Sauces, juices: door once chilled; unopened shelf-stable ones: dry-storage.
 - Frozen items: freezer-main. Non-food items: category non_food.
-Use only the allowed values. Be conservative with shelf life: a shorter number is safer. Item names may be abbreviated or misspelled receipt text.`
+Choose the icon from the allowed list so it matches the food (for example 🍓 for strawberry-like berries, 🫐 for blueberries, 🍒 for cherries). Use only the allowed values. Be conservative with shelf life: a shorter number is safer. Item names may be abbreviated or misspelled receipt text.`
 
 async function askAi(unknownItems, { fetchImpl, apiKey, model }) {
   const response = await fetchImpl('https://api.anthropic.com/v1/messages', {
@@ -199,7 +200,8 @@ export function checkAiAnswer(answer) {
  * @param {Array<object>} items items with at least { name }; may have receiptName, quantity, unit,
  *   purchasedAt ('YYYY-MM-DD'), expiresAt, weightKg, storageZone
  * @param {{ today?: Date, fetchImpl?: typeof fetch, apiKey?: string, model?: string }} [options]
- * @returns {Promise<{ items: object[], aiUsed: boolean }>} same order as the input
+ * @returns {Promise<{ items: object[], aiUsed: boolean, aiStatus: 'used'|'not_needed'|'not_configured'|'failed' }>}
+ *   items are in the same order as the input
  */
 export async function enrichItems(items, options = {}) {
   const {
@@ -218,6 +220,8 @@ export async function enrichItems(items, options = {}) {
 
   const decisions = new Map()
   let aiUsed = false
+  // Why the AI was or was not used, so the form can tell the user instead of failing silently.
+  let aiStatus = unknown.length === 0 ? 'not_needed' : apiKey ? 'failed' : 'not_configured'
   if (unknown.length && apiKey && typeof fetchImpl === 'function') {
     try {
       const answers = await askAi(unknown.map((u) => u.item), { fetchImpl, apiKey, model })
@@ -226,6 +230,7 @@ export async function enrichItems(items, options = {}) {
         if (target) decisions.set(target.index, checkAiAnswer(answer))
       }
       aiUsed = decisions.size > 0
+      aiStatus = aiUsed ? 'used' : 'failed'
     } catch (error) {
       console.error('AI details unavailable, using the built-in rules only:', error.message)
     }
@@ -246,5 +251,5 @@ export async function enrichItems(items, options = {}) {
     }
     return build(item, { category: 'other', zone: r.zone, days: null, pieceKg: null, source: 'rules' }, today)
   })
-  return { items: result, aiUsed }
+  return { items: result, aiUsed, aiStatus }
 }

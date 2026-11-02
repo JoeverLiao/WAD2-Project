@@ -117,15 +117,28 @@ function onZoneChange(row) {
 
 function onCategoryChange(row) {
   const category = categoryByValue(row.category)
-  if (category && !category.icons.includes(row.icon)) row.icon = category.icons[0]
+  // Keep the icon the user picked; only choose one for the category when there is none yet.
+  if (category && !row.icon) row.icon = category.icons[0]
   edited(row, 'category')
 }
 
 const iconsFor = (row) => categoryByValue(row.category)?.icons ?? []
+// Every icon is available on every row; the ones for the chosen category are listed first.
+const ALL_ICONS = [...new Set(CATEGORIES.flatMap((c) => c.icons))]
+const otherIcons = (row) => ALL_ICONS.filter((icon) => !iconsFor(row).includes(icon))
 const isOffSuggestion = (row) =>
   Boolean(row.suggestedLocation) && row.allowedLocations.length > 0 && !row.allowedLocations.includes(row.storageZone)
 
 // Manual entry: ask the server to suggest the details for rows that have a name but no category yet.
+function aiNotice(status) {
+  if (status === 'not_configured') {
+    return 'Some items were not recognised and the AI is switched off (no API key on the server), so please choose their category and place yourself.'
+  }
+  if (status === 'failed') {
+    return 'Some items were not recognised and the AI could not be reached, so please choose their category and place yourself.'
+  }
+  return ''
+}
 const suggesting = ref(false)
 const suggestMessage = ref('')
 async function suggestDetails() {
@@ -137,7 +150,7 @@ async function suggestDetails() {
   suggesting.value = true
   suggestMessage.value = ''
   try {
-    const { items, aiUsed } = await suggestItemDetails(
+    const { items, aiUsed, aiStatus } = await suggestItemDetails(
       targets.map((row) => ({
         name: row.name.trim(),
         quantity: Number(row.quantity) > 0 ? Number(row.quantity) : undefined,
@@ -160,7 +173,9 @@ async function suggestDetails() {
     })
     suggestMessage.value = aiUsed
       ? 'Details suggested. Please check them: the use-by date and weight are estimates.'
-      : 'Details suggested from our storage rules. Please check them: the use-by date and weight are estimates.'
+      : aiStatus === 'not_configured' || aiStatus === 'failed'
+        ? aiNotice(aiStatus)
+        : 'Details suggested from our storage rules. Please check them: the use-by date and weight are estimates.'
   } catch (error) {
     suggestMessage.value = error.message
   } finally {
@@ -259,6 +274,9 @@ const totalWarning = computed(() => {
         </div>
         <div v-if="parsed?.merchant" class="small text-body-secondary mb-2">
           Store: <strong>{{ parsed.merchant }}</strong>
+        </div>
+        <div v-if="!manual && aiNotice(parsed?.aiStatus)" class="alert alert-warning py-2 small" role="alert" data-testid="ai-notice">
+          {{ aiNotice(parsed.aiStatus) }}
         </div>
         <div v-if="totalWarning" class="alert alert-warning py-2 small" role="alert" data-testid="total-warning">
           {{ totalWarning }}
@@ -443,11 +461,15 @@ const totalWarning = computed(() => {
                   :id="`icon-${row.key}`"
                   v-model="row.icon"
                   class="form-select"
-                  :disabled="!iconsFor(row).length"
                   data-testid="icon"
                 >
-                  <option v-if="!iconsFor(row).length" value="">–</option>
-                  <option v-for="icon in iconsFor(row)" :key="icon" :value="icon">{{ icon }}</option>
+                  <option v-if="!row.icon" value="">–</option>
+                  <optgroup v-if="iconsFor(row).length" :label="categoryByValue(row.category).label">
+                    <option v-for="icon in iconsFor(row)" :key="icon" :value="icon">{{ icon }}</option>
+                  </optgroup>
+                  <optgroup label="All icons">
+                    <option v-for="icon in otherIcons(row)" :key="icon" :value="icon">{{ icon }}</option>
+                  </optgroup>
                 </select>
               </div>
               <div class="col-6 col-md-3">

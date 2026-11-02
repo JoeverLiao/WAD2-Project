@@ -138,3 +138,53 @@ test('without an API key, or when the AI fails, the rules are still used and not
     console.error = log
   }
 })
+
+test('berries and other fruit are recognised by the rules, with the right place', () => {
+  const names = ['Raspberry', 'RASPBERRIES 125G', 'Blackberries', 'Cherry', 'Lychee', 'Dragon Fruit', 'Mixed Berry Pack']
+  for (const item of enrichWithRules(names.map((name) => ({ name, quantity: 1 })), { today })) {
+    assert.equal(item.category, 'fruit')
+    assert.equal(item.suggestedLocation, 'crisper')
+  }
+  const [durian, mango] = enrichWithRules([{ name: 'Durian', quantity: 1 }, { name: 'Mango', quantity: 1 }], { today })
+  assert.equal(durian.suggestedLocation, 'dry-storage') // ripens at room temperature
+  assert.equal(mango.suggestedLocation, 'dry-storage')
+})
+
+test('flavoured products are not mistaken for the fruit', () => {
+  const [muffin, yoghurt, sauce, coconutMilk, cherryTomato] = enrichWithRules(
+    ['Blueberry Muffin', 'Strawberry Yoghurt', 'Sweet Chilli Sauce', 'Coconut Milk', 'Cherry Tomato'].map((name) => ({ name, quantity: 1 })),
+    { today },
+  )
+  assert.equal(muffin.category, 'bakery')
+  assert.equal(yoghurt.category, 'dairy')
+  assert.equal(sauce.category, 'condiments')
+  assert.equal(coconutMilk.category, 'condiments')
+  assert.equal(cherryTomato.category, 'vegetables')
+})
+
+test('there is a wide choice of icons for each category', () => {
+  assert.ok(CATEGORIES.fruit.icons.length >= 15)
+  assert.ok(CATEGORIES.dairy.icons.length >= 5)
+  assert.ok(CATEGORIES.seafood.icons.length >= 8)
+  assert.ok(ALL_ICONS.length >= 80)
+})
+
+test('the result says why the AI was or was not used', async () => {
+  const known = await enrichItems([{ name: 'Milk', quantity: 1 }], { today, apiKey: '' })
+  assert.equal(known.aiStatus, 'not_needed')
+  const off = await enrichItems([{ name: 'Zorblax', quantity: 1 }], { today, apiKey: '' })
+  assert.equal(off.aiStatus, 'not_configured')
+  const log = console.error
+  console.error = () => {}
+  try {
+    const bad = await enrichItems([{ name: 'Zorblax', quantity: 1 }], { today, apiKey: 'k', fetchImpl: async () => ({ ok: false, status: 401 }) })
+    assert.equal(bad.aiStatus, 'failed')
+  } finally {
+    console.error = log
+  }
+  const ok = await enrichItems([{ name: 'Zorblax', quantity: 1 }], {
+    today, apiKey: 'k', fetchImpl: aiAnswers([{ index: 0, category: 'fruit', icon: '🍓', location: 'crisper', shelf_life_days: 3, piece_weight_kg: 0.1 }]),
+  })
+  assert.equal(ok.aiStatus, 'used')
+  assert.equal(ok.items[0].category, 'fruit')
+})

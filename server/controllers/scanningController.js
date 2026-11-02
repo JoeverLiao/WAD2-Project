@@ -38,9 +38,10 @@ const scanReceipt = async (req, res) => {
     // This never blocks the scan: without the AI the fixed storage rules still fill everything in.
     if (parsed?.items?.length) {
       try {
-        const { items: details } = await enrichItems(
+        const { items: details, aiStatus } = await enrichItems(
           parsed.items.map((item) => ({ ...item, purchasedAt: parsed.purchasedAt ?? undefined, expiresAt: undefined })),
         )
+        parsed.aiStatus = aiStatus
         parsed.items = parsed.items.map((item, i) => {
           const d = details[i]
           const warnings = [...item.warnings]
@@ -81,8 +82,8 @@ const suggestDetails = async (req, res) => {
     purchasedAt: typeof raw?.purchasedAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.purchasedAt) ? raw.purchasedAt : undefined,
   }))
   try {
-    const { items: details, aiUsed } = await enrichItems(items)
-    return res.json({ aiUsed, items: details })
+    const { items: details, aiUsed, aiStatus } = await enrichItems(items)
+    return res.json({ aiUsed, aiStatus, items: details })
   } catch (error) {
     console.error('Suggesting item details failed:', error)
     return res.status(500).json({ error: 'Could not suggest details. You can fill them in yourself.' })
