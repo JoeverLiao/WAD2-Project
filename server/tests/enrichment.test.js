@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { checkAiAnswer, enrichItems, enrichWithRules } from '../services/itemEnrichment.js'
-import { ALL_ICONS, CATEGORIES, CATEGORY_IDS, ZONE_IDS } from '../services/storageGuide.js'
+import { ALL_ICONS, CATEGORIES, CATEGORY_IDS, DIET_LABELS, DIETS, ZONE_IDS } from '../services/storageGuide.js'
 
 const today = new Date('2026-11-01T10:00:00+08:00')
 const aiAnswers = (items) => async () => ({
@@ -26,6 +26,7 @@ test('the zones and categories match the ones the client form offers', () => {
   const client = readFileSync(new URL('../../client/src/utils/inventoryOptions.js', import.meta.url), 'utf8')
   for (const id of [...ZONE_IDS, ...CATEGORY_IDS]) assert.ok(client.includes(`'${id}'`), `client is missing ${id}`)
   for (const icon of ALL_ICONS) assert.ok(client.includes(icon), `client is missing ${icon}`)
+  for (const diet of DIETS) assert.ok(client.includes(`'${diet}'`) && client.includes(DIET_LABELS[diet]), `client is missing diet ${diet}`)
 })
 
 test('food-safety placement: raw meat low, dairy never in the door, potatoes not in the fridge', () => {
@@ -187,4 +188,36 @@ test('the result says why the AI was or was not used', async () => {
   })
   assert.equal(ok.aiStatus, 'used')
   assert.equal(ok.items[0].category, 'fruit')
+})
+
+test('diet labels: vegan, vegetarian, contains meat or fish, or "check the label"', () => {
+  const diets = Object.fromEntries(
+    enrichWithRules(
+      ['Raspberry', 'Broccoli', 'Tofu', 'Soy Milk', 'Milk', 'Eggs', 'Cheese', 'Honey', 'Chicken Breast', 'Salmon', 'Bacon',
+        'Ham', 'Rice', 'Pasta', 'Sandwich', 'Burrata', 'Petcollar', 'Vegan Chicken Nuggets', 'Chicken Noodle Soup', 'Veggie Burger'].map((name) => ({ name, quantity: 1 })),
+      { today },
+    ).map((item, i) => [i, item.dietType]),
+  )
+  const expected = ['vegan', 'vegan', 'vegan', 'vegan', 'vegetarian', 'vegetarian', 'vegetarian', 'vegetarian', 'other', 'other', 'other',
+    'other', 'vegan', 'vegetarian', 'unknown', 'unknown', null, 'vegan', 'other', 'vegetarian']
+  assert.deepEqual(Object.values(diets), expected)
+})
+
+test('a wrong "vegan" from the AI can never slip through', () => {
+  assert.equal(checkAiAnswer({ category: 'meat', location: 'lower-shelf', diet: 'vegan' }).diet, 'other')
+  assert.equal(checkAiAnswer({ category: 'seafood', location: 'lower-shelf', diet: 'vegetarian' }).diet, 'other')
+  assert.equal(checkAiAnswer({ category: 'dairy', location: 'middle-shelf', diet: 'vegan' }).diet, 'vegetarian')
+  assert.equal(checkAiAnswer({ category: 'fruit', location: 'crisper', diet: 'unknown' }).diet, 'vegan')
+  assert.equal(checkAiAnswer({ category: 'snacks', location: 'dry-storage', diet: 'nonsense' }).diet, 'unknown')
+  assert.equal(checkAiAnswer({ category: 'non_food', location: 'dry-storage', diet: 'vegan' }).diet, null)
+})
+
+test('the AI label is used for unknown foods but the name can overrule it', async () => {
+  const fetchImpl = aiAnswers([
+    { index: 0, category: 'condiments', location: 'dry-storage', shelf_life_days: 100, piece_weight_kg: 0.2, diet: 'vegan' },
+    { index: 1, category: 'condiments', location: 'dry-storage', shelf_life_days: 100, piece_weight_kg: 0.2, diet: 'vegan' },
+  ])
+  const { items } = await enrichItems([{ name: 'Gochujang', quantity: 1 }, { name: 'Anchovy Gochujang', quantity: 1 }], { today, fetchImpl, apiKey: 'k' })
+  assert.equal(items[0].dietType, 'vegan')
+  assert.equal(items[1].dietType, 'other')
 })

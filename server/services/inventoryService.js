@@ -67,6 +67,7 @@ export function completeItems(items) {
       locationReason: info.reason,
       storageZone: zone,
       storage: ZONES[zone].storage,
+      dietType: item.dietType ?? rules.dietType ?? undefined,
     }
   })
 }
@@ -99,6 +100,7 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
       locationReason: item.locationReason,
       storageZone: item.storageZone,
     }
+    if (item.dietType) onInsert.dietType = item.dietType
     if (item.purchasedAt) onInsert.purchasedAt = item.purchasedAt
     if (item.expiresAt) onInsert.expiresAt = item.expiresAt
     const update = { $setOnInsert: onInsert }

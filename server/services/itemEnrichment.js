@@ -11,11 +11,13 @@
 //     used, so scanning never fails because of the AI.
 //
 // Only item NAMES are sent to the AI: never prices, dates, the user's id or email.
-import { classifyItem } from './foodKnowledge.js'
+import { classifyItem, dietFromText } from './foodKnowledge.js'
 import {
   ALL_ICONS,
   CATEGORIES,
+  CATEGORY_DIET,
   CATEGORY_IDS,
+  DIETS,
   packCount,
   packWeightKg,
   shelfDays,
@@ -51,11 +53,12 @@ function fromRules(item) {
     days: info.days,
     pieceKg: info.pieceKg,
     frozen: info.frozen,
+    diet: info.diet,
   }
 }
 
 /** Build the final detail fields for an item from a category/zone/days/weight decision. */
-function build(item, { category, zone, days, pieceKg, source }, today) {
+function build(item, { category, zone, days, pieceKg, diet, source }, today) {
   const info = CATEGORIES[category]
   const baseDate = item.purchasedAt ?? localIso(today)
 
@@ -94,6 +97,7 @@ function build(item, { category, zone, days, pieceKg, source }, today) {
     unit: outUnit,
     weightKg,
     weightEstimated: weightIsEstimate,
+    dietType: category === 'non_food' ? null : (diet ?? CATEGORY_DIET[category] ?? 'unknown'),
     detailsSource: source,
   }
 }
@@ -104,7 +108,7 @@ export function enrichWithRules(items, { today = new Date() } = {}) {
     const r = fromRules(item)
     const category = r.category ?? 'other'
     const found = r.category !== null
-    return build(item, { category, zone: r.zone, days: found ? r.days : null, pieceKg: r.pieceKg, source: 'rules' }, today)
+    return build(item, { category, zone: r.zone, days: found ? r.days : null, pieceKg: r.pieceKg, diet: r.diet, source: 'rules' }, today)
   })
 }
 
@@ -129,12 +133,17 @@ const TOOL = {
               type: ['integer', 'null'],
               description: 'Typical days the UNOPENED item stays good in that location, counted from purchase. null for non-food.',
             },
+            diet: {
+              type: 'string',
+              enum: DIETS,
+              description: 'vegan = no animal products at all; vegetarian = no meat or fish but may have egg, dairy or honey; other = contains meat, fish or gelatine; unknown = cannot tell from the name.',
+            },
             piece_weight_kg: {
               type: ['number', 'null'],
               description: 'Typical weight in kg of ONE piece/pack as bought. null if unknown.',
             },
           },
-          required: ['index', 'category', 'location', 'shelf_life_days', 'piece_weight_kg'],
+          required: ['index', 'category', 'location', 'shelf_life_days', 'piece_weight_kg', 'diet'],
         },
       },
     },
@@ -178,6 +187,19 @@ async function askAi(unknownItems, { fetchImpl, apiKey, model }) {
   return Array.isArray(block?.input?.items) ? block.input.items : []
 }
 
+/**
+ * The AI's diet label is checked against the category so a wrong "vegan" can never slip through:
+ * meat and fish are never vegan or vegetarian; fruit and vegetables are always vegan; dairy and eggs
+ * are never "vegan" (plant milks are in the rules table, not here).
+ */
+export function checkAiDiet(category, diet) {
+  if (category === 'non_food') return null
+  if (category === 'meat' || category === 'seafood') return 'other'
+  if (category === 'fruit' || category === 'vegetables' || category === 'root_vegetables') return 'vegan'
+  if (category === 'dairy' || category === 'eggs') return 'vegetarian'
+  return DIETS.includes(diet) ? diet : (CATEGORY_DIET[category] ?? 'unknown')
+}
+
 /** Check one AI answer against the fixed rules. Anything outside the rules is replaced or dropped. */
 export function checkAiAnswer(answer) {
   const category = CATEGORY_IDS.includes(answer?.category) ? answer.category : 'other'
@@ -192,7 +214,7 @@ export function checkAiAnswer(answer) {
   const days = category === 'non_food' || !Number.isFinite(raw) || raw < 1 ? guide : Math.min(Math.round(raw), cap)
   const kg = Number(answer?.piece_weight_kg)
   const pieceKg = Number.isFinite(kg) && kg > 0 && kg <= 25 ? round(kg, 3) : null
-  return { category, zone, days: category === 'non_food' ? null : days, pieceKg, icon: answer?.icon }
+  return { category, zone, days: category === 'non_food' ? null : days, pieceKg, icon: answer?.icon, diet: checkAiDiet(category, answer?.diet) }
 }
 
 /**
@@ -240,16 +262,16 @@ export async function enrichItems(items, options = {}) {
     const r = rules[index]
     const ai = decisions.get(index)
     if (r.category !== null) {
-      return build(item, { category: r.category, zone: r.zone, days: r.days, pieceKg: r.pieceKg, source: 'rules' }, today)
+      return build(item, { category: r.category, zone: r.zone, days: r.days, pieceKg: r.pieceKg, diet: r.diet, source: 'rules' }, today)
     }
     if (ai) {
       const frozen = r.frozen
       const category = frozen ? 'frozen' : ai.category
       const zone = frozen ? 'freezer-main' : ai.zone
       const days = frozen ? shelfDays('frozen', 'freezer') : ai.days
-      return build({ ...item, icon: item.icon ?? ai.icon }, { category, zone, days, pieceKg: ai.pieceKg, source: 'ai' }, today)
+      return build({ ...item, icon: item.icon ?? ai.icon }, { category, zone, days, pieceKg: ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? ai.diet, source: 'ai' }, today)
     }
-    return build(item, { category: 'other', zone: r.zone, days: null, pieceKg: null, source: 'rules' }, today)
+    return build(item, { category: 'other', zone: r.zone, days: null, pieceKg: null, diet: r.diet, source: 'rules' }, today)
   })
   return { items: result, aiUsed, aiStatus }
 }

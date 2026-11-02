@@ -19,13 +19,12 @@
 // IMPORTANT: storage days below are rounded, conservative values for UNOPENED food from the day
 // of purchase. They are estimates; the user can always change the date on the form.
 
-// The places in the Smart Fridge page (the names must match client/src/utils/inventoryOptions.js).
+// The seven places in the Smart Fridge page (the names must match client/src/utils/inventoryOptions.js).
 export const ZONES = {
   'upper-shelf': { storage: 'fridge', label: 'Upper shelf' },
   'middle-shelf': { storage: 'fridge', label: 'Middle shelf' },
   'lower-shelf': { storage: 'fridge', label: 'Lower shelf' },
   door: { storage: 'fridge', label: 'Fridge door' },
-  'door-lower': { storage: 'fridge', label: 'Lower door shelf' },
   crisper: { storage: 'fridge', label: 'Crisper drawer' },
   'freezer-main': { storage: 'freezer', label: 'Freezer' },
   'dry-storage': { storage: 'pantry', label: 'Pantry / dry storage' },
@@ -183,6 +182,37 @@ export const CATEGORIES = {
 }
 export const CATEGORY_IDS = Object.keys(CATEGORIES)
 export const ALL_ICONS = [...new Set(Object.values(CATEGORIES).flatMap((c) => c.icons))]
+
+// Diet labels. Based on the USUAL recipe of the food: labels can differ, so the app always tells the
+// user to check the pack. When we are not sure we say "unknown" rather than guess "vegan".
+export const DIETS = ['vegan', 'vegetarian', 'other', 'unknown']
+export const DIET_LABELS = {
+  vegan: 'Vegan',
+  vegetarian: 'Vegetarian',
+  other: 'Contains meat or fish',
+  unknown: 'Check the label',
+}
+// Default per category (null = not food, no label).
+export const CATEGORY_DIET = {
+  dairy: 'vegetarian',
+  eggs: 'vegetarian',
+  meat: 'other',
+  seafood: 'other',
+  ready_to_eat: 'unknown',
+  plant_protein: 'vegan',
+  vegetables: 'vegan',
+  root_vegetables: 'vegan',
+  fruit: 'vegan',
+  bakery: 'vegetarian',
+  beverages: 'vegan',
+  condiments: 'unknown',
+  pantry_staples: 'vegan',
+  snacks: 'unknown',
+  canned: 'unknown',
+  frozen: 'unknown',
+  non_food: null,
+  other: 'unknown',
+}
 
 export function shelfDays(category, storage) {
   return CATEGORIES[category]?.days?.[storage] ?? null

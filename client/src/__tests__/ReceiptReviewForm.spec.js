@@ -10,9 +10,9 @@ const parsed = () => ({
   itemsSum: 9.6,
   totalMatches: false,
   items: [
-    { name: 'Milk', receiptName: 'Fresh Milk 1L', quantity: 2, unit: 'pieces', price: 6.4, storage: 'fridge', storageZone: 'middle-shelf', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf', 'upper-shelf'], locationReason: 'Dairy keeps best at a steady cold temperature.', category: 'dairy', icon: '🥛', weightKg: 2, expiresAt: '2026-10-19', include: true, warnings: [] },
-    { name: 'Eggs', receiptName: 'Eggs Large 10s', quantity: 1, unit: 'pieces', price: 3.2, storage: 'fridge', storageZone: 'middle-shelf', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf', 'upper-shelf'], category: 'eggs', icon: '🥚', weightKg: 0.6, expiresAt: '2026-11-09', include: true, warnings: [] },
-    { name: 'Ziploc Bags', quantity: 1, unit: 'pieces', price: 4.89, storage: 'pantry', expiresAt: null, include: false, warnings: ['Does not look like food: untick to skip it'] },
+    { name: 'Milk', receiptName: 'Fresh Milk 1L', quantity: 2, unit: 'pieces', price: 6.4, storage: 'fridge', storageZone: 'middle-shelf', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf', 'upper-shelf'], locationReason: 'Dairy keeps best at a steady cold temperature.', category: 'dairy', icon: '🥛', dietType: 'vegetarian', weightKg: 2, expiresAt: '2026-10-19', include: true, warnings: [] },
+    { name: 'Eggs', receiptName: 'Eggs Large 10s', quantity: 1, unit: 'pieces', price: 3.2, storage: 'fridge', storageZone: 'middle-shelf', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf', 'upper-shelf'], category: 'eggs', icon: '🥚', dietType: 'vegetarian', weightKg: 0.6, expiresAt: '2026-11-09', include: true, warnings: [] },
+    { name: 'Ziploc Bags', dietType: null, quantity: 1, unit: 'pieces', price: 4.89, storage: 'pantry', expiresAt: null, include: false, warnings: ['Does not look like food: untick to skip it'] },
   ],
 })
 
@@ -106,8 +106,8 @@ describe('ReceiptReviewForm', () => {
     expect(url).toBe('/api/scanning/confirm')
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body).items).toEqual([
-      { name: 'Full Cream Milk', quantity: 3, unit: 'pieces', storage: 'freezer', storageZone: 'freezer-main', category: 'dairy', icon: '🥛', suggestedLocation: 'middle-shelf', weightKg: 2, purchasedAt: '2026-10-12', expiresAt: '2026-10-19', purchasePrice: 6.4 },
-      { name: 'Eggs', quantity: 1, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', category: 'eggs', icon: '🥚', suggestedLocation: 'middle-shelf', weightKg: 0.6, purchasedAt: '2026-10-12', expiresAt: '2026-11-09', purchasePrice: 3.2 },
+      { name: 'Full Cream Milk', quantity: 3, unit: 'pieces', storage: 'freezer', storageZone: 'freezer-main', category: 'dairy', icon: '🥛', dietType: 'vegetarian', suggestedLocation: 'middle-shelf', weightKg: 2, purchasedAt: '2026-10-12', expiresAt: '2026-10-19', purchasePrice: 6.4 },
+      { name: 'Eggs', quantity: 1, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', category: 'eggs', icon: '🥚', dietType: 'vegetarian', suggestedLocation: 'middle-shelf', weightKg: 0.6, purchasedAt: '2026-10-12', expiresAt: '2026-11-09', purchasePrice: 3.2 },
     ])
     expect(wrapper.get('[data-testid="saved-message"]').text()).toContain('Saved 2 items')
     expect(wrapper.get('[data-testid="merged-message"]').text()).toContain('1 was already in stock')
@@ -235,6 +235,39 @@ describe('ReceiptReviewForm', () => {
       expect(withStatus('failed').get('[data-testid="ai-notice"]').text()).toContain('could not be reached')
       expect(withStatus('used').find('[data-testid="ai-notice"]').exists()).toBe(false)
       expect(withStatus('not_needed').find('[data-testid="ai-notice"]').exists()).toBe(false)
+    })
+
+    it('shows a clearly labelled diet badge on every item, with a key and counts', async () => {
+      const fixture = parsed()
+      fixture.items[1].dietType = 'vegan'
+      fixture.items.push({ name: 'Chicken', quantity: 1, unit: 'pieces', price: 5, storage: 'fridge', dietType: 'other', include: true, warnings: [] })
+      const wrapper = mount(ReceiptReviewForm, { props: { parsed: fixture } })
+      const badgeText = (row) => row.get('[data-testid="diet-badge"]').text()
+      expect(badgeText(rows(wrapper)[0])).toContain('Vegetarian')
+      expect(badgeText(rows(wrapper)[1])).toContain('Vegan')
+      expect(badgeText(rows(wrapper)[3])).toContain('Contains meat or fish')
+      expect(rows(wrapper)[2].find('[data-testid="diet-badge"]').exists()).toBe(false) // not food: no label
+      const key = wrapper.get('[data-testid="diet-key"]').text()
+      for (const word of ['Vegan', 'Vegetarian', 'Contains meat or fish', 'Check the label', 'always check']) expect(key).toContain(word)
+      // Only ticked items are counted: milk (vegetarian), eggs (vegan), chicken (other).
+      const items = wrapper.findAll('[data-testid="diet-key-item"]').map((li) => li.text())
+      expect(items[0]).toContain('× 1')
+      expect(items[1]).toContain('× 1')
+      expect(items[2]).toContain('× 1')
+      expect(items[3]).toContain('× 0')
+      await rows(wrapper)[0].get('[data-testid="diet"]').setValue('other')
+      expect(badgeText(rows(wrapper)[0])).toContain('Contains meat or fish')
+      wrapper.unmount()
+    })
+
+    it('sends the diet label when saving', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(201, { saved: 2, added: 2, merged: 0 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ReceiptReviewForm, { props: { parsed: parsed() } })
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).items.map((i) => i.dietType)).toEqual(['vegetarian', 'vegetarian'])
+      wrapper.unmount()
     })
 
     it('a weight is enough: the quantity can be left empty', async () => {

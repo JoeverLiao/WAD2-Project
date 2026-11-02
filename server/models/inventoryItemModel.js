@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { ALL_ICONS, CATEGORY_IDS, ZONE_IDS } from '../services/storageGuide.js'
+import { ALL_ICONS, CATEGORY_IDS, DIETS, ZONE_IDS } from '../services/storageGuide.js'
 
 // Shared by scanning, fridge, freshness, rescue, and analytics.
 const inventoryItemSchema = new mongoose.Schema(
@@ -18,6 +18,8 @@ const inventoryItemSchema = new mongoose.Schema(
     // warn when storageZone is not in allowedLocations.
     category: { type: String, enum: CATEGORY_IDS },
     icon: { type: String, enum: ALL_ICONS },
+    // vegan | vegetarian | other (contains meat or fish) | unknown; absent for non-food.
+    dietType: { type: String, enum: DIETS },
     suggestedLocation: { type: String, enum: ZONE_IDS },
     allowedLocations: { type: [String], enum: ZONE_IDS, default: undefined },
     locationReason: { type: String },

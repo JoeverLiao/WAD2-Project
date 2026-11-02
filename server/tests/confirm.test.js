@@ -155,6 +155,18 @@ test('an item needs a quantity or a weight', async (t) => {
   assert.deepEqual((await response.json()).details.map((d) => d.field), ['quantity'])
 })
 
+test('the diet label is saved, filled in from the rules when missing, and checked', async (t) => {
+  const bulk = mockBulk(t)
+  const base = await startApp(t)
+  await post(base, { items: [{ name: 'Chicken Breast', quantity: 1, storage: 'fridge' }, { name: 'Broccoli', quantity: 1, storage: 'fridge', dietType: 'vegan' }] })
+  const ops = bulk.mock.calls[0].arguments[0]
+  assert.equal(ops[0].updateOne.update.$setOnInsert.dietType, 'other')
+  assert.equal(ops[1].updateOne.update.$setOnInsert.dietType, 'vegan')
+  const bad = await post(base, { items: [{ name: 'Broccoli', quantity: 1, storage: 'fridge', dietType: 'paleo' }] })
+  assert.equal(bad.status, 400)
+  assert.deepEqual((await bad.json()).details.map((d) => d.field), ['dietType'])
+})
+
 test('the owner comes from the login, never from the request', async (t) => {
   const bulk = mockBulk(t)
   const base = await startApp(t)

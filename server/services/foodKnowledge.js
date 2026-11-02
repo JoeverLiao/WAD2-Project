@@ -7,7 +7,7 @@
 // Overrides: zone (a different place than the category default), days (storage days), kg (typical
 // weight of ONE piece). Entries are checked IN ORDER and the first match wins, so specific entries
 // (Soy Milk, Peanut Butter, Orange Juice) must come before general ones (Milk, Butter, Orange).
-import { CATEGORIES, shelfDays, ZONES } from './storageGuide.js'
+import { CATEGORIES, CATEGORY_DIET, shelfDays, ZONES } from './storageGuide.js'
 
 /** @type {Array<[string|null, string, string, { zone?: string, days?: number, kg?: number }?]>} */
 const FOODS = [
@@ -228,6 +228,32 @@ const NON_FOOD_STEMS = [
   'battery', 'deodorant', 'sunscreen', 'cigarette', 'ziploc', 'paracetamol', 'ibuprofen', 'quantum',
 ]
 
+// Foods whose usual diet differs from their category's default.
+const DIET_BY_FOOD = {
+  'Soy Milk': 'vegan', 'Oat Milk': 'vegan', 'Almond Milk': 'vegan', 'Coconut Milk': 'vegan', 'Coconut Water': 'vegan',
+  'Ice Cream': 'vegetarian', Ham: 'other', Kimchi: 'unknown', Hummus: 'vegan', Sandwich: 'unknown', Sushi: 'unknown',
+  Honey: 'vegetarian', Mayonnaise: 'vegetarian', Ketchup: 'vegan', 'Soy Sauce': 'vegan', 'Peanut Butter': 'vegan', Jam: 'vegan',
+  Biscuits: 'vegetarian', Chocolate: 'vegetarian', Nuts: 'vegan', Pasta: 'vegetarian', Noodles: 'vegetarian',
+  Cereal: 'vegetarian', Beer: 'unknown', Wine: 'unknown', Chips: 'unknown',
+}
+
+const VEGAN_WORDS = /\b(vegan|plant[- ]based|dairy[- ]free)\b/i
+const VEGETARIAN_WORDS = /\b(vegetarian|veggie|meat[- ]free)\b/i
+const MEAT_WORDS =
+  /\b(beef|pork|chicken|turkey|duck|lamb|mutton|veal|bacon|ham|sausages?|salami|pepperoni|chorizo|fish|tuna|salmon|prawns?|shrimps?|crab|squid|anchov\w*|sardines?|gelatin\w*|lard|oyster|clams?|mussels?|meat)\b/i
+
+/**
+ * Diet label from words in the name: "Vegan Chicken Nuggets" is vegan (the pack says so), while
+ * "Chicken Noodle Soup" contains meat. Returns null when the name says nothing either way.
+ */
+export function dietFromText(text) {
+  const t = String(text ?? '')
+  if (VEGAN_WORDS.test(t)) return 'vegan'
+  if (VEGETARIAN_WORDS.test(t)) return 'vegetarian'
+  if (MEAT_WORDS.test(t)) return 'other'
+  return null
+}
+
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const wordsRx = (words) => new RegExp(`(?:^|[^a-z])(?:${words.map(escapeRegex).join('|')})(?:[^a-z]|$)`, 'i')
 
@@ -244,7 +270,8 @@ const nonFoodStemsRx = new RegExp(NON_FOOD_STEMS.map(escapeRegex).join('|'), 'i'
  * @param {string} name product name as printed on the receipt
  * @returns {{
  *   likelyFood: boolean|null, storage: 'fridge'|'freezer'|'pantry', canonicalName: string|null,
- *   category: string|null, zone: string, days: number|null, pieceKg: number|null, frozen: boolean
+ *   category: string|null, zone: string, days: number|null, pieceKg: number|null, frozen: boolean,
+ *   diet: 'vegan'|'vegetarian'|'other'|'unknown'|null
  * }}
  *   likelyFood: true = recognised food, false = recognised non-food, null = unknown.
  *   canonicalName is the one standard name for a recognised food (otherwise null).
@@ -253,7 +280,7 @@ const nonFoodStemsRx = new RegExp(NON_FOOD_STEMS.map(escapeRegex).join('|'), 'i'
 export function classifyItem(name) {
   const text = ` ${String(name).toLowerCase()} `
   if (nonFoodWordsRx.test(text) || nonFoodStemsRx.test(text)) {
-    return { likelyFood: false, storage: 'pantry', canonicalName: null, category: 'non_food', zone: 'dry-storage', days: null, pieceKg: null, frozen: false }
+    return { likelyFood: false, storage: 'pantry', canonicalName: null, category: 'non_food', zone: 'dry-storage', days: null, pieceKg: null, frozen: false, diet: null }
   }
   const frozen = /(?:^|[^a-z])frozen(?:[^a-z]|$)/.test(text)
   for (const food of compiledFoods) {
@@ -272,6 +299,7 @@ export function classifyItem(name) {
       days,
       pieceKg: food.overrides.kg ?? null,
       frozen,
+      diet: dietFromText(text) ?? DIET_BY_FOOD[food.canonicalName] ?? CATEGORY_DIET[food.category] ?? 'unknown',
     }
   }
   return {
@@ -283,5 +311,6 @@ export function classifyItem(name) {
     days: frozen ? 90 : null,
     pieceKg: null,
     frozen,
+    diet: dietFromText(text) ?? 'unknown',
   }
 }

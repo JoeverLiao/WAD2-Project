@@ -1,7 +1,7 @@
 // Rules for one row of the receipt review form. They are the same rules the server applies
 // (server/services/inventoryValidation.js), so the user sees problems before saving. The server
 // still checks everything again, because it cannot trust the browser.
-import { CATEGORY_VALUES, ZONE_VALUES } from './inventoryOptions.js'
+import { CATEGORY_VALUES, DIET_VALUES, ZONE_VALUES } from './inventoryOptions.js'
 
 export const STORAGE_OPTIONS = ['fridge', 'freezer', 'pantry']
 export const UNIT_SUGGESTIONS = ['pieces', 'packet', 'bottle', 'can', 'loaf', 'g', 'kg', 'ml', 'L']
@@ -83,6 +83,7 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
 
   if (!STORAGE_OPTIONS.includes(row.storage)) errors.storage = 'Choose fridge, freezer or pantry.'
   if (!isBlank(row.storageZone) && !ZONE_VALUES.includes(row.storageZone)) errors.storageZone = 'Choose where the item is kept.'
+  if (!isBlank(row.dietType) && !DIET_VALUES.includes(row.dietType)) errors.dietType = 'Choose a diet label from the list.'
   if (!isBlank(row.category) && !CATEGORY_VALUES.includes(row.category)) errors.category = 'Choose a category from the list.'
 
   if (!isBlank(row.weightKg)) {
@@ -126,6 +127,7 @@ export function toPayload(row, purchasedAt) {
   if (!isBlank(row.storageZone)) payload.storageZone = row.storageZone
   if (!isBlank(row.category)) payload.category = row.category
   if (!isBlank(row.icon)) payload.icon = row.icon
+  if (!isBlank(row.dietType)) payload.dietType = row.dietType
   if (!isBlank(row.suggestedLocation)) payload.suggestedLocation = row.suggestedLocation
   if (!isBlank(row.unit)) payload.unit = String(row.unit).trim()
   if (!isBlank(purchasedAt)) payload.purchasedAt = String(purchasedAt).trim()

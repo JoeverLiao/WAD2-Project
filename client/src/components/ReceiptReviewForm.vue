@@ -3,7 +3,8 @@
 // Nothing is saved until the user presses "Save to inventory", and every row is checked first.
 import { computed, nextTick, reactive, ref } from 'vue'
 import { confirmReceiptItems, suggestItemDetails } from '../services/scanningApi.js'
-import { CATEGORIES, ZONES, categoryByValue, zoneByValue } from '../utils/inventoryOptions.js'
+import DietBadge from './common/DietBadge.vue'
+import { CATEGORIES, DIETS, ZONES, categoryByValue, zoneByValue } from '../utils/inventoryOptions.js'
 import {
   MAX_ITEMS,
   UNIT_SUGGESTIONS,
@@ -33,6 +34,7 @@ function newRow(values = {}) {
     storageZone: 'dry-storage',
     category: '',
     icon: '',
+    dietType: '',
     suggestedLocation: '',
     allowedLocations: [],
     locationReason: '',
@@ -56,6 +58,7 @@ function initialRows(parsed) {
       weightKg: item.weightKg ?? '',
       category: item.category ?? '',
       icon: item.icon ?? '',
+      dietType: item.dietType ?? '',
       suggestedLocation: item.suggestedLocation ?? '',
       allowedLocations: item.allowedLocations ?? [],
       locationReason: item.locationReason ?? '',
@@ -122,6 +125,11 @@ function onCategoryChange(row) {
   edited(row, 'category')
 }
 
+// Count of ticked items per diet label, shown above the list.
+const dietCounts = computed(() =>
+  DIETS.map((diet) => ({ ...diet, count: includedRows.value.filter((row) => row.dietType === diet.value).length })),
+)
+
 const iconsFor = (row) => categoryByValue(row.category)?.icons ?? []
 // Every icon is available on every row; the ones for the chosen category are listed first.
 const ALL_ICONS = [...new Set(CATEGORIES.flatMap((c) => c.icons))]
@@ -163,6 +171,7 @@ async function suggestDetails() {
       if (!d) return
       row.category = d.category
       row.icon = d.icon
+      row.dietType = d.dietType ?? ''
       row.suggestedLocation = d.suggestedLocation
       row.allowedLocations = d.allowedLocations
       row.locationReason = d.locationReason
@@ -282,6 +291,21 @@ const totalWarning = computed(() => {
           {{ totalWarning }}
         </div>
 
+        <!-- Diet key and summary: what the labels mean, and how many items of each kind -->
+        <section class="border rounded p-3 mb-3 bg-body-tertiary" aria-labelledby="diet-key-title" data-testid="diet-key">
+          <h3 id="diet-key-title" class="h6 mb-2">Diet labels</h3>
+          <ul class="list-unstyled d-flex flex-wrap gap-3 mb-2">
+            <li v-for="diet in dietCounts" :key="diet.value" class="d-flex align-items-center gap-2" data-testid="diet-key-item">
+              <DietBadge :value="diet.value" />
+              <span class="fw-semibold" :aria-label="`${diet.count} items`">× {{ diet.count }}</span>
+            </li>
+          </ul>
+          <p class="small mb-0 text-body-secondary">
+            Labels are based on the usual recipe of each food. Recipes and brands differ, so always check the
+            pack if you have an allergy or follow a strict diet. You can change any label.
+          </p>
+        </section>
+
         <div class="row g-3 mb-3">
           <div class="col-12 col-md-4">
             <label class="form-label fw-semibold" for="purchased-at">Purchase date</label>
@@ -307,8 +331,8 @@ const totalWarning = computed(() => {
         <div
           v-for="(row, index) in rows"
           :key="row.key"
-          class="border rounded p-3 mb-3"
-          :class="{ 'bg-body-tertiary': !row.include }"
+          class="item-row border rounded p-3 mb-3"
+          :class="[{ 'bg-body-tertiary': !row.include }, row.dietType ? `diet-edge-${row.dietType}` : '']"
           data-testid="item-row"
         >
           <div class="d-flex align-items-center mb-2">
@@ -324,6 +348,7 @@ const totalWarning = computed(() => {
                 Item {{ index + 1 }}
               </label>
             </div>
+            <DietBadge :value="row.dietType" class="ms-3" />
             <button
               type="button"
               class="btn btn-sm btn-outline-danger ms-auto"
@@ -473,6 +498,18 @@ const totalWarning = computed(() => {
                 </select>
               </div>
               <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" :for="`diet-${row.key}`">Diet label</label>
+                <select
+                  :id="`diet-${row.key}`"
+                  v-model="row.dietType"
+                  class="form-select"
+                  data-testid="diet"
+                >
+                  <option value="">Not set</option>
+                  <option v-for="diet in DIETS" :key="diet.value" :value="diet.value">{{ diet.icon }} {{ diet.label }}</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-3">
                 <label class="form-label small mb-1" :for="`weight-${row.key}`">Weight (kg)</label>
                 <input
                   :id="`weight-${row.key}`"
@@ -541,3 +578,23 @@ const totalWarning = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* A thick coloured edge on each item repeats the diet label (the badge and the word say it too). */
+.item-row {
+  border-left-width: 8px !important;
+}
+.diet-edge-vegan {
+  border-left-color: #14532d !important;
+}
+.diet-edge-vegetarian {
+  border-left-color: #16a34a !important;
+}
+.diet-edge-other {
+  border-left-color: #7c2d12 !important;
+}
+.diet-edge-unknown {
+  border-left-color: #6b7280 !important;
+  border-left-style: dashed !important;
+}
+</style>

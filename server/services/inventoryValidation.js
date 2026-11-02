@@ -1,7 +1,7 @@
 // Checks the items a user confirmed on the review form, before anything is saved.
 // The browser also validates (so the user gets instant feedback), but the server never trusts it:
 // every rule here runs again on every request.
-import { ALL_ICONS, CATEGORY_IDS, ZONE_IDS, ZONES } from './storageGuide.js'
+import { ALL_ICONS, CATEGORY_IDS, DIETS, ZONE_IDS, ZONES } from './storageGuide.js'
 
 export const STORAGE_OPTIONS = ['fridge', 'freezer', 'pantry']
 export const MAX_ITEMS = 100
@@ -134,6 +134,10 @@ export function validateInventoryItems(input, { today = new Date() } = {}) {
     if (!isBlank(raw.category)) {
       if (!CATEGORY_IDS.includes(raw.category)) fail('category', 'Choose a category from the list.')
       else clean.category = raw.category
+    }
+    if (!isBlank(raw.dietType)) {
+      if (!DIETS.includes(raw.dietType)) fail('dietType', 'Choose vegan, vegetarian, contains meat or fish, or check the label.')
+      else clean.dietType = raw.dietType
     }
     if (!isBlank(raw.icon)) {
       if (!ALL_ICONS.includes(raw.icon)) fail('icon', 'Choose an icon from the list.')
