@@ -53,7 +53,8 @@ function addDaysIso(today, days) {
 
 /**
  * @param {unknown} input the `items` array from the request body
- * @param {{ today?: Date }} [options]
+ * @param {{ today?: Date, requireComplete?: boolean }} [options] requireComplete: the purchase date, place,
+ *   category, diet label and use-by date must all be given (the last two not for non-food)
  * @returns {{
  *   items: Array<{ name: string, quantity?: number, weightKg?: number, unit?: string, storage: string,
  *                  storageZone?: string, category?: string, icon?: string, suggestedLocation?: string,
@@ -61,7 +62,7 @@ function addDaysIso(today, days) {
  *   errors: Array<{ index: number|null, field: string|null, message: string }>
  * }}
  */
-export function validateInventoryItems(input, { today = new Date() } = {}) {
+export function validateInventoryItems(input, { today = new Date(), requireComplete = false } = {}) {
   const errors = []
   const items = []
 
@@ -175,6 +176,17 @@ export function validateInventoryItems(input, { today = new Date() } = {}) {
       else if (price > LIMITS.priceMax) fail('purchasePrice', 'Price is too high.')
       else if (!fitsDecimals(price, 2)) fail('purchasePrice', 'Price can have at most 2 decimal places.')
       else clean.purchasePrice = Math.round(price * 100) / 100
+    }
+
+    // Required details (used when saving to the inventory): nothing is stored half-filled.
+    if (requireComplete) {
+      if (isBlank(raw.purchasedAt)) fail('purchasedAt', 'Enter the purchase date.')
+      if (!clean.category && isBlank(raw.category)) fail('category', 'Choose a category.')
+      if (!clean.storageZone && isBlank(raw.storageZone)) fail('storageZone', 'Choose where the item is kept.')
+      if (clean.category !== 'non_food') {
+        if (isBlank(raw.dietType)) fail('dietType', 'Choose a diet label.')
+        if (isBlank(raw.expiresAt)) fail('expiresAt', 'Enter a use-by date (an estimate is fine).')
+      }
     }
 
     items.push(clean)

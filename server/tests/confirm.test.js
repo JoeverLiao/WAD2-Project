@@ -28,14 +28,30 @@ async function startApp(t) {
   return `http://127.0.0.1:${server.address().port}`
 }
 
-const post = (base, body, headers = cookie) =>
+// Saving needs every required detail. To keep most tests short, `post` fills in missing required
+// details; `postRaw` sends the body exactly as given (used to test the required-field rules).
+const ZONE_FOR = { fridge: 'middle-shelf', freezer: 'freezer-main', pantry: 'dry-storage' }
+const withRequired = (item) => {
+  if (item === null || typeof item !== 'object' || Array.isArray(item)) return item
+  const dairy = item.category !== 'non_food'
+  return {
+    category: 'other',
+    purchasedAt: '2026-10-12',
+    ...(dairy ? { dietType: 'vegetarian', expiresAt: '2026-10-19' } : {}),
+    ...(ZONE_FOR[item.storage] && !item.storageZone ? { storageZone: ZONE_FOR[item.storage] } : {}),
+    ...item,
+  }
+}
+const postRaw = (base, body, headers = cookie) =>
   fetch(`${base}/api/scanning/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   })
+const post = (base, body, headers = cookie) =>
+  postRaw(base, Array.isArray(body?.items) ? { ...body, items: body.items.map(withRequired) } : body, headers)
 
-const milk = { name: 'Milk', quantity: 2, unit: 'pieces', storage: 'fridge', purchasedAt: '2026-10-12', purchasePrice: 6.4 }
+const milk = { name: 'Milk', category: 'dairy', quantity: 2, unit: 'pieces', storage: 'fridge', purchasedAt: '2026-10-12', purchasePrice: 6.4 }
 // Stand-in for the database: pretends every product was new (upserted) unless told otherwise.
 const fakeBulk = (matched = 0) => async (ops) => ({ upsertedCount: ops.length - matched, matchedCount: matched })
 const mockBulk = (t, impl = fakeBulk()) => {
@@ -68,7 +84,6 @@ test('saves valid items for the logged-in user', async (t) => {
   assert.deepEqual(first.update.$inc, { quantity: 2, purchasePrice: 6.4 })
   assert.equal(first.update.$setOnInsert.purchasedAt.toISOString(), '2026-10-12T12:00:00.000Z')
   assert.equal(ops[1].updateOne.update.$inc.quantity, 1) // "1" was turned into a number
-  assert.equal(ops[1].updateOne.update.$setOnInsert.purchasedAt, undefined)
   // The Smart Fridge details are always filled in, even when the request had none.
   assert.equal(first.update.$setOnInsert.category, 'dairy')
   assert.equal(first.update.$setOnInsert.suggestedLocation, 'middle-shelf')
@@ -101,16 +116,12 @@ test('the same product on several rows is saved as one with the quantities added
 test('manual entry: no price needed, and common foods get their standard name', async (t) => {
   const bulk = mockBulk(t)
   const base = await startApp(t)
-  const response = await fetch(`${base}/api/scanning/confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...cookie },
-    body: JSON.stringify({
-      source: 'manual',
-      items: [
-        { name: 'Full cream milk', quantity: 1, storage: 'fridge' },
-        { name: 'Grandma special sauce', quantity: 2, storage: 'pantry' },
-      ],
-    }),
+  const response = await post(base, {
+    source: 'manual',
+    items: [
+      { name: 'Full cream milk', quantity: 1, storage: 'fridge' },
+      { name: 'Grandma special sauce', quantity: 2, storage: 'pantry' },
+    ],
   })
   assert.equal(response.status, 201)
   const ops = bulk.mock.calls[0].arguments[0]
@@ -155,16 +166,35 @@ test('an item needs a quantity or a weight', async (t) => {
   assert.deepEqual((await response.json()).details.map((d) => d.field), ['quantity'])
 })
 
-test('the diet label is saved, filled in from the rules when missing, and checked', async (t) => {
+test('the diet label is saved and checked', async (t) => {
   const bulk = mockBulk(t)
   const base = await startApp(t)
-  await post(base, { items: [{ name: 'Chicken Breast', quantity: 1, storage: 'fridge' }, { name: 'Broccoli', quantity: 1, storage: 'fridge', dietType: 'vegan' }] })
+  await post(base, { items: [{ name: 'Chicken Breast', quantity: 1, storage: 'fridge', dietType: 'other' }, { name: 'Broccoli', quantity: 1, storage: 'fridge', dietType: 'vegan' }] })
   const ops = bulk.mock.calls[0].arguments[0]
   assert.equal(ops[0].updateOne.update.$setOnInsert.dietType, 'other')
   assert.equal(ops[1].updateOne.update.$setOnInsert.dietType, 'vegan')
   const bad = await post(base, { items: [{ name: 'Broccoli', quantity: 1, storage: 'fridge', dietType: 'paleo' }] })
   assert.equal(bad.status, 400)
   assert.deepEqual((await bad.json()).details.map((d) => d.field), ['dietType'])
+})
+
+test('every required detail must be filled in before anything is saved', async (t) => {
+  const bulk = mockBulk(t)
+  const base = await startApp(t)
+  const response = await postRaw(base, { items: [{ name: 'Milk', quantity: 1, storage: 'fridge' }] })
+  assert.equal(response.status, 400)
+  const fields = (await response.json()).details.map((d) => d.field)
+  assert.deepEqual(fields, ['purchasedAt', 'category', 'storageZone', 'dietType', 'expiresAt'])
+  assert.equal(bulk.mock.callCount(), 0)
+})
+
+test('price, unit and a quantity (when there is a weight) stay optional; non-food needs no use-by or diet', async (t) => {
+  mockBulk(t)
+  const base = await startApp(t)
+  const full = { name: 'Chicken', weightKg: 0.5, storage: 'fridge', storageZone: 'lower-shelf', category: 'meat', dietType: 'other', purchasedAt: '2026-10-12', expiresAt: '2026-10-14' }
+  assert.equal((await postRaw(base, { items: [full] })).status, 201)
+  const collar = { name: 'Pet collar', quantity: 1, storage: 'pantry', storageZone: 'dry-storage', category: 'non_food', purchasedAt: '2026-10-12' }
+  assert.equal((await postRaw(base, { items: [collar] })).status, 201)
 })
 
 test('the owner comes from the login, never from the request', async (t) => {
@@ -188,7 +218,7 @@ test('one bad item rejects the whole request and saves nothing', async (t) => {
   const body = await response.json()
   assert.deepEqual(
     body.details.map((d) => [d.index, d.field]),
-    [[1, 'name'], [1, 'quantity'], [1, 'storage']],
+    [[1, 'name'], [1, 'quantity'], [1, 'storage'], [1, 'storageZone']],
   )
   assert.equal(bulk.mock.callCount(), 0)
 })

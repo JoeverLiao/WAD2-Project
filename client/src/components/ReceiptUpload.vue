@@ -134,7 +134,7 @@ onBeforeUnmount(clearPreview)
 
       <div class="d-flex gap-2 mt-3">
         <button
-          class="btn btn-success"
+          class="btn fc-btn"
           :disabled="!selectedFile || isProcessing"
           @click="scanReceipt"
         >
@@ -146,7 +146,7 @@ onBeforeUnmount(clearPreview)
           {{ isProcessing ? 'Reading receipt…' : 'Scan receipt' }}
         </button>
         <button
-          class="btn btn-outline-secondary"
+          class="btn fc-btn-outline"
           :disabled="!selectedFile || isProcessing"
           @click="reset"
         >

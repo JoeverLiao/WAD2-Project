@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { parseDay, toPayload, validatePurchaseDate, validateRow } from '../utils/receiptValidation.js'
 
 const today = new Date(2026, 9, 21) // 21 Oct 2026
-const good = { name: 'Fresh Milk 1L', quantity: 2, unit: 'pieces', storage: 'fridge', expiresAt: '2026-10-19', purchasePrice: 6.4 }
+const good = {
+  name: 'Fresh Milk 1L', quantity: 2, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', category: 'dairy',
+  dietType: 'vegetarian', expiresAt: '2026-10-19', purchasePrice: 6.4,
+}
 const check = (changes, purchasedAt = '2026-10-12') => validateRow({ ...good, ...changes }, { purchasedAt, today })
 
 describe('validateRow', () => {
@@ -46,8 +49,24 @@ describe('validateRow', () => {
     expect(check({ storage: '' }).storage).toBeDefined()
   })
 
-  it('treats unit, expiry and price as optional', () => {
-    expect(check({ unit: '', expiresAt: '', purchasePrice: '' })).toEqual({})
+  it('treats only unit and price as optional', () => {
+    expect(check({ unit: '', purchasePrice: '' })).toEqual({})
+  })
+
+  it('requires the place, category, diet label and use-by date', () => {
+    expect(check({ storageZone: '' }).storageZone).toBeDefined()
+    expect(check({ category: '' }).category).toBeDefined()
+    expect(check({ dietType: '' }).dietType).toBeDefined()
+    expect(check({ expiresAt: '' }).expiresAt).toMatch(/use-by date/)
+  })
+
+  it('does not ask for a use-by date or diet label on a non-food item', () => {
+    expect(check({ category: 'non_food', expiresAt: '', dietType: '' })).toEqual({})
+  })
+
+  it('needs a purchase date only when it is required', () => {
+    expect(validatePurchaseDate('', today)).toBeNull()
+    expect(validatePurchaseDate('', today, { required: true })).toMatch(/purchase date/)
   })
 
   it('checks the expiry date', () => {
@@ -89,6 +108,9 @@ describe('helpers', () => {
       name: 'Fresh Milk',
       quantity: 2,
       storage: 'fridge',
+      storageZone: 'middle-shelf',
+      category: 'dairy',
+      dietType: 'vegetarian',
       purchasedAt: '2026-10-12',
       purchasePrice: 6.4,
     })

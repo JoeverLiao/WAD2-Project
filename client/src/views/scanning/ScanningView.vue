@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import ReceiptReviewForm from '../../components/ReceiptReviewForm.vue'
 import ReceiptUpload from '../../components/ReceiptUpload.vue'
+import '../../styles/scanning-theme.css'
 
 // 'scan' = upload a receipt photo; 'manual' = type the items in (for people without a receipt).
 const mode = ref('scan')
@@ -33,15 +34,14 @@ function switchMode(next) {
 </script>
 
 <template>
-  <section class="container py-4" aria-label="Receipt &amp; Product Scanning">
+  <section class="container py-4 fc-scope" aria-label="Receipt &amp; Product Scanning">
     <h1 class="h3 mb-3">Add to your inventory</h1>
 
-    <ul class="nav nav-pills mb-4" role="tablist" aria-label="How do you want to add items?">
-      <li class="nav-item" role="presentation">
+    <ul class="fc-tabs" role="tablist" aria-label="How do you want to add items?">
+      <li role="presentation">
         <button
           type="button"
-          class="nav-link"
-          :class="{ active: mode === 'scan' }"
+          class="fc-tab"
           role="tab"
           :aria-selected="mode === 'scan'"
           data-testid="mode-scan"
@@ -50,11 +50,10 @@ function switchMode(next) {
           Scan a receipt
         </button>
       </li>
-      <li class="nav-item" role="presentation">
+      <li role="presentation">
         <button
           type="button"
-          class="nav-link"
-          :class="{ active: mode === 'manual' }"
+          class="fc-tab"
           role="tab"
           :aria-selected="mode === 'manual'"
           data-testid="mode-manual"

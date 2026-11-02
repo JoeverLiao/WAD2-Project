@@ -26,14 +26,14 @@ describe('ReceiptUpload', () => {
 
   it('keeps the scan button disabled until an image is chosen', () => {
     const wrapper = mount(ReceiptUpload)
-    expect(wrapper.get('button.btn-success').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button.fc-btn').attributes('disabled')).toBeDefined()
   })
 
   it('rejects files that are not JPG, PNG or WEBP', async () => {
     const wrapper = mount(ReceiptUpload)
     await chooseFile(wrapper, new File(['x'], 'notes.txt', { type: 'text/plain' }))
     expect(wrapper.text()).toContain('Please upload a JPG, PNG or WEBP image.')
-    expect(wrapper.get('button.btn-success').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button.fc-btn').attributes('disabled')).toBeDefined()
   })
 
   it('uploads the image and shows and emits the extracted text', async () => {
@@ -43,7 +43,7 @@ describe('ReceiptUpload', () => {
 
     const wrapper = mount(ReceiptUpload)
     await chooseFile(wrapper, png())
-    await wrapper.get('button.btn-success').trigger('click')
+    await wrapper.get('button.fc-btn').trigger('click')
     await flushPromises()
 
     const [url, options] = fetchMock.mock.calls[0]
@@ -62,7 +62,7 @@ describe('ReceiptUpload', () => {
 
     const wrapper = mount(ReceiptUpload)
     await chooseFile(wrapper, png())
-    await wrapper.get('button.btn-success').trigger('click')
+    await wrapper.get('button.fc-btn').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Please log in to scan a receipt.')
@@ -81,7 +81,7 @@ describe('ReceiptUpload', () => {
 
     const wrapper = mount(ReceiptUpload)
     await chooseFile(wrapper, png())
-    await wrapper.get('button.btn-success').trigger('click')
+    await wrapper.get('button.fc-btn').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Failed to process the receipt. Please try again.')

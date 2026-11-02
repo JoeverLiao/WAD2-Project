@@ -1,0 +1,133 @@
+/* Look of the receipt-scanning / add-items pages, matching the rest of Full Circle:
+   teal-green primary, dark text, soft green borders, 9px corners and bold buttons.
+   Everything is scoped under .fc-scope so other pages are not affected. The colours use the site's
+   CSS variables when they exist and fall back to the site's palette otherwise. */
+.fc-scope {
+  --fc-primary: var(--primary, #167d68);
+  --fc-primary-dark: var(--primary-dark, #105c4d);
+  --fc-text: var(--text, #24352f);
+  --fc-border: var(--border, #cfdcd4);
+  --fc-soft: #e8f4ed;
+  color: var(--fc-text);
+  accent-color: var(--fc-primary);
+  font-family: inherit;
+}
+
+/* ----- buttons ----- */
+.fc-scope .fc-btn,
+.fc-scope .fc-btn-outline {
+  border-radius: 9px;
+  font-weight: 700;
+  padding: 0.6rem 1.1rem;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.fc-scope .btn-sm.fc-btn,
+.fc-scope .btn-sm.fc-btn-outline {
+  padding: 0.4rem 0.8rem;
+}
+.fc-scope .fc-btn {
+  background: var(--fc-primary);
+  border: 2px solid var(--fc-primary);
+  color: #fff;
+}
+.fc-scope .fc-btn:hover:not(:disabled),
+.fc-scope .fc-btn:focus-visible {
+  background: var(--fc-primary-dark);
+  border-color: var(--fc-primary-dark);
+  color: #fff;
+}
+.fc-scope .fc-btn:disabled {
+  background: var(--fc-primary);
+  border-color: var(--fc-primary);
+  color: #fff;
+  opacity: 0.55;
+}
+.fc-scope .fc-btn-outline {
+  background: #fff;
+  border: 2px solid var(--fc-primary);
+  color: var(--fc-primary-dark);
+}
+.fc-scope .fc-btn-outline:hover:not(:disabled),
+.fc-scope .fc-btn-outline:focus-visible {
+  background: var(--fc-soft);
+  border-color: var(--fc-primary-dark);
+  color: var(--fc-primary-dark);
+}
+.fc-scope .fc-btn-outline:disabled {
+  opacity: 0.55;
+}
+.fc-scope .btn-outline-danger {
+  border-radius: 9px;
+  font-weight: 700;
+}
+
+/* A clear keyboard focus ring on everything clickable */
+.fc-scope .btn:focus-visible,
+.fc-scope .fc-tab:focus-visible {
+  outline: 3px solid var(--fc-primary-dark);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ----- the two big tabs ----- */
+.fc-scope .fc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  list-style: none;
+}
+.fc-scope .fc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.3rem;
+  border: 2px solid var(--fc-primary);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--fc-primary-dark);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.fc-scope .fc-tab:hover {
+  background: var(--fc-soft);
+}
+.fc-scope .fc-tab[aria-selected='true'] {
+  background: var(--fc-primary);
+  color: #fff;
+}
+
+/* ----- form fields ----- */
+.fc-scope .form-control,
+.fc-scope .form-select {
+  border-color: var(--fc-border);
+  border-radius: 9px;
+}
+.fc-scope .form-control:focus,
+.fc-scope .form-select:focus {
+  border-color: var(--fc-primary);
+  box-shadow: 0 0 0 0.25rem rgb(22 125 104 / 25%);
+}
+.fc-scope .form-control.is-invalid,
+.fc-scope .form-select.is-invalid {
+  border-color: #b42318;
+}
+.fc-scope .form-check-input:checked {
+  background-color: var(--fc-primary);
+  border-color: var(--fc-primary);
+}
+.fc-scope .form-check-input:focus {
+  border-color: var(--fc-primary);
+  box-shadow: 0 0 0 0.25rem rgb(22 125 104 / 25%);
+}
+.fc-scope .card,
+.fc-scope .item-row {
+  border-color: var(--fc-border);
+  border-radius: 13px;
+}
+.fc-scope .required-mark {
+  color: #b42318;
+  font-weight: 700;
+}

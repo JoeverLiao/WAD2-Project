@@ -174,11 +174,55 @@ describe('ReceiptReviewForm', () => {
       wrapper.unmount()
     })
 
-    it('saves an item with no price and no use-by date, marked as manual', async () => {
+    // Fill in everything that is required for a typed item.
+    async function fillRequired(row, name = 'Milk') {
+      await row.get('[data-testid="name"]').setValue(name)
+      await row.get('[data-testid="category"]').setValue('dairy')
+      await row.get('[data-testid="diet"]').setValue('vegetarian')
+      await row.get('[data-testid="expires"]').setValue('2026-11-20')
+    }
+
+    it('cannot be saved until every required field is filled in', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ReceiptReviewForm, { props: { manual: true } })
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(fetchMock).not.toHaveBeenCalled()
+      const text = wrapper.text()
+      for (const message of ['Enter the item name.', 'Choose a category', 'Choose a diet label.', 'Enter a use-by date']) expect(text).toContain(message)
+      expect(wrapper.get('[data-testid="problem-summary"]').text()).toContain('4 required fields')
+      expect(wrapper.get('[data-testid="required-legend"]').text()).toContain('required')
+      // Filling the fields in one by one removes the problems and allows saving.
+      fetchMock.mockImplementation(async () => jsonResponse(201, { saved: 1, added: 1, merged: 0 }))
+      await fillRequired(rows(wrapper)[0])
+      expect(wrapper.find('[data-testid="problem-summary"]').exists()).toBe(false)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
+
+    it('a receipt without a purchase date cannot be saved until the date is entered', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(201, { saved: 2, added: 2, merged: 0 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ReceiptReviewForm, { props: { parsed: { ...parsed(), purchasedAt: null } } })
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('Enter the purchase date.')
+      await wrapper.get('[data-testid="purchased-at"]').setValue('2026-10-12')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
+
+    it('saves an item with no price, marked as manual', async () => {
       const fetchMock = vi.fn(async () => jsonResponse(201, { saved: 1, added: 1, merged: 0 }))
       vi.stubGlobal('fetch', fetchMock)
       const wrapper = mount(ReceiptReviewForm, { props: { manual: true } })
-      await rows(wrapper)[0].get('[data-testid="name"]').setValue('Milk')
+      await fillRequired(rows(wrapper)[0])
       await wrapper.get('form').trigger('submit')
       await flushPromises()
 
@@ -187,7 +231,7 @@ describe('ReceiptReviewForm', () => {
       expect(body.items).toHaveLength(1)
       expect(body.items[0]).toMatchObject({ name: 'Milk', quantity: 1 })
       expect(body.items[0]).not.toHaveProperty('purchasePrice')
-      expect(body.items[0]).not.toHaveProperty('expiresAt')
+      expect(body.items[0]).toMatchObject({ category: 'dairy', dietType: 'vegetarian', expiresAt: '2026-11-20' })
       expect(body.items[0]).not.toHaveProperty('weightKg')
       expect(wrapper.get('[data-testid="saved-message"]').text()).toContain('Saved 1 item')
       wrapper.unmount()
@@ -274,7 +318,7 @@ describe('ReceiptReviewForm', () => {
       const fetchMock = vi.fn(async () => jsonResponse(201, { saved: 1, added: 1, merged: 0 }))
       vi.stubGlobal('fetch', fetchMock)
       const wrapper = mount(ReceiptReviewForm, { props: { manual: true } })
-      await rows(wrapper)[0].get('[data-testid="name"]').setValue('Chicken breast')
+      await fillRequired(rows(wrapper)[0], 'Chicken breast')
       await rows(wrapper)[0].get('[data-testid="quantity"]').setValue('')
       await rows(wrapper)[0].get('[data-testid="weight"]').setValue('0.5')
       await wrapper.get('form').trigger('submit')

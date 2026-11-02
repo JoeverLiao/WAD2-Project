@@ -93,7 +93,7 @@ const suggestDetails = async (req, res) => {
 // Saves the items the user reviewed (from a scanned receipt or typed in by hand) into THEIR
 // inventory. Everything is validated first; the writing itself is in services/inventoryService.js.
 const confirmItems = async (req, res) => {
-  const { items, errors } = validateInventoryItems(req.body?.items)
+  const { items, errors } = validateInventoryItems(req.body?.items, { requireComplete: true })
   if (errors.length) {
     return res.status(400).json({ error: 'Please fix the items marked in red and try again.', details: errors })
   }

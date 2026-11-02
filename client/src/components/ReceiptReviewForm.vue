@@ -79,6 +79,12 @@ const today = toIsoDay(new Date())
 const purchasedAt = ref(props.parsed?.purchasedAt ?? (props.manual ? today : ''))
 
 const submitted = ref(false)
+// How many required fields still need filling in, shown after a failed save so nothing is missed.
+const problemCount = computed(
+  () =>
+    (purchaseDateError.value ? 1 : 0) +
+    includedRows.value.reduce((n, row) => n + Object.keys(rowErrors.value[row.key] ?? {}).length, 0),
+)
 const touched = reactive({}) // { [rowKey]: { [field]: true } }
 const serverErrors = reactive({}) // { [rowKey]: { [field]: message } }
 const saving = ref(false)
@@ -93,7 +99,7 @@ const rowErrors = computed(() =>
     includedRows.value.map((row) => [row.key, validateRow(row, { purchasedAt: purchasedAt.value })]),
   ),
 )
-const purchaseDateError = computed(() => validatePurchaseDate(purchasedAt.value))
+const purchaseDateError = computed(() => validatePurchaseDate(purchasedAt.value, new Date(), { required: true }))
 const tooMany = computed(() => includedRows.value.length > MAX_ITEMS)
 const canSave = computed(() => includedRows.value.length > 0 && !saving.value && !tooMany.value)
 
@@ -260,7 +266,7 @@ const totalWarning = computed(() => {
             ({{ addedCount }} new).
           </span>
         </div>
-        <button type="button" class="btn btn-success" @click="emit('reset')">
+        <button type="button" class="btn fc-btn" @click="emit('reset')">
           {{ manual ? 'Add more items' : 'Scan another receipt' }}
         </button>
       </div>
@@ -278,6 +284,10 @@ const totalWarning = computed(() => {
           save, then press <strong>Save to inventory</strong>.
         </p>
 
+        <p class="small mb-2" data-testid="required-legend">
+          <span class="required-mark" aria-hidden="true">*</span> marks a required field. Only the price and the unit
+          are optional, and you need either a quantity or a weight.
+        </p>
         <div v-if="noItemsFound" class="alert alert-info" role="status" data-testid="no-items">
           We could not find any items on this receipt. You can add them yourself below.
         </div>
@@ -308,7 +318,7 @@ const totalWarning = computed(() => {
 
         <div class="row g-3 mb-3">
           <div class="col-12 col-md-4">
-            <label class="form-label fw-semibold" for="purchased-at">Purchase date</label>
+            <label class="form-label fw-semibold" for="purchased-at">Purchase date <span class="required-mark" aria-hidden="true">*</span></label>
             <input
               id="purchased-at"
               v-model="purchasedAt"
@@ -322,8 +332,8 @@ const totalWarning = computed(() => {
             <div v-if="parsed?.dateAmbiguous" class="form-text text-warning-emphasis">
               The receipt date could be read as day/month or month/day. Please check it.
             </div>
-            <div v-else-if="!purchasedAt" class="form-text">
-              {{ manual ? 'Optional.' : 'No date was found on the receipt (optional).' }}
+            <div v-else-if="!purchasedAt && !submitted" class="form-text">
+              {{ manual ? 'Required.' : 'No date was found on the receipt: please enter it.' }}
             </div>
           </div>
         </div>
@@ -374,7 +384,7 @@ const totalWarning = computed(() => {
           <fieldset :disabled="!row.include" class="border-0 p-0 m-0">
             <div class="row g-2">
               <div class="col-12 col-md-5">
-                <label class="form-label small mb-1" :for="`name-${row.key}`">Name</label>
+                <label class="form-label small mb-1" :for="`name-${row.key}`">Name <span class="required-mark" aria-hidden="true">*</span></label>
                 <input
                   :id="`name-${row.key}`"
                   v-model="row.name"
@@ -436,7 +446,7 @@ const totalWarning = computed(() => {
                 <div class="invalid-feedback">{{ errorFor(row, 'purchasePrice') }}</div>
               </div>
               <div class="col-6 col-md-4">
-                <label class="form-label small mb-1" :for="`zone-${row.key}`">Keep in</label>
+                <label class="form-label small mb-1" :for="`zone-${row.key}`">Keep in <span class="required-mark" aria-hidden="true">*</span></label>
                 <select
                   :id="`zone-${row.key}`"
                   v-model="row.storageZone"
@@ -452,7 +462,7 @@ const totalWarning = computed(() => {
                 <div class="invalid-feedback">{{ errorFor(row, 'storageZone') }}</div>
               </div>
               <div class="col-6 col-md-4">
-                <label class="form-label small mb-1" :for="`expires-${row.key}`">Use by (estimate, editable)</label>
+                <label class="form-label small mb-1" :for="`expires-${row.key}`">Use by (estimate, editable) <span class="required-mark" aria-hidden="true">*</span></label>
                 <input
                   :id="`expires-${row.key}`"
                   v-model="row.expiresAt"
@@ -466,19 +476,21 @@ const totalWarning = computed(() => {
                 <div class="invalid-feedback">{{ errorFor(row, 'expiresAt') }}</div>
               </div>
               <div class="col-6 col-md-4">
-                <label class="form-label small mb-1" :for="`category-${row.key}`">Category</label>
+                <label class="form-label small mb-1" :for="`category-${row.key}`">Category <span class="required-mark" aria-hidden="true">*</span></label>
                 <select
                   :id="`category-${row.key}`"
                   v-model="row.category"
                   class="form-select"
+                  :class="{ 'is-invalid': errorFor(row, 'category') }"
                   data-testid="category"
                   @change="onCategoryChange(row)"
                 >
-                  <option value="">Not set</option>
+                  <option value="">Choose a category…</option>
                   <option v-for="category in CATEGORIES" :key="category.value" :value="category.value">
                     {{ category.label }}
                   </option>
                 </select>
+                <div class="invalid-feedback">{{ errorFor(row, 'category') }}</div>
               </div>
               <div class="col-6 col-md-2">
                 <label class="form-label small mb-1" :for="`icon-${row.key}`">Icon</label>
@@ -498,16 +510,18 @@ const totalWarning = computed(() => {
                 </select>
               </div>
               <div class="col-6 col-md-3">
-                <label class="form-label small mb-1" :for="`diet-${row.key}`">Diet label</label>
+                <label class="form-label small mb-1" :for="`diet-${row.key}`">Diet label <span class="required-mark" aria-hidden="true">*</span></label>
                 <select
                   :id="`diet-${row.key}`"
                   v-model="row.dietType"
                   class="form-select"
+                  :class="{ 'is-invalid': errorFor(row, 'dietType') }"
                   data-testid="diet"
                 >
-                  <option value="">Not set</option>
+                  <option value="">Choose a diet label…</option>
                   <option v-for="diet in DIETS" :key="diet.value" :value="diet.value">{{ diet.icon }} {{ diet.label }}</option>
                 </select>
+                <div class="invalid-feedback">{{ errorFor(row, 'dietType') }}</div>
               </div>
               <div class="col-6 col-md-3">
                 <label class="form-label small mb-1" :for="`weight-${row.key}`">Weight (kg)</label>
@@ -539,13 +553,13 @@ const totalWarning = computed(() => {
         </datalist>
 
         <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-testid="add-row" @click="addRow">
+          <button type="button" class="btn fc-btn-outline btn-sm" data-testid="add-row" @click="addRow">
             + Add an item
           </button>
           <button
             v-if="manual"
             type="button"
-            class="btn btn-outline-primary btn-sm"
+            class="btn fc-btn-outline btn-sm"
             :disabled="suggesting"
             data-testid="suggest"
             @click="suggestDetails"
@@ -561,12 +575,20 @@ const totalWarning = computed(() => {
         <div v-if="tooMany" class="alert alert-danger py-2" role="alert">
           You can save at most {{ MAX_ITEMS }} items at a time. Untick or remove some.
         </div>
+        <div
+          v-if="submitted && problemCount && !savedCount"
+          class="alert alert-danger py-2"
+          role="alert"
+          data-testid="problem-summary"
+        >
+          Please fill in the {{ problemCount }} required {{ problemCount === 1 ? 'field' : 'fields' }} marked in red before saving.
+        </div>
         <div v-if="saveError" class="alert alert-danger py-2" role="alert" data-testid="save-error">
           {{ saveError }}
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-items-center">
-          <button type="submit" class="btn btn-success" :disabled="!canSave" data-testid="save">
+          <button type="submit" class="btn fc-btn" :disabled="!canSave" data-testid="save">
             <span v-if="saving" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
             {{ saving ? 'Saving…' : 'Save to inventory' }}
           </button>

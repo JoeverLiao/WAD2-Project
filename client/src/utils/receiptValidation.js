@@ -44,8 +44,8 @@ export function toIsoDay(date) {
  * Check a purchase date on its own (it applies to every item on the receipt).
  * @returns {string|null} an error message, or null when fine or empty
  */
-export function validatePurchaseDate(value, today = new Date()) {
-  if (isBlank(value)) return null
+export function validatePurchaseDate(value, today = new Date(), { required = false } = {}) {
+  if (isBlank(value)) return required ? 'Enter the purchase date.' : null
   const day = parseDay(value)
   if (!day) return 'Enter a valid purchase date.'
   if (day < `${EARLIEST_YEAR}-01-01`) return `Purchase date cannot be before ${EARLIEST_YEAR}.`
@@ -82,9 +82,16 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
   }
 
   if (!STORAGE_OPTIONS.includes(row.storage)) errors.storage = 'Choose fridge, freezer or pantry.'
-  if (!isBlank(row.storageZone) && !ZONE_VALUES.includes(row.storageZone)) errors.storageZone = 'Choose where the item is kept.'
-  if (!isBlank(row.dietType) && !DIET_VALUES.includes(row.dietType)) errors.dietType = 'Choose a diet label from the list.'
-  if (!isBlank(row.category) && !CATEGORY_VALUES.includes(row.category)) errors.category = 'Choose a category from the list.'
+  // Required: where it is kept, the category, the diet label and the use-by date (food only).
+  // Price, unit and (with a weight) quantity stay optional.
+  if (isBlank(row.storageZone)) errors.storageZone = 'Choose where the item is kept.'
+  else if (!ZONE_VALUES.includes(row.storageZone)) errors.storageZone = 'Choose where the item is kept.'
+  if (isBlank(row.category)) errors.category = 'Choose a category (or press "Suggest" to fill it in).'
+  else if (!CATEGORY_VALUES.includes(row.category)) errors.category = 'Choose a category from the list.'
+  const isFood = row.category !== 'non_food'
+  if (isBlank(row.dietType)) {
+    if (isFood) errors.dietType = 'Choose a diet label.'
+  } else if (!DIET_VALUES.includes(row.dietType)) errors.dietType = 'Choose a diet label from the list.'
 
   if (!isBlank(row.weightKg)) {
     const weight = toNumber(row.weightKg)
@@ -94,7 +101,9 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
     else if (!fitsDecimals(weight, 3)) errors.weightKg = 'Weight can have at most 3 decimal places.'
   }
 
-  if (!isBlank(row.expiresAt)) {
+  if (isBlank(row.expiresAt)) {
+    if (isFood) errors.expiresAt = 'Enter a use-by date (an estimate is fine).'
+  } else {
     const day = parseDay(row.expiresAt)
     const limit = new Date(today.getFullYear() + EXPIRY_YEARS_AHEAD, today.getMonth(), today.getDate())
     if (!day) errors.expiresAt = 'Enter a valid expiry date.'
