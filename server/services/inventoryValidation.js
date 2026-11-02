@@ -1,6 +1,8 @@
 // Checks the items a user confirmed on the review form, before anything is saved.
 // The browser also validates (so the user gets instant feedback), but the server never trusts it:
 // every rule here runs again on every request.
+import { ALL_ICONS, CATEGORY_IDS, ZONE_IDS, ZONES } from './storageGuide.js'
+
 export const STORAGE_OPTIONS = ['fridge', 'freezer', 'pantry']
 export const MAX_ITEMS = 100
 
@@ -9,6 +11,7 @@ const LIMITS = {
   unitMax: 20,
   quantityMax: 9999,
   priceMax: 100000,
+  weightMax: 1000,
   earliestYear: 2000,
   expiryYearsAhead: 10,
 }
@@ -52,7 +55,8 @@ function addDaysIso(today, days) {
  * @param {unknown} input the `items` array from the request body
  * @param {{ today?: Date }} [options]
  * @returns {{
- *   items: Array<{ name: string, quantity: number, unit?: string, storage: string,
+ *   items: Array<{ name: string, quantity?: number, weightKg?: number, unit?: string, storage: string,
+ *                  storageZone?: string, category?: string, icon?: string, suggestedLocation?: string,
  *                  purchasedAt?: Date, expiresAt?: Date, purchasePrice?: number }>,
  *   errors: Array<{ index: number|null, field: string|null, message: string }>
  * }}
@@ -86,9 +90,11 @@ export function validateInventoryItems(input, { today = new Date() } = {}) {
     else if (name.length > LIMITS.nameMax) fail('name', `Name must be ${LIMITS.nameMax} characters or fewer.`)
     else clean.name = name
 
-    // quantity
+    // quantity (optional when a weight is given: some things are bought by weight)
     const quantity = isBlank(raw.quantity) ? NaN : toNumber(raw.quantity)
-    if (Number.isNaN(quantity)) fail('quantity', 'Enter a quantity, for example 2.')
+    if (isBlank(raw.quantity) && !isBlank(raw.weightKg)) {
+      // weight only: fine
+    } else if (Number.isNaN(quantity)) fail('quantity', 'Enter a quantity (for example 2) or a weight.')
     else if (quantity <= 0) fail('quantity', 'Quantity must be more than 0.')
     else if (quantity > LIMITS.quantityMax) fail('quantity', `Quantity must be ${LIMITS.quantityMax} or less.`)
     else if (!fitsDecimals(quantity, 3)) fail('quantity', 'Quantity can have at most 3 decimal places.')
@@ -102,9 +108,41 @@ export function validateInventoryItems(input, { today = new Date() } = {}) {
       else clean.unit = unit
     }
 
-    // storage
-    if (!STORAGE_OPTIONS.includes(raw.storage)) fail('storage', 'Choose fridge, freezer or pantry.')
+    // weight in kg (optional)
+    if (!isBlank(raw.weightKg)) {
+      const weight = toNumber(raw.weightKg)
+      if (Number.isNaN(weight)) fail('weightKg', 'Enter the weight in kg, for example 0.5.')
+      else if (weight <= 0) fail('weightKg', 'Weight must be more than 0.')
+      else if (weight > LIMITS.weightMax) fail('weightKg', `Weight must be ${LIMITS.weightMax} kg or less.`)
+      else if (!fitsDecimals(weight, 3)) fail('weightKg', 'Weight can have at most 3 decimal places.')
+      else clean.weightKg = weight
+    }
+
+    // where it is kept: a place in the fridge/freezer/pantry (storageZone). `storage` follows from it.
+    if (!isBlank(raw.storageZone)) {
+      if (!ZONE_IDS.includes(raw.storageZone)) fail('storageZone', 'Choose where the item is kept.')
+      else clean.storageZone = raw.storageZone
+    }
+    if (clean.storageZone) {
+      if (!isBlank(raw.storage) && raw.storage !== ZONES[clean.storageZone].storage) {
+        fail('storageZone', 'That place does not match fridge, freezer or pantry.')
+      } else clean.storage = ZONES[clean.storageZone].storage
+    } else if (!STORAGE_OPTIONS.includes(raw.storage)) fail('storage', 'Choose where the item is kept.')
     else clean.storage = raw.storage
+
+    // smart details (optional here: the server fills in what is missing from its storage rules)
+    if (!isBlank(raw.category)) {
+      if (!CATEGORY_IDS.includes(raw.category)) fail('category', 'Choose a category from the list.')
+      else clean.category = raw.category
+    }
+    if (!isBlank(raw.icon)) {
+      if (!ALL_ICONS.includes(raw.icon)) fail('icon', 'Choose an icon from the list.')
+      else clean.icon = raw.icon
+    }
+    if (!isBlank(raw.suggestedLocation)) {
+      if (!ZONE_IDS.includes(raw.suggestedLocation)) fail('suggestedLocation', 'Suggested location is not valid.')
+      else clean.suggestedLocation = raw.suggestedLocation
+    }
 
     // dates (optional)
     let purchased = null

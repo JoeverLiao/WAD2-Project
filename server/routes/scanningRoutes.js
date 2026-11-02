@@ -8,6 +8,7 @@ const router = Router()
 
 router.post('/receipts', auth.authenticate, upload.receiptUpload, scanningController.scanReceipt)
 router.post('/products', scanningController.scanProduct)
+router.post('/suggest', auth.authenticate, scanningController.suggestDetails)
 router.post('/confirm', auth.authenticate, scanningController.confirmItems)
 
 export default router

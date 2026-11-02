@@ -68,7 +68,12 @@ test('saves valid items for the logged-in user', async (t) => {
   assert.deepEqual(first.update.$inc, { quantity: 2, purchasePrice: 6.4 })
   assert.equal(first.update.$setOnInsert.purchasedAt.toISOString(), '2026-10-12T12:00:00.000Z')
   assert.equal(ops[1].updateOne.update.$inc.quantity, 1) // "1" was turned into a number
-  assert.deepEqual(ops[1].updateOne.update.$setOnInsert, { storageZone: 'middle-shelf' })
+  assert.equal(ops[1].updateOne.update.$setOnInsert.purchasedAt, undefined)
+  // The Smart Fridge details are always filled in, even when the request had none.
+  assert.equal(first.update.$setOnInsert.category, 'dairy')
+  assert.equal(first.update.$setOnInsert.suggestedLocation, 'middle-shelf')
+  assert.equal(first.update.$setOnInsert.storageZone, 'middle-shelf')
+  assert.deepEqual(first.update.$setOnInsert.allowedLocations, ['middle-shelf', 'upper-shelf'])
 })
 
 test('an item already in stock has its quantity increased, not a second entry', async (t) => {
@@ -111,6 +116,43 @@ test('manual entry: no price needed, and common foods get their standard name', 
   const ops = bulk.mock.calls[0].arguments[0]
   assert.deepEqual(ops.map((o) => o.updateOne.filter.name), ['Milk', 'Grandma special sauce'])
   assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 1 }) // no price field at all
+})
+
+test('stores the smart details, and an item bought by weight needs no quantity', async (t) => {
+  const bulk = mockBulk(t)
+  const base = await startApp(t)
+  const response = await post(base, {
+    items: [
+      { name: 'Chicken Breast', weightKg: 0.5, unit: 'kg', storage: 'fridge', category: 'meat', icon: '🍗', suggestedLocation: 'lower-shelf', storageZone: 'lower-shelf', expiresAt: '2026-11-03' },
+    ],
+  })
+  assert.equal(response.status, 201)
+  const { update, filter } = bulk.mock.calls[0].arguments[0][0].updateOne
+  assert.deepEqual(update.$inc, { weightKg: 0.5 }) // no quantity at all
+  assert.equal(update.$setOnInsert.icon, '🍗')
+  assert.equal(update.$setOnInsert.suggestedLocation, 'lower-shelf')
+  assert.equal(filter.storage, 'fridge')
+})
+
+test('a suggested location that is not allowed for the category is replaced by the rules', async (t) => {
+  const bulk = mockBulk(t)
+  const base = await startApp(t)
+  await post(base, { items: [{ name: 'Milk', quantity: 1, storage: 'fridge', category: 'dairy', suggestedLocation: 'door' }] })
+  assert.equal(bulk.mock.calls[0].arguments[0][0].updateOne.update.$setOnInsert.suggestedLocation, 'middle-shelf')
+})
+
+test('a place that does not match fridge/freezer/pantry is rejected', async (t) => {
+  const base = await startApp(t)
+  const response = await post(base, { items: [{ name: 'Milk', quantity: 1, storage: 'pantry', storageZone: 'door' }] })
+  assert.equal(response.status, 400)
+  assert.deepEqual((await response.json()).details.map((d) => d.field), ['storageZone'])
+})
+
+test('an item needs a quantity or a weight', async (t) => {
+  const base = await startApp(t)
+  const response = await post(base, { items: [{ name: 'Milk', storage: 'fridge' }] })
+  assert.equal(response.status, 400)
+  assert.deepEqual((await response.json()).details.map((d) => d.field), ['quantity'])
 })
 
 test('the owner comes from the login, never from the request', async (t) => {

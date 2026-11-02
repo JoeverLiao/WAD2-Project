@@ -1,6 +1,8 @@
 // Rules for one row of the receipt review form. They are the same rules the server applies
 // (server/services/inventoryValidation.js), so the user sees problems before saving. The server
 // still checks everything again, because it cannot trust the browser.
+import { CATEGORY_VALUES, ZONE_VALUES } from './inventoryOptions.js'
+
 export const STORAGE_OPTIONS = ['fridge', 'freezer', 'pantry']
 export const UNIT_SUGGESTIONS = ['pieces', 'packet', 'bottle', 'can', 'loaf', 'g', 'kg', 'ml', 'L']
 export const MAX_ITEMS = 100
@@ -53,7 +55,8 @@ export function validatePurchaseDate(value, today = new Date()) {
 }
 
 /**
- * @param {{ name: string, quantity: string|number, unit: string, storage: string,
+ * @param {{ name: string, quantity: string|number, weightKg: string|number, unit: string, storage: string,
+ *           storageZone: string, category: string,
  *           expiresAt: string, purchasePrice: string|number }} row
  * @param {{ purchasedAt?: string, today?: Date }} [context]
  * @returns {Record<string, string>} field name -> message (empty object when the row is valid)
@@ -65,8 +68,11 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
   if (!name) errors.name = 'Enter the item name.'
   else if (name.length > 100) errors.name = 'Name must be 100 characters or fewer.'
 
+  // The quantity is optional when a weight is given (some things are bought by weight).
   const quantity = isBlank(row.quantity) ? NaN : toNumber(row.quantity)
-  if (Number.isNaN(quantity)) errors.quantity = 'Enter a quantity, for example 2.'
+  if (isBlank(row.quantity) && !isBlank(row.weightKg)) {
+    // weight only: fine
+  } else if (Number.isNaN(quantity)) errors.quantity = 'Enter a quantity (for example 2) or a weight.'
   else if (quantity <= 0) errors.quantity = 'Quantity must be more than 0.'
   else if (quantity > 9999) errors.quantity = 'Quantity must be 9999 or less.'
   else if (!fitsDecimals(quantity, 3)) errors.quantity = 'Quantity can have at most 3 decimal places.'
@@ -76,6 +82,16 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
   }
 
   if (!STORAGE_OPTIONS.includes(row.storage)) errors.storage = 'Choose fridge, freezer or pantry.'
+  if (!isBlank(row.storageZone) && !ZONE_VALUES.includes(row.storageZone)) errors.storageZone = 'Choose where the item is kept.'
+  if (!isBlank(row.category) && !CATEGORY_VALUES.includes(row.category)) errors.category = 'Choose a category from the list.'
+
+  if (!isBlank(row.weightKg)) {
+    const weight = toNumber(row.weightKg)
+    if (Number.isNaN(weight)) errors.weightKg = 'Enter the weight in kg, for example 0.5.'
+    else if (weight <= 0) errors.weightKg = 'Weight must be more than 0.'
+    else if (weight > 1000) errors.weightKg = 'Weight must be 1000 kg or less.'
+    else if (!fitsDecimals(weight, 3)) errors.weightKg = 'Weight can have at most 3 decimal places.'
+  }
 
   if (!isBlank(row.expiresAt)) {
     const day = parseDay(row.expiresAt)
@@ -103,9 +119,14 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
 export function toPayload(row, purchasedAt) {
   const payload = {
     name: String(row.name).replace(/\s+/g, ' ').trim(),
-    quantity: Number(row.quantity),
     storage: row.storage,
   }
+  if (!isBlank(row.quantity)) payload.quantity = Number(row.quantity)
+  if (!isBlank(row.weightKg)) payload.weightKg = Number(row.weightKg)
+  if (!isBlank(row.storageZone)) payload.storageZone = row.storageZone
+  if (!isBlank(row.category)) payload.category = row.category
+  if (!isBlank(row.icon)) payload.icon = row.icon
+  if (!isBlank(row.suggestedLocation)) payload.suggestedLocation = row.suggestedLocation
   if (!isBlank(row.unit)) payload.unit = String(row.unit).trim()
   if (!isBlank(purchasedAt)) payload.purchasedAt = String(purchasedAt).trim()
   if (!isBlank(row.expiresAt)) payload.expiresAt = String(row.expiresAt).trim()

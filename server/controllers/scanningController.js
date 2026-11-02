@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { addItemsToInventory } from '../services/inventoryService.js'
+import { enrichItems } from '../services/itemEnrichment.js'
 import { validateInventoryItems } from '../services/inventoryValidation.js'
 import { parseReceiptText } from '../services/receiptParser.js'
 import { notImplemented } from './notImplemented.js'
@@ -33,6 +34,24 @@ const scanReceipt = async (req, res) => {
       console.error('Receipt parsing failed:', error)
     }
 
+    // Add category, icon, suggested location and estimated use-by date / weight to each item.
+    // This never blocks the scan: without the AI the fixed storage rules still fill everything in.
+    if (parsed?.items?.length) {
+      try {
+        const { items: details } = await enrichItems(
+          parsed.items.map((item) => ({ ...item, purchasedAt: parsed.purchasedAt ?? undefined, expiresAt: undefined })),
+        )
+        parsed.items = parsed.items.map((item, i) => {
+          const d = details[i]
+          const warnings = [...item.warnings]
+          if (d.expiresAt && d.expiresEstimated) warnings.push('Use-by date and weight are estimates: please check them')
+          return { ...item, ...d, warnings }
+        })
+      } catch (error) {
+        console.error('Adding item details failed:', error)
+      }
+    }
+
     return res.json({ rawText, lines, confidence, lowConfidence, parsed })
   } catch (error) {
     if (error instanceof ReceiptImageError) {
@@ -46,6 +65,27 @@ const scanReceipt = async (req, res) => {
     }
     console.error('Receipt OCR failed:', error)
     return res.status(500).json({ error: 'Failed to process the receipt. Please try again.' })
+  }
+}
+
+// Suggests details (category, icon, location, use-by estimate, weight) for items typed in by hand.
+const suggestDetails = async (req, res) => {
+  const input = req.body?.items
+  if (!Array.isArray(input) || input.length === 0 || input.length > 100) {
+    return res.status(400).json({ error: 'Send between 1 and 100 items.' })
+  }
+  const items = input.map((raw) => ({
+    name: typeof raw?.name === 'string' ? raw.name.replace(/\s+/g, ' ').trim().slice(0, 100) : '',
+    quantity: Number(raw?.quantity) > 0 ? Number(raw.quantity) : null,
+    unit: typeof raw?.unit === 'string' ? raw.unit.trim().slice(0, 20) : null,
+    purchasedAt: typeof raw?.purchasedAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.purchasedAt) ? raw.purchasedAt : undefined,
+  }))
+  try {
+    const { items: details, aiUsed } = await enrichItems(items)
+    return res.json({ aiUsed, items: details })
+  } catch (error) {
+    console.error('Suggesting item details failed:', error)
+    return res.status(500).json({ error: 'Could not suggest details. You can fill them in yourself.' })
   }
 }
 
@@ -81,5 +121,6 @@ const scanProduct = notImplemented('Product scanning')
 export default {
   scanReceipt,
   scanProduct,
+  suggestDetails,
   confirmItems
 };

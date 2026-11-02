@@ -2,10 +2,10 @@
 // Shows what the parser found on the receipt and lets the user fix it before it is saved.
 // Nothing is saved until the user presses "Save to inventory", and every row is checked first.
 import { computed, nextTick, reactive, ref } from 'vue'
-import { confirmReceiptItems } from '../services/scanningApi.js'
+import { confirmReceiptItems, suggestItemDetails } from '../services/scanningApi.js'
+import { CATEGORIES, ZONES, categoryByValue, zoneByValue } from '../utils/inventoryOptions.js'
 import {
   MAX_ITEMS,
-  STORAGE_OPTIONS,
   UNIT_SUGGESTIONS,
   toIsoDay,
   toPayload,
@@ -30,6 +30,13 @@ function newRow(values = {}) {
     quantity: 1,
     unit: 'pieces',
     storage: 'pantry',
+    storageZone: 'dry-storage',
+    category: '',
+    icon: '',
+    suggestedLocation: '',
+    allowedLocations: [],
+    locationReason: '',
+    weightKg: '',
     expiresAt: '',
     purchasePrice: '',
     warnings: [],
@@ -45,7 +52,14 @@ function initialRows(parsed) {
     newRow({
       include: item.include !== false,
       name: item.name ?? '',
-      quantity: item.quantity ?? 1,
+      quantity: item.quantity ?? '',
+      weightKg: item.weightKg ?? '',
+      category: item.category ?? '',
+      icon: item.icon ?? '',
+      suggestedLocation: item.suggestedLocation ?? '',
+      allowedLocations: item.allowedLocations ?? [],
+      locationReason: item.locationReason ?? '',
+      storageZone: item.storageZone ?? item.suggestedLocation ?? 'dry-storage',
       unit: item.unit ?? 'pieces',
       storage: item.storage ?? 'pantry',
       expiresAt: item.expiresAt ?? '',
@@ -93,6 +107,65 @@ function touch(row, field) {
 
 function edited(row, field) {
   if (serverErrors[row.key]) delete serverErrors[row.key][field]
+}
+
+function onZoneChange(row) {
+  const zone = zoneByValue(row.storageZone)
+  if (zone) row.storage = zone.storage
+  edited(row, 'storageZone')
+}
+
+function onCategoryChange(row) {
+  const category = categoryByValue(row.category)
+  if (category && !category.icons.includes(row.icon)) row.icon = category.icons[0]
+  edited(row, 'category')
+}
+
+const iconsFor = (row) => categoryByValue(row.category)?.icons ?? []
+const isOffSuggestion = (row) =>
+  Boolean(row.suggestedLocation) && row.allowedLocations.length > 0 && !row.allowedLocations.includes(row.storageZone)
+
+// Manual entry: ask the server to suggest the details for rows that have a name but no category yet.
+const suggesting = ref(false)
+const suggestMessage = ref('')
+async function suggestDetails() {
+  const targets = rows.value.filter((row) => row.name.trim() && !row.category)
+  if (!targets.length) {
+    suggestMessage.value = 'Type an item name first (rows that already have details are left alone).'
+    return
+  }
+  suggesting.value = true
+  suggestMessage.value = ''
+  try {
+    const { items, aiUsed } = await suggestItemDetails(
+      targets.map((row) => ({
+        name: row.name.trim(),
+        quantity: Number(row.quantity) > 0 ? Number(row.quantity) : undefined,
+        unit: row.unit || undefined,
+        purchasedAt: purchasedAt.value || undefined,
+      })),
+    )
+    targets.forEach((row, i) => {
+      const d = items[i]
+      if (!d) return
+      row.category = d.category
+      row.icon = d.icon
+      row.suggestedLocation = d.suggestedLocation
+      row.allowedLocations = d.allowedLocations
+      row.locationReason = d.locationReason
+      row.storageZone = d.suggestedLocation
+      row.storage = d.storage
+      if (!row.expiresAt && d.expiresAt) row.expiresAt = d.expiresAt
+      if (row.weightKg === '' && d.weightKg) row.weightKg = d.weightKg
+    })
+    suggestMessage.value = aiUsed
+      ? 'Details suggested. Please check them: the use-by date and weight are estimates.'
+      : 'Details suggested from our storage rules. Please check them: the use-by date and weight are estimates.'
+  } catch (error) {
+    suggestMessage.value = error.message
+  } finally {
+    suggesting.value = false
+  }
 }
 
 function addRow() {
@@ -274,7 +347,7 @@ const totalWarning = computed(() => {
                 <div class="invalid-feedback">{{ errorFor(row, 'name') }}</div>
               </div>
               <div class="col-4 col-md-2">
-                <label class="form-label small mb-1" :for="`qty-${row.key}`">Quantity</label>
+                <label class="form-label small mb-1" :for="`qty-${row.key}`">Quantity (optional)</label>
                 <input
                   :id="`qty-${row.key}`"
                   v-model="row.quantity"
@@ -320,21 +393,23 @@ const totalWarning = computed(() => {
                 <div class="invalid-feedback">{{ errorFor(row, 'purchasePrice') }}</div>
               </div>
               <div class="col-6 col-md-4">
-                <label class="form-label small mb-1" :for="`storage-${row.key}`">Keep in</label>
+                <label class="form-label small mb-1" :for="`zone-${row.key}`">Keep in</label>
                 <select
-                  :id="`storage-${row.key}`"
-                  v-model="row.storage"
+                  :id="`zone-${row.key}`"
+                  v-model="row.storageZone"
                   class="form-select"
-                  :class="{ 'is-invalid': errorFor(row, 'storage') }"
-                  data-testid="storage"
-                  @change="edited(row, 'storage')"
+                  :class="{ 'is-invalid': errorFor(row, 'storageZone') }"
+                  data-testid="zone"
+                  @change="onZoneChange(row)"
                 >
-                  <option v-for="option in STORAGE_OPTIONS" :key="option" :value="option">{{ option }}</option>
+                  <option v-for="zone in ZONES" :key="zone.value" :value="zone.value">
+                    {{ zone.icon }} {{ zone.label }}
+                  </option>
                 </select>
-                <div class="invalid-feedback">{{ errorFor(row, 'storage') }}</div>
+                <div class="invalid-feedback">{{ errorFor(row, 'storageZone') }}</div>
               </div>
               <div class="col-6 col-md-4">
-                <label class="form-label small mb-1" :for="`expires-${row.key}`">Use by</label>
+                <label class="form-label small mb-1" :for="`expires-${row.key}`">Use by (estimate, editable)</label>
                 <input
                   :id="`expires-${row.key}`"
                   v-model="row.expiresAt"
@@ -347,6 +422,55 @@ const totalWarning = computed(() => {
                 />
                 <div class="invalid-feedback">{{ errorFor(row, 'expiresAt') }}</div>
               </div>
+              <div class="col-6 col-md-4">
+                <label class="form-label small mb-1" :for="`category-${row.key}`">Category</label>
+                <select
+                  :id="`category-${row.key}`"
+                  v-model="row.category"
+                  class="form-select"
+                  data-testid="category"
+                  @change="onCategoryChange(row)"
+                >
+                  <option value="">Not set</option>
+                  <option v-for="category in CATEGORIES" :key="category.value" :value="category.value">
+                    {{ category.label }}
+                  </option>
+                </select>
+              </div>
+              <div class="col-6 col-md-2">
+                <label class="form-label small mb-1" :for="`icon-${row.key}`">Icon</label>
+                <select
+                  :id="`icon-${row.key}`"
+                  v-model="row.icon"
+                  class="form-select"
+                  :disabled="!iconsFor(row).length"
+                  data-testid="icon"
+                >
+                  <option v-if="!iconsFor(row).length" value="">–</option>
+                  <option v-for="icon in iconsFor(row)" :key="icon" :value="icon">{{ icon }}</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label small mb-1" :for="`weight-${row.key}`">Weight (kg)</label>
+                <input
+                  :id="`weight-${row.key}`"
+                  v-model="row.weightKg"
+                  type="text"
+                  inputmode="decimal"
+                  class="form-control"
+                  :class="{ 'is-invalid': errorFor(row, 'weightKg') }"
+                  data-testid="weight"
+                  @blur="touch(row, 'weightKg')"
+                  @input="edited(row, 'weightKg')"
+                />
+                <div class="invalid-feedback">{{ errorFor(row, 'weightKg') }}</div>
+              </div>
+              <div v-if="row.suggestedLocation" class="col-12">
+                <p class="small mb-0" :class="isOffSuggestion(row) ? 'text-warning-emphasis' : 'text-body-secondary'" data-testid="location-hint">
+                  Suggested place: <strong>{{ zoneByValue(row.suggestedLocation)?.label }}</strong>.
+                  {{ row.locationReason }}
+                </p>
+              </div>
             </div>
           </fieldset>
         </div>
@@ -355,9 +479,25 @@ const totalWarning = computed(() => {
           <option v-for="unit in UNIT_SUGGESTIONS" :key="unit" :value="unit" />
         </datalist>
 
-        <button type="button" class="btn btn-outline-secondary btn-sm mb-3" data-testid="add-row" @click="addRow">
-          + Add an item
-        </button>
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-testid="add-row" @click="addRow">
+            + Add an item
+          </button>
+          <button
+            v-if="manual"
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            :disabled="suggesting"
+            data-testid="suggest"
+            @click="suggestDetails"
+          >
+            <span v-if="suggesting" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+            ✨ Suggest category, place, use-by date and weight
+          </button>
+          <span v-if="suggestMessage" class="small text-body-secondary" role="status" data-testid="suggest-message">
+            {{ suggestMessage }}
+          </span>
+        </div>
 
         <div v-if="tooMany" class="alert alert-danger py-2" role="alert">
           You can save at most {{ MAX_ITEMS }} items at a time. Untick or remove some.

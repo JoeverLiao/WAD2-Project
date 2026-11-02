@@ -35,6 +35,34 @@ export async function uploadReceipt(file) {
 }
 
 /**
+ * Ask the server to suggest category, icon, place, use-by date and weight for items typed by hand.
+ * @param {Array<{ name: string, quantity?: number, unit?: string, purchasedAt?: string }>} items
+ * @returns {Promise<{ aiUsed: boolean, items: object[] }>} same order as the input
+ */
+export async function suggestItemDetails(items) {
+  let response
+  try {
+    response = await fetch('/api/scanning/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    })
+  } catch {
+    throw new Error('Could not reach the server. Please check your connection.')
+  }
+  if (response.status === 401) throw new Error('Please log in again.')
+  const text = await response.text()
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error(`Server returned ${response.status}: ${text || '(empty response)'}`)
+  }
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
+  return data
+}
+
+/**
  * Save the reviewed items to the user's inventory.
  * On a 400 the thrown error has `.details`: [{ index, field, message }] telling which
  * item and field the server rejected, so the form can mark them.
