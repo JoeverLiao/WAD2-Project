@@ -96,9 +96,6 @@ async function interact(index) {
 @media(max-width:767.98px) {
   .vegetable-companions { padding:0; }
   .companion-3 {
-    position:fixed;
-    right:max(8px, env(safe-area-inset-right));
-    bottom:max(8px, env(safe-area-inset-bottom));
     width:clamp(80px, 23vw, 120px);
     z-index:15;
   }
