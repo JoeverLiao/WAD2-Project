@@ -709,11 +709,7 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <div class="hero-decoration" aria-hidden="true">
-        <span class="decoration-circle circle-one"></span>
-        <span class="decoration-circle circle-two"></span>
-        <span class="decoration-spark">✳</span>
-      </div>
+      <span class="hero-doodle" aria-hidden="true"><FoodIcon kind="leafy" /></span>
     </header>
 
     <!-- SUMMARY CARDS -->
