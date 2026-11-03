@@ -23,6 +23,9 @@ let dragged = false
 const held = ref(false)
 const dragTilt = ref(0)
 let swingFrame
+let tossFrame
+const tossing = ref(false)
+const tossLeft = ref(false)
 function swingEgg(now) {
   if (!gesture || !held.value) return
   const dt = Math.min(.025, (now - (gesture.frameTime ?? now)) / 1000)
@@ -37,10 +40,43 @@ function swingEgg(now) {
   dragTilt.value = gesture.angle * 180 / Math.PI
   swingFrame = requestAnimationFrame(swingEgg)
 }
-onBeforeUnmount(() => cancelAnimationFrame(swingFrame))
+onBeforeUnmount(() => {
+  cancelAnimationFrame(swingFrame)
+  cancelAnimationFrame(tossFrame)
+})
+
+function tossEgg(button, vx, vy) {
+  tossLeft.value = vx < 0
+  const bounds = button.getBoundingClientRect()
+  const minX = layout.value.x + 8 - bounds.left
+  const maxX = Math.max(minX, layout.value.x + window.innerWidth - 8 - bounds.right)
+  const minY = layout.value.y + 8 - bounds.top
+  const maxY = Math.max(minY, layout.value.y + window.innerHeight - 8 - bounds.bottom)
+  let last = performance.now()
+  tossing.value = true
+  function coast(now) {
+    const dt = Math.min(32, now - last)
+    last = now
+    const x = layout.value.x + vx * dt
+    const y = layout.value.y + vy * dt
+    layout.value.x = Math.max(minX, Math.min(maxX, x))
+    layout.value.y = Math.max(minY, Math.min(maxY, y))
+    const friction = Math.exp(-dt / 360)
+    vx = x !== layout.value.x ? 0 : vx * friction
+    vy *= friction * (y !== layout.value.y ? -.12 : 1)
+    if (Math.hypot(vx, vy) > .04) tossFrame = requestAnimationFrame(coast)
+    else {
+      tossing.value = false
+      keepEggOnScreen()
+      saveLayout()
+    }
+  }
+  tossFrame = requestAnimationFrame(coast)
+}
 const facingLeftSide = ref(false)
 const eggButton = ref(null)
 function updateFacing() {
+  if (held.value || tossing.value) return
   const bounds = eggButton.value?.[0]?.getBoundingClientRect()
   if (bounds) facingLeftSide.value = bounds.left + bounds.width / 2 < window.innerWidth / 2
 }
@@ -67,9 +103,11 @@ onMounted(() => {
   window.addEventListener('resize', keepEggOnScreen)
 })
 onBeforeUnmount(() => window.removeEventListener('resize', keepEggOnScreen))
-watch(layout, updateFacing, { deep: true, flush: 'post' })
+watch([layout, held, tossing], updateFacing, { deep: true, flush: 'post' })
 function grabEgg(event) {
   if (event.button !== 0) return
+  cancelAnimationFrame(tossFrame)
+  tossing.value = false
   dragged = false
   gesture = { id: event.pointerId, x: event.clientX, y: event.clientY,
     lastX: event.clientX, lastY: event.clientY, lastTime: event.timeStamp,
@@ -106,16 +144,30 @@ function moveEgg(event) {
 }
 function releaseEgg(event) {
   if (gesture?.id !== event.pointerId) return
+  const { vx, vy, lastTime } = gesture
   gesture = null
   held.value = false
   cancelAnimationFrame(swingFrame)
   swingFrame = undefined
   dragTilt.value = 0
-  if (dragged) { keepEggOnScreen(); saveLayout() }
+  if (!dragged) return
+  keepEggOnScreen()
+  saveLayout()
+  const speed = Math.hypot(vx, vy)
+  if (event.type === 'pointerup' && event.timeStamp - lastTime < 100 && speed > .25 &&
+      !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    const limit = Math.min(2, 6 / speed)
+    nextTick(() => {
+      const button = eggButton.value?.[0]
+      if (button && !gesture && !hidden.value) tossEgg(button, vx * limit, vy * limit)
+    })
+  }
 }
 let resizeGesture
 function startResize(event) {
   if (event.button !== 0) return
+  cancelAnimationFrame(tossFrame)
+  tossing.value = false
   event.currentTarget.setPointerCapture(event.pointerId)
   const width = eggButton.value[0].getBoundingClientRect().width
   resizeGesture = { id: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, width, ...layout.value }
@@ -170,7 +222,7 @@ watch(() => mood.value.expression, () => {
 let chatterTimer
 onMounted(() => {
   chatterTimer = setInterval(() => {
-    if (document.hidden || hidden.value || gesture || resizeGesture || message.value) return
+    if (document.hidden || hidden.value || gesture || resizeGesture || tossing.value || message.value) return
     const bounds = eggButton.value?.[0]?.getBoundingClientRect()
     if (bounds && bounds.bottom > 0 && bounds.top < window.innerHeight) speak(0)
   }, 30000)
@@ -212,14 +264,15 @@ async function speak(index) {
         :aria-label="`Talk to ${character.name}, feeling ${mood.expression}`"
         @pointerdown="grabEgg" @pointermove="moveEgg" @pointerup="releaseEgg" @pointercancel="releaseEgg" @lostpointercapture="releaseEgg"
         @click="interact(index)" @animationend.self="reacting[index] = false">
-        <span class="vegetable-sprite" aria-hidden="true">
+        <span class="vegetable-sprite" :class="{ 'is-tossing': tossing }" aria-hidden="true">
           <img v-show="held" class="egg-picked-up" :style="{ '--drag-tilt': (facingLeftSide ? -dragTilt : dragTilt) + 'deg' }"
             src="/images/analytics/egg-picked-up.png" alt="" draggable="false">
+          <img v-show="tossing" class="egg-tossed" :class="{ 'toss-left': tossLeft }" src="/images/analytics/egg-tossed.png" alt="" draggable="false">
           <span
             v-for="(expression, column) in expressions"
             :key="expression"
             class="expression-frame"
-            :class="{ 'is-current': mood.expression === expression && !held }"
+            :class="{ 'is-current': mood.expression === expression && !held && !tossing }"
             :style="{ backgroundPosition: `${column * 100 / 3}% ${character.row * 100 / 3}%` }"
           ></span>
         </span>
@@ -273,6 +326,11 @@ async function speak(index) {
   pointer-events:none;
 }
 .egg-picked-up { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; object-position:top center; scale:-1 1; pointer-events:none; }
+.egg-tossed { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.egg-tossed.toss-left { scale:-1 1; }
+.vegetable-button.mirrored .vegetable-sprite.is-tossing { scale:1 1; transition:none; }
+.vegetable-sprite.is-tossing { animation:none; }
+.vegetable-sprite.is-tossing .expression-frame { transition:none; }
 @media (prefers-reduced-motion: no-preference) {
   .egg-picked-up {
     transform-origin:50% 10%;
