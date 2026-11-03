@@ -2,8 +2,22 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import FoodIcon from '../FoodIcon.vue'
 
-// One food item contains several people/request conversations.
-// The whole structure is local demo data; there are no props or emits.
+// Modal
+const props = defineProps({
+  activeSection: {
+    type: String,
+    default: null,
+  },
+})
+
+const emit = defineEmits(['close'])
+
+function close() {
+  reply.value = ''
+  emit('close')
+}
+
+// Local demo data
 const itemGroups = ref([
   {
     id: 1,
@@ -193,6 +207,7 @@ const itemGroups = ref([
   },
 ])
 
+// Conversation state
 const activeTab = ref('received')
 const search = ref('')
 const expandedIds = ref([1])
@@ -209,8 +224,6 @@ const visibleGroups = computed(() => {
     .filter(group => group.direction === activeTab.value)
     .map(group => ({
       ...group,
-      // Searching a food name shows everyone requesting it;
-      // searching a person shows that person.
       requests: group.food.toLowerCase().includes(query)
         ? group.requests
         : group.requests.filter(request =>
@@ -220,16 +233,18 @@ const visibleGroups = computed(() => {
     .filter(group => group.requests.length)
 })
 
-const selectedGroup = computed(() =>
-  visibleGroups.value.find(
-    group => group.id === selectedGroupId.value,
-  ) || visibleGroups.value[0],
+const selectedGroup = computed(
+  () =>
+    visibleGroups.value.find(
+      group => group.id === selectedGroupId.value,
+    ) || visibleGroups.value[0],
 )
 
-const selectedRequest = computed(() =>
-  selectedGroup.value?.requests.find(
-    request => request.id === selectedRequestId.value,
-  ) || selectedGroup.value?.requests[0],
+const selectedRequest = computed(
+  () =>
+    selectedGroup.value?.requests.find(
+      request => request.id === selectedRequestId.value,
+    ) || selectedGroup.value?.requests[0],
 )
 
 function countRequests(direction) {
@@ -238,26 +253,29 @@ function countRequests(direction) {
     .reduce((total, group) => total + group.requests.length, 0)
 }
 
-function pendingCount(group) {
-  return group.requests.filter(
+function groupSummary(group) {
+  const total = group.requests.length
+  const pending = group.requests.filter(
     request => request.status === 'pending',
   ).length
-}
 
-function groupSummary(group) {
-  const pending = pendingCount(group)
+  const count = `${total} ${total === 1 ? 'request' : 'requests'}`
 
-  return `${group.requests.length} ${
-    group.requests.length === 1 ? 'request' : 'requests'
-  } · ${
-    pending
-      ? `${pending} ${
-          activeTab.value === 'received'
-            ? 'need a reply'
-            : 'awaiting reply'
-        }`
-      : 'Pickup confirmed'
-  }`
+  if (pending) {
+    return `${count} · ${pending} ${
+      activeTab.value === 'received'
+        ? 'awaiting your reply'
+        : 'awaiting reply'
+    }`
+  }
+
+  const confirmed = group.requests.filter(
+    request => request.status === 'accepted',
+  ).length
+
+  return confirmed
+    ? `${count} · ${confirmed} confirmed`
+    : `${count} · No pending requests`
 }
 
 function switchTab(value) {
@@ -266,7 +284,7 @@ function switchTab(value) {
   reply.value = ''
 
   const first = itemGroups.value.find(
-    group => group.direction === value,
+    group => group.direction === value && group.requests.length,
   )
 
   selectedGroupId.value = first?.id
@@ -293,11 +311,18 @@ function selectRequest(group, request) {
 
 watch(
   () => selectedRequest.value?.id,
-  () => {
+  async () => {
     reply.value = ''
+
+    await nextTick()
+
+    if (messageList.value) {
+      messageList.value.scrollTop = messageList.value.scrollHeight
+    }
   },
 )
 
+// Request status
 const statusLabel = computed(() => {
   const request = selectedRequest.value
 
@@ -314,17 +339,20 @@ function updateStatus(status) {
   if (!selectedRequest.value) return
 
   selectedRequest.value.status = status
-  selectedRequest.value.preview =
-    status === 'accepted'
-      ? 'Pickup confirmed'
-      : status === 'declined'
-        ? 'Request declined'
-        : 'Request cancelled'
 
-  // Demo only: persist request/listing status and resolve
-  // competing requests via your API later.
+  const labels = {
+    accepted: 'Pickup confirmed',
+    declined: 'Request declined',
+    cancelled: 'Request cancelled',
+  }
+
+  selectedRequest.value.preview = labels[status] || status
+
+  // Demo only. Connect status updates and competing
+  // request handling to your backend later.
 }
 
+// Messages
 async function suggestTime() {
   reply.value = 'Would another pickup time work for you?'
 
@@ -357,294 +385,344 @@ async function sendMessage() {
     messageList.value.scrollTop = messageList.value.scrollHeight
   }
 }
+
+watch(
+    () => props.activeSection,
+    section => {
+      if (section === 'received' || section === 'sent') {
+        switchTab(section)
+      }
+    },
+    { immediate: true },
+  )
 </script>
 
 <template>
-  <section
-    id="sharing-corner"
-    class="sharing-corner container py-4"
-    aria-labelledby="sharing-corner-title"
-  >
-    <header class="section-heading">
-      <h2 id="sharing-corner-title">Your sharing corner</h2>
-      <p class="muted">Messages, requests and pickup plans.</p>
-    </header>
-
-    <div class="sharing-inbox">
-      <!-- Conversation sidebar -->
-      <aside class="conversation-sidebar">
-        <h3>Your conversations</h3>
-
-        <div class="conversation-filters">
-          <button
-            v-for="tab in ['received', 'sent']"
-            :key="tab"
-            type="button"
-            class="filter-button"
-            :class="{ active: activeTab === tab }"
-            :aria-pressed="activeTab === tab"
-            @click="switchTab(tab)"
-          >
-            {{ tab === 'received' ? 'Received' : 'Sent' }} ·
-            {{ countRequests(tab) }}
-          </button>
+  <div
+    v-if="activeSection === 'received' || activeSection === 'sent'"
+    class="sharing-overlay"
+    @click.self="close"
+    @keydown.esc.stop="close"
+  > 
+    <div
+      class="sharing-modal sharing-corner"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sharing-corner-title"
+    >
+      <div class="section-heading">
+        <div>
+          <h2 id="sharing-corner-title">Your sharing corner</h2>
+          <p class="muted">Messages, requests and pickup plans.</p>
         </div>
 
-        <label class="conversation-search">
-          <span class="visually-hidden">
-            Find food or a neighbour
-          </span>
-
-          <input
-            v-model="search"
-            type="search"
-            placeholder="Find food or a neighbour…"
-          />
-        </label>
-
-        <div class="item-groups" aria-label="Requests grouped by food">
-          <div
-            v-for="group in visibleGroups"
-            :key="group.id"
-            class="item-group"
-          >
-            <button
-              type="button"
-              class="group-heading"
-              :class="{ selected: selectedGroup?.id === group.id }"
-              :aria-expanded="
-                expandedIds.includes(group.id) || !!search.trim()
-              "
-              :aria-controls="`food-group-${group.id}`"
-              @click="toggleGroup(group)"
-            >
-              <img
-                v-if="group.image"
-                :src="group.image"
-                alt=""
-                class="group-image"
-              />
-
-              <span
-                v-else
-                class="group-image placeholder"
-                aria-hidden="true"
-              >
-                <FoodIcon :food="group.food" />
-              </span>
-
-              <span class="group-copy">
-                <strong>{{ group.food }}</strong>
-                <small>{{ groupSummary(group) }}</small>
-              </span>
-
-              <span class="group-chevron" aria-hidden="true">
-                {{
-                  expandedIds.includes(group.id) || search.trim()
-                    ? '⌄'
-                    : '›'
-                }}
-              </span>
-            </button>
-
-            <div
-              v-show="expandedIds.includes(group.id) || search.trim()"
-              :id="`food-group-${group.id}`"
-              class="group-requests"
-            >
-              <button
-                v-for="request in group.requests"
-                :key="request.id"
-                type="button"
-                class="request-person"
-                :class="{
-                  selected: selectedRequest?.id === request.id,
-                }"
-                :aria-pressed="selectedRequest?.id === request.id"
-                @click="selectRequest(group, request)"
-              >
-                <strong>{{ request.person }}</strong>
-                <small>{{ request.preview }}</small>
-              </button>
-            </div>
-          </div>
-
-          <p
-            v-if="!visibleGroups.length"
-            class="muted sidebar-empty"
-          >
-            No matching conversations.
-          </p>
-        </div>
-      </aside>
-
-      <!-- Selected conversation -->
-      <div
-        v-if="selectedGroup && selectedRequest"
-        class="conversation-content"
-      >
-        <header class="person-heading">
-          <span class="person-avatar" aria-hidden="true">
-            {{ selectedRequest.person.charAt(0) }}
-          </span>
-
-          <div>
-            <h3>{{ selectedRequest.person }}</h3>
-
-            <p class="muted">
-              {{ selectedGroup.food }} /
-              {{
-                activeTab === 'received'
-                  ? `${selectedRequest.person.split(' ')[0]}’s request`
-                  : 'Your request'
-              }}
-            </p>
-          </div>
-        </header>
-
-        <!-- Listing details -->
-        <div class="listing-summary">
-          <img
-            v-if="selectedGroup.image"
-            :src="selectedGroup.image"
-            :alt="selectedGroup.food"
-          />
-
-          <span
-            v-else
-            class="listing-placeholder"
-            aria-hidden="true"
-          >
-            <FoodIcon :food="selectedGroup.food" />
-          </span>
-
-          <div>
-            <h4>
-              {{ selectedGroup.food }} · {{ selectedGroup.quantity }}
-            </h4>
-
-            <p class="muted">
-              {{ activeTab === 'received' ? 'Your' : 'Owner’s' }}
-              pickup window:
-              {{ selectedGroup.preferredPickup }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Message history -->
-        <div
-          ref="messageList"
-          class="message-list"
-          aria-label="Conversation messages"
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="Close sharing corner"
+          @click="close"
         >
-          <div
-            v-for="message in selectedRequest.messages"
-            :key="message.id"
-            class="message-bubble"
-            :class="{ own: message.own }"
-          >
-            <p>{{ message.text }}</p>
-            <small>{{ message.author }} · {{ message.time }}</small>
-          </div>
-        </div>
+          ×
+        </button>
+      </div>
 
-        <!-- Pickup proposal -->
-        <div class="pickup-proposal">
-          <div class="proposal-heading">
-            <h4>{{ selectedRequest.requestedPickup }}</h4>
+      <div class="sharing-inbox">
+        <!-- Conversation sidebar -->
+        <div class="conversation-sidebar">
+          <h3>Your conversations</h3>
 
-            <span
-              class="pickup-status"
-              :class="{
-                changed:
-                  selectedRequest.differentTime &&
-                  selectedRequest.status === 'pending',
-              }"
-              role="status"
-            >
-              {{ statusLabel }}
-            </span>
-          </div>
-
-          <template v-if="selectedRequest.status === 'pending'">
-            <div class="proposal-actions">
-              <button
-                v-if="activeTab === 'received'"
-                type="button"
-                class="action-button"
-                @click="updateStatus('accepted')"
-              >
-                Accept pickup
-              </button>
-
-              <button
-                type="button"
-                class="action-button secondary"
-                @click="suggestTime"
-              >
-                Suggest another time
-              </button>
-            </div>
-
+          <div class="conversation-filters">
             <button
+              v-for="tab in ['received', 'sent']"
+              :key="tab"
               type="button"
-              class="text-button"
-              @click="
-                updateStatus(
-                  activeTab === 'received' ? 'declined' : 'cancelled',
-                )
-              "
+              class="filter-button"
+              :class="{ active: activeTab === tab }"
+              :aria-pressed="activeTab === tab"
+              @click="switchTab(tab)"
             >
-              {{
-                activeTab === 'received'
-                  ? 'Decline request'
-                  : 'Cancel request'
-              }}
+              {{ tab === 'received' ? 'Received' : 'Sent' }} ·
+              {{ countRequests(tab) }}
             </button>
-          </template>
-        </div>
+          </div>
 
-        <!-- Message composer -->
-        <form class="reply-form" @submit.prevent="sendMessage">
-          <label for="sharing-reply" class="visually-hidden">
-            Write a reply
+          <label class="conversation-search">
+            <span class="visually-hidden">
+              Find food or a neighbour
+            </span>
+
+            <input
+              v-model="search"
+              type="search"
+              placeholder="Find food or a neighbour…"
+            />
           </label>
 
-          <input
-            id="sharing-reply"
-            ref="replyInput"
-            v-model="reply"
-            placeholder="Write a reply…"
-            autocomplete="off"
-          />
-
-          <button
-            type="submit"
-            class="action-button"
-            :disabled="!reply.trim()"
+          <div
+            class="item-groups"
+            aria-label="Requests grouped by food"
           >
-            Send →
-          </button>
-        </form>
-      </div>
+            <div
+              v-for="group in visibleGroups"
+              :key="group.id"
+              class="item-group"
+            >
+              <button
+                type="button"
+                class="group-heading"
+                :class="{ selected: selectedGroup?.id === group.id }"
+                :aria-expanded="
+                  expandedIds.includes(group.id) || !!search.trim()
+                "
+                :aria-controls="`food-group-${group.id}`"
+                @click="toggleGroup(group)"
+              >
+                <img
+                  v-if="group.image"
+                  :src="group.image"
+                  alt=""
+                  class="group-image"
+                />
 
-      <div v-else class="empty-conversation">
-        <h3>No conversation selected</h3>
-        <p class="muted">
-          Choose a food item and a neighbour to view their request.
-        </p>
+                <span
+                  v-else
+                  class="group-image food-icon-placeholder"
+                  aria-hidden="true"
+                >
+                  <FoodIcon :food="group.food" />
+                </span>
+
+                <span class="group-copy">
+                  <strong>{{ group.food }}</strong>
+                  <small>{{ groupSummary(group) }}</small>
+                </span>
+
+                <span class="group-chevron" aria-hidden="true">
+                  {{
+                    expandedIds.includes(group.id) || search.trim()
+                      ? '⌄'
+                      : '›'
+                  }}
+                </span>
+              </button>
+
+              <div
+                v-show="expandedIds.includes(group.id) || search.trim()"
+                :id="`food-group-${group.id}`"
+                class="group-requests"
+              >
+                <button
+                  v-for="request in group.requests"
+                  :key="request.id"
+                  type="button"
+                  class="request-person"
+                  :class="{
+                    selected: selectedRequest?.id === request.id,
+                  }"
+                  :aria-pressed="selectedRequest?.id === request.id"
+                  @click="selectRequest(group, request)"
+                >
+                  <strong>{{ request.person }}</strong>
+                  <small>{{ request.preview }}</small>
+                </button>
+              </div>
+            </div>
+
+            <p
+              v-if="!visibleGroups.length"
+              class="muted sidebar-empty"
+            >
+              {{
+                search.trim()
+                  ? 'No matching conversations.'
+                  : 'No requests yet.'
+              }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Selected conversation -->
+        <div
+          v-if="selectedGroup && selectedRequest"
+          class="conversation-content"
+        >
+          <div class="person-heading">
+            <span class="person-avatar" aria-hidden="true">
+              {{ selectedRequest.person.charAt(0) }}
+            </span>
+
+            <div>
+              <h3>{{ selectedRequest.person }}</h3>
+
+              <p class="muted">
+                {{ selectedGroup.food }} /
+                {{
+                  activeTab === 'received'
+                    ? `${selectedRequest.person.split(' ')[0]}’s request`
+                    : 'Your request'
+                }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Listing details -->
+          <div class="listing-summary">
+            <img
+              v-if="selectedGroup.image"
+              :src="selectedGroup.image"
+              :alt="selectedGroup.food"
+            />
+
+            <span
+              v-else
+              class="listing-placeholder"
+              aria-hidden="true"
+            >
+              <FoodIcon :food="selectedGroup.food" />
+            </span>
+
+            <div>
+              <h4>
+                {{ selectedGroup.food }} · {{ selectedGroup.quantity }}
+              </h4>
+
+              <p class="muted">
+                {{ activeTab === 'received' ? 'Your' : 'Owner’s' }}
+                pickup window: {{ selectedGroup.preferredPickup }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Message history -->
+          <div
+            ref="messageList"
+            class="message-list"
+            aria-label="Conversation messages"
+            tabindex="0"
+          >
+            <div
+              v-for="message in selectedRequest.messages"
+              :key="message.id"
+              class="message-bubble"
+              :class="{ own: message.own }"
+            >
+              <p>{{ message.text }}</p>
+              <small>
+                {{ message.author }} · {{ message.time }}
+              </small>
+            </div>
+          </div>
+
+          <!-- Pickup proposal -->
+          <div class="pickup-proposal">
+            <div class="proposal-heading">
+              <div>
+                <p class="pickup-label">
+                  {{
+                    activeTab === 'received'
+                      ? 'Requested pickup'
+                      : 'Your requested pickup'
+                  }}
+                </p>
+
+                <h4>{{ selectedRequest.requestedPickup }}</h4>
+              </div>
+
+              <span
+                class="pickup-status"
+                :class="{
+                  changed:
+                    selectedRequest.differentTime &&
+                    selectedRequest.status === 'pending',
+                }"
+                role="status"
+              >
+                {{ statusLabel }}
+              </span>
+            </div>
+
+            <template v-if="selectedRequest.status === 'pending'">
+              <div class="proposal-actions">
+                <button
+                  v-if="activeTab === 'received'"
+                  type="button"
+                  class="action-button"
+                  @click="updateStatus('accepted')"
+                >
+                  Accept pickup
+                </button>
+
+                <button
+                  type="button"
+                  class="action-button secondary"
+                  @click="suggestTime"
+                >
+                  Suggest another time
+                </button>
+              </div>
+
+              <button
+                type="button"
+                class="text-button"
+                @click="
+                  updateStatus(
+                    activeTab === 'received' ? 'declined' : 'cancelled',
+                  )
+                "
+              >
+                {{
+                  activeTab === 'received'
+                    ? 'Decline request'
+                    : 'Cancel request'
+                }}
+              </button>
+            </template>
+          </div>
+
+          <!-- Message composer -->
+          <form class="reply-form" @submit.prevent="sendMessage">
+            <label for="sharing-reply" class="visually-hidden">
+              Write a reply
+            </label>
+
+            <input
+              id="sharing-reply"
+              ref="replyInput"
+              v-model="reply"
+              placeholder="Write a reply…"
+              autocomplete="off"
+            />
+
+            <button
+              type="submit"
+              class="action-button"
+              :disabled="!reply.trim()"
+            >
+              Send →
+            </button>
+          </form>
+        </div>
+
+        <div v-else class="empty-conversation">
+          <h3>No conversation selected</h3>
+          <p class="muted">
+            Choose a food item and a neighbour to view their request.
+          </p>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <style scoped>
+/* Base */
 .sharing-corner {
   color: var(--ink);
   font: 19px/1.4 var(--font-sans);
 }
 
-.sharing-corner * {
+.sharing-overlay,
+.sharing-overlay * {
   box-sizing: border-box;
 }
 
@@ -687,21 +765,73 @@ button {
   color: var(--muted);
 }
 
-.section-heading {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 24px;
+/* Modal */
+.sharing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(18, 63, 59, 0.45);
 }
 
+.sharing-modal {
+  width: 100%;
+  max-width: 1360px;
+  max-height: calc(100dvh - 48px);
+  min-width: 0;
+  padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid var(--ink);
+  border-radius: 22px;
+  background: var(--paper);
+  box-shadow: var(--shadow-paper);
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.section-heading p {
+  margin-top: 6px;
+}
+
+.modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper-bright);
+  color: var(--ink);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  background: var(--aqua-soft);
+}
+
+/* Inbox layout */
 .sharing-inbox {
   display: grid;
   grid-template-columns: 31% minmax(0, 1fr);
-  min-height: 710px;
+  min-height: 600px;
   border: 2px solid var(--ink);
-  border-radius: 22px;
+  border-radius: 18px;
   overflow: hidden;
   background: var(--paper-bright);
-  box-shadow: var(--shadow-paper);
 }
 
 /* Conversation sidebar */
@@ -709,14 +839,10 @@ button {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 24px;
   min-width: 0;
-  background: var(--paper);
+  padding: 24px;
   border-right: 1px solid var(--line);
-}
-
-.conversation-sidebar h3 {
-  font-size: 26px;
+  background: var(--paper);
 }
 
 .conversation-filters {
@@ -739,12 +865,16 @@ button {
   color: var(--paper-bright);
 }
 
+.filter-button:hover:not(.active) {
+  background: var(--aqua-soft);
+}
+
 .conversation-search input {
   width: 100%;
   min-height: 44px;
+  padding: 9px 12px;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
-  padding: 9px 12px;
   background: var(--paper-bright);
   color: var(--ink);
 }
@@ -755,8 +885,8 @@ button {
   align-content: start;
   gap: 12px;
   max-height: 510px;
-  overflow-y: auto;
   padding: 3px;
+  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--aqua) var(--aqua-soft);
 }
@@ -793,11 +923,11 @@ button {
   object-fit: cover;
 }
 
-.group-image.placeholder {
+.food-icon-placeholder {
   display: grid;
   place-items: center;
-  font-size: 28px;
   background: var(--paper);
+  font-size: 28px;
 }
 
 .group-copy {
@@ -832,12 +962,12 @@ button {
   display: grid;
   gap: 5px;
   width: 100%;
+  padding: 10px 12px;
   border: 0;
   border-radius: 8px;
-  padding: 10px 12px;
   background: transparent;
-  text-align: left;
   color: var(--ink);
+  text-align: left;
 }
 
 .request-person.selected {
@@ -863,8 +993,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 24px;
   min-width: 0;
+  padding: 24px;
 }
 
 .person-heading {
@@ -904,15 +1034,15 @@ button {
   flex: 0 0 86px;
   width: 86px;
   height: 82px;
-  object-fit: cover;
   border-radius: 10px;
+  object-fit: cover;
 }
 
 .listing-placeholder {
   display: grid;
   place-items: center;
-  font-size: 45px;
   background: var(--aqua-soft);
+  font-size: 45px;
 }
 
 .listing-summary p {
@@ -925,8 +1055,8 @@ button {
   flex-direction: column;
   gap: 12px;
   max-height: 270px;
-  overflow-y: auto;
   padding: 3px;
+  overflow-y: auto;
 }
 
 .message-bubble {
@@ -941,13 +1071,14 @@ button {
 
 .message-bubble.own {
   align-self: flex-end;
+  background: var(--paper);
 }
 
 .message-bubble small {
   display: block;
   margin-top: 8px;
-  font-size: 16px;
   color: var(--muted);
+  font-size: 16px;
 }
 
 /* Pickup proposal */
@@ -964,14 +1095,20 @@ button {
 .proposal-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
   flex-wrap: wrap;
+  gap: 14px;
+}
+
+.pickup-label {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 17px;
 }
 
 .pickup-status {
-  background: var(--aqua-soft);
-  border-radius: 8px;
   padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--aqua-soft);
   font-size: 17px;
 }
 
@@ -985,9 +1122,9 @@ button {
   align-items: center;
   justify-content: center;
   min-height: 44px;
+  padding: 9px 20px;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
-  padding: 9px 20px;
   background: var(--aqua);
   color: var(--paper-bright);
 }
@@ -1004,6 +1141,7 @@ button {
 
 .text-button {
   justify-self: start;
+  min-height: 44px;
   padding: 4px 0;
   border: 0;
   background: transparent;
@@ -1026,6 +1164,7 @@ button {
 .reply-form input {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
   padding: 8px;
   border: 0;
   background: transparent;
@@ -1057,11 +1196,21 @@ button {
   }
 
   .item-groups {
-    max-height: 350px;
+    max-height: 280px;
   }
 }
 
 @media (max-width: 575px) {
+  .sharing-overlay {
+    padding: 12px;
+  }
+
+  .sharing-modal {
+    max-height: calc(100dvh - 24px);
+    padding: 16px;
+    border-radius: 18px;
+  }
+
   .conversation-sidebar,
   .conversation-content {
     padding: 16px;
@@ -1079,8 +1228,8 @@ button {
   }
 
   .proposal-actions {
-    flex-direction: column;
     align-items: stretch;
+    flex-direction: column;
   }
 
   .message-bubble {

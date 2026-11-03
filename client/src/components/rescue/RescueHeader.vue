@@ -1,5 +1,4 @@
 <script setup>
-  import {ref, onMounted} from 'vue';
   import { storeToRefs } from 'pinia';
   import { useAuthStore } from '../../stores/auth.js'
   import FoodIcon from '../FoodIcon.vue'
@@ -11,8 +10,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
 
 <template>
     <div class="container py-4">
-    <div class="bulletin-board-container fc-page-heading">
-        <div class="tape-strip"></div>
+    <div class="bulletin-board-container my-4">
         <div class="row align-items-center gy-4">
             <div class="col-12 col-lg-7 col-xl-6">
                 <div class="eyebrow mb-2">
@@ -21,11 +19,11 @@ const { user, isAuthenticated } = storeToRefs(authStore)
                     </svg>
                     {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} COMMUNITY BOARD
                 </div>
-                <h1 class="hero-title mb-3">
+                <h1 style="font-size: clamp(24px, 4vw, 45px);">
                     Got extra food?<br />
-                    <span class="highlight-text">Share with your neighbours.</span>
+                    Share with your neighbours.
                 </h1>
-                <p class="fs-5 text-muted mb-4">
+                <p class="text-muted mb-4" style="font-size: 20px;">
                     Too much groceries or extra cooked food? Share with neighbours just down the block.
                 </p>
                 <div class="d-flex flex-wrap align-items-center gap-3">
@@ -91,20 +89,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
       box-shadow: var(--shadow-paper);
       position: relative;
     }
-    .tape-strip {
-      position: absolute;
-      top: -14px;
-      left: 50%;
-      transform: translateX(-50%) rotate(-3deg);
-      width: 90px;
-      height: 24px;
-      background: rgba(255, 255, 255, 0.85);
-      border: 1px dashed var(--muted);
-      backdrop-filter: blur(2px);
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      z-index: 10;
-    }
-
+  
     .push-pin {
       position: absolute;
       top: -12px;
@@ -155,11 +140,23 @@ const { user, isAuthenticated } = storeToRefs(authStore)
       position: relative;
       animation: subtleFloat 6s ease-in-out infinite;
       transition: transform 250ms ease, box-shadow 250ms ease;
+      transform-origin: 50% -1px;
     }
     .sticky-note-card:hover {
       animation-play-state: paused;
       transform: rotate(0deg) translateY(-4px);
       box-shadow: 6px 10px 0 rgba(18, 63, 59, 0.2);
+    }
+
+    @keyframes subtleFloat {
+      0%,
+      100% {
+        transform: rotate(-2deg);
+      }
+
+      50% {
+        transform: rotate(2deg);
+      }
     }
 
     .eyebrow {
@@ -172,23 +169,6 @@ const { user, isAuthenticated } = storeToRefs(authStore)
       letter-spacing: 0.14em;
       text-transform: uppercase;
     }
-    .highlight-text {
-      position: relative;
-      white-space: nowrap;
-      z-index: 0;
-    }
-    .highlight-text::after {
-      content: "";
-      position: absolute;
-      bottom: 6px;
-      left: -6px;
-      right: -6px;
-      height: 14px;
-      background: #8ce0d4;
-      z-index: -1;
-      transform: rotate(-1.5deg);
-      border-radius: 50%;
-    }
 
     /* Buttons */
     .primary-button {
@@ -196,12 +176,12 @@ const { user, isAuthenticated } = storeToRefs(authStore)
       align-items: center;
       justify-content: center;
       gap: 9px;
-      padding: 13px 26px;
+      padding: 13px 22px;
       border: 2px solid var(--ink);
       border-radius: 14px 11px 16px 10px;
       background: var(--aqua);
       color: white;
-      font-size: 19px;
+      font-size: 16px;
       font-weight: 800;
       box-shadow: var(--shadow-small);
       transition: transform 150ms ease, box-shadow 150ms ease;
@@ -242,5 +222,8 @@ const { user, isAuthenticated } = storeToRefs(authStore)
       transform: translate(1px, 1px);
       background: #fdfdfd;
     }
-    .compact-btn { padding: 8px 16px; font-size: 15px; }
+    .compact-btn { 
+      padding: 8px 16px; 
+      font-size: 15px;
+    }
 </style>
