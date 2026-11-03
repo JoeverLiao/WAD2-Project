@@ -624,16 +624,18 @@ function handleDialogKeydown(event) {
     }
 }
 
-function openExpiryPanel(event) {
-    modalReturnFocus = event?.currentTarget || document.activeElement
-    expiryPanelOpen.value = true
-    focusDialog()
+const expiryTrigger = ref(null)
+
+function leaveExpiryDropdown(event) {
+    if (event.pointerType === 'mouse' && !discardingExpired.value &&
+        !event.currentTarget.contains(document.activeElement)) expiryPanelOpen.value = false
 }
 
 function closeExpiryPanel() {
     expiryPanelOpen.value = false
-    nextTick(() => modalReturnFocus?.focus?.())
+    expiryTrigger.value?.focus()
 }
+
 
 function openAddForm(storage = 'fridge', storageZone = null) {
     // Null tells FoodItemForm to start a new item rather than edit one.
@@ -1494,9 +1496,41 @@ onBeforeUnmount(cancelActionReaction)
             </div>
             <div class="header-actions">
                 <span class="hero-doodle" aria-hidden="true"><FoodIcon kind="ice" /></span>
-                <button type="button" class="expiry-button" @click="openExpiryPanel($event)">
-                    <NoticeIcon name="bell" /> Expired <span class="expiry-count">{{ expiryItemCount }}</span>
+                <div class="expiry-dropdown"
+                    @pointerenter="$event.pointerType === 'mouse' && (expiryPanelOpen = true)"
+                    @pointerleave="leaveExpiryDropdown"
+                    @focusout="!discardingExpired && !$event.currentTarget.contains($event.relatedTarget) && (expiryPanelOpen = false)"
+                    @keydown.esc.stop.prevent="closeExpiryPanel">
+                    <button ref="expiryTrigger" type="button" class="expiry-button"
+                        :aria-expanded="expiryPanelOpen" aria-controls="expired-food-dropdown"
+                        @click="expiryPanelOpen = !expiryPanelOpen">
+                        <NoticeIcon name="bell" /> Expired <span class="expiry-count">{{ expiryItemCount }}</span>
+                    </button>
+                    <div v-if="expiryPanelOpen" class="expiry-dropdown-position">
+                        <section id="expired-food-dropdown" class="inventory-modal expiry-dropdown-panel" aria-labelledby="expiry-title">
+                <header class="modal-heading">
+                    <div><p class="eyebrow">REDUCE FOOD WASTE</p><h2 id="expiry-title"><NoticeIcon name="bell" /> Expired Food</h2><p>Food past its expiry date across your fridge, freezer and pantry.</p></div>
+                    <button type="button" class="modal-close" aria-label="Close expiry panel" @click="closeExpiryPanel">✕</button>
+                </header>
+                <button v-if="expiryItems.length" type="button" class="expiry-button mb-3"
+                    :disabled="discardingExpired" @click="discardExpiredFoods">
+                    {{ discardingExpired ? 'Discarding…' : 'Discard all expired food' }}
                 </button>
+                <div v-if="expiryItems.length" class="modal-food-list">
+                    <button v-for="item in expiryItems" :key="item.id" type="button" class="expiry-food-row" @click="jumpToItem(item)">
+                        <span class="modal-food-emoji"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                        <span class="modal-food-info">
+                            <strong>{{ item.name }}</strong>
+                            <span>{{ itemStorageName(item) }}<template v-if="item.storage !== 'pantry'"> · {{ locationLabel(item) }}</template> · {{ amountLabel(item) }}</span>
+                        </span>
+                        <span class="expiry-label" :class="{ 'is-expired': expiryDays(item) < 0 }">{{ expiryLabel(item) }}</span>
+                        <span aria-hidden="true">›</span>
+                    </button>
+                </div>
+                <div v-else class="modal-empty"><span>✨</span><strong>No expired food right now</strong><p>Nothing in your fridge, freezer or pantry is past its expiry date.</p></div>
+                        </section>
+                    </div>
+                </div>
                 <button type="button" class="primary-button" @click="openAddForm('fridge')">
                     ＋ Add Food
                 </button>
@@ -1694,32 +1728,6 @@ onBeforeUnmount(cancelActionReaction)
             <div v-if="draggedFood && dragPosition" class="held-food" aria-hidden="true"
                 :style="{ left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }"><span v-if="selectedFoodIds.size > 1" class="drag-group-count">{{ selectedFoodIds.size }} foods</span><FoodIcon :item="draggedFood" /><span v-if="Number(draggedFood.quantity) > 1" class="food-quantity-badge">×{{ draggedFood.quantity }}</span></div>
         </Teleport>
-
-        <!-- Expired items across the fridge, freezer and pantry. -->
-        <div v-if="expiryPanelOpen" class="modal-backdrop" @click.self="closeExpiryPanel">
-            <section ref="dialogRef" class="inventory-modal expiry-modal" role="dialog" aria-modal="true" aria-labelledby="expiry-title" tabindex="-1" @keydown="handleDialogKeydown">
-                <header class="modal-heading">
-                    <div><p class="eyebrow">REDUCE FOOD WASTE</p><h2 id="expiry-title"><NoticeIcon name="bell" /> Expired Food</h2><p>Food past its expiry date across your fridge, freezer and pantry.</p></div>
-                    <button type="button" class="modal-close" aria-label="Close expiry panel" @click="closeExpiryPanel">✕</button>
-                </header>
-                <button v-if="expiryItems.length" type="button" class="expiry-button mb-3"
-                    :disabled="discardingExpired" @click="discardExpiredFoods">
-                    {{ discardingExpired ? 'Discarding…' : 'Discard all expired food' }}
-                </button>
-                <div v-if="expiryItems.length" class="modal-food-list">
-                    <button v-for="item in expiryItems" :key="item.id" type="button" class="expiry-food-row" @click="jumpToItem(item)">
-                        <span class="modal-food-emoji"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
-                        <span class="modal-food-info">
-                            <strong>{{ item.name }}</strong>
-                            <span>{{ itemStorageName(item) }}<template v-if="item.storage !== 'pantry'"> · {{ locationLabel(item) }}</template> · {{ amountLabel(item) }}</span>
-                        </span>
-                        <span class="expiry-label" :class="{ 'is-expired': expiryDays(item) < 0 }">{{ expiryLabel(item) }}</span>
-                        <span aria-hidden="true">›</span>
-                    </button>
-                </div>
-                <div v-else class="modal-empty"><span>✨</span><strong>No expired food right now</strong><p>Nothing in your fridge, freezer or pantry is past its expiry date.</p></div>
-            </section>
-        </div>
 
         <FoodItemForm
             :visible="formVisible"
@@ -2665,4 +2673,12 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     .storage-switch-pulse { animation: storage-arrive .35s ease-out; }
     .fridge-switcher-options button { transition: background-color .2s, border-color .2s, box-shadow .2s; }
 }
+.smart-fridge-page .page-header.paper { overflow:visible; z-index:20; }
+.expiry-dropdown { position:relative; }
+.expiry-dropdown-position {
+    position:absolute; top:100%; right:0; z-index:21; padding-top:8px;
+    width:min(420px, calc(100vw - 48px));
+}
+.expiry-dropdown-panel { width:100%; max-height:min(55vh, 460px); overflow:auto; }
+.expiry-dropdown-panel .modal-food-list { grid-template-columns:minmax(0,1fr); }
 </style>
