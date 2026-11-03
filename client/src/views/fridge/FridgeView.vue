@@ -105,7 +105,15 @@ function normaliseItem(apiItem) {
         expiresAt: toDateInputValue(apiItem.expiresAt),
         purchasedAt: toDateInputValue(apiItem.purchasedAt),
         // Keep storageZone available even for older records that lack it.
-        storageZone: compatibleZone(apiItem.storage, apiItem.storageZone)
+        storageZone: compatibleZone(apiItem.storage, apiItem.storageZone),
+        // Keep the storage guide fields in a predictable shape for warnings.
+        suggestedLocation: apiItem.suggestedLocation || '',
+        allowedLocations: Array.isArray(apiItem.allowedLocations) ? apiItem.allowedLocations : [],
+        locationReason: apiItem.locationReason || '',
+        dietType: apiItem.dietType || '',
+        // Quantity is optional in the inventory model (for weight-only items).
+        quantity: apiItem.quantity ?? '',
+        weightKg: apiItem.weightKg ?? ''
     }
 }
 
@@ -114,6 +122,14 @@ function defaultZoneFor(storage) {
     if (storage === 'freezer') return 'freezer-main'
     if (storage === 'pantry') return 'dry-storage'
     return 'middle-shelf'
+}
+
+// A zone is the precise location, so use it as the source of truth for storage.
+function storageForZone(zone) {
+    if (zone === 'freezer-main') return 'freezer'
+    if (zone === 'dry-storage') return 'pantry'
+    if (['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'door-lower', 'crisper'].includes(zone)) return 'fridge'
+    return ''
 }
 
 // Older scanned items may have inherited the model's fridge-only default.
@@ -125,12 +141,13 @@ function compatibleZone(storage, zone) {
 // Turn the form's date fields into values that can safely be sent to the API.
 // Sending null for an empty date avoids trying to save an empty string as a date.
 function prepareItemForApi(formData) {
+    const storageZone = formData.storageZone || defaultZoneFor(formData.storage)
     return {
         name: formData.name,
-        quantity: Number(formData.quantity),
+        quantity: formData.quantity === '' || formData.quantity == null ? undefined : Number(formData.quantity),
         unit: formData.unit,
-        storage: formData.storage,
-        storageZone: formData.storageZone || defaultZoneFor(formData.storage),
+        storage: storageForZone(storageZone) || formData.storage,
+        storageZone,
         expiresAt: formData.expiresAt || null,
         // This form does not currently ask for a purchase date or price.
         // Do not invent values for those optional fields.
@@ -569,8 +586,32 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
     const group = selectedFoodsFor(item)
     if (group.length > 1) return changeSelectedFoods(group, action, onAnimationSuccess)
     const actionLabel = action === 'consume' ? 'consume' : 'discard'
+    const currentQuantity = Number(item.quantity)
 
-    const input = Number(item.quantity) > 1 ? await showPrompt({
+    // A weight-only item has no count to decrement, so Consume/Discard removes
+    // the whole inventory record instead of sending an invalid quantity.
+    if (!Number.isFinite(currentQuantity) || currentQuantity <= 0) {
+        errorMessage.value = ''
+        try {
+            const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            })
+            if (!response.ok) throw new Error(`Could not ${actionLabel} food (HTTP ${response.status}).`)
+
+            items.value = items.value.filter(existingItem => existingItem.id !== item.id)
+            await nextTick()
+            if (selectedCompartment.value) dialogRef.value?.focus()
+            const amount = Number(item.weightKg) || 1
+            onAnimationSuccess?.({ amount, originalQuantity: amount, remainingQuantity: 0, proportion: 1 })
+        } catch (error) {
+            console.error(`Failed to ${actionLabel} food:`, error)
+            errorMessage.value = error.message || `Unable to ${actionLabel} ${item.name}. Please try again.`
+        }
+        return
+    }
+
+    const input = currentQuantity > 1 ? await showPrompt({
         title: `How many ${item.unit} of ${item.name} would you like to ${actionLabel}?`,
         message: `Current quantity: ${item.quantity}`,
         label: `Quantity (${item.unit})`,
@@ -580,7 +621,7 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
         // Validate the quantity.
         validate: (value) => {
             const quantity = Number(value)
-            if (!Number.isFinite(quantity) || quantity <= 0 || quantity > item.quantity) {
+            if (!Number.isFinite(quantity) || quantity <= 0 || quantity > currentQuantity) {
                 return `Please enter a quantity greater than 0 and no more than ${item.quantity}.`
             }
             return ''
@@ -923,7 +964,7 @@ async function saveFoodGroup(group, method, payload) {
 async function changeSelectedFoods(group, action, onAnimationSuccess) {
     const confirmed = await showConfirm({
         title: `${action === 'consume' ? 'Consume' : 'Discard'} ${group.length} selected foods?`,
-        message: `This uses the full quantity of each selected food: ${group.map(item => `${item.name} (${item.quantity} ${item.unit})`).join(', ')}.`,
+        message: `This uses the full amount of each selected food: ${group.map(item => `${item.name} (${amountLabel(item)})`).join(', ')}.`,
         confirmLabel: action === 'consume' ? 'Consume all' : 'Discard all',
         danger: action === 'discard',
     })
@@ -942,9 +983,10 @@ async function dropOnArea(area, event, onSuccess) {
     const itemId = event.dataTransfer?.getData('text/plain') || draggedItemId.value
     const item = items.value.find(food => food.id === String(itemId))
     if (!item) { finishDrag(); return }
-    const storage = area.storage
-    const storageZone = storage === 'fridge' ? area.storageZone || 'middle-shelf'
-        : storage === 'freezer' ? 'freezer-main' : 'dry-storage'
+    // Resolve both fields from the exact destination zone so they cannot drift
+    // apart when an item is moved between fridge, freezer and pantry.
+    const storageZone = storageForZone(area.storageZone) ? area.storageZone : defaultZoneFor(area.storage)
+    const storage = storageForZone(storageZone) || area.storage
     const group = selectedFoodsFor(item).filter(food => food.storage !== storage || food.storageZone !== storageZone)
     const origins = foodTransfer.capture(group, event)
     if (draggingFromModal.value) selectedCompartment.value = null
@@ -966,9 +1008,22 @@ async function dropOnArea(area, event, onSuccess) {
 // 9. SIMPLE STORAGE RECOMMENDATIONS
 // ============================================================
 
-// These are basic keyword suggestions for the prototype, not a
-// complete food-safety system. Packaging instructions should take priority.
+// Prefer the per-item guidance stored with inventory; retain lightweight
+// keyword hints for older or manually entered records without that guidance.
 function getRecommendation(item) {
+    const allowedLocations = Array.isArray(item.allowedLocations) ? item.allowedLocations : []
+    if (allowedLocations.length > 0 && !allowedLocations.includes(item.storageZone)) {
+        const zoneLabels = {
+            'upper-shelf': 'Upper shelf', 'middle-shelf': 'Middle shelf',
+            'lower-shelf': 'Lower shelf', door: 'Upper door shelf',
+            'door-lower': 'Lower door shelf', crisper: 'Crisper drawer',
+            'freezer-main': 'Freezer', 'dry-storage': 'Pantry'
+        }
+        const allowedNames = allowedLocations.map(zone => zoneLabels[zone] || zone).join(', ')
+        const suggestedName = zoneLabels[item.suggestedLocation] || item.suggestedLocation
+        return `Storage warning: ${item.name} is in ${locationLabel(item)}, but its allowed locations are ${allowedNames}.${suggestedName ? ` Suggested: ${suggestedName}.` : ''}${item.locationReason ? ` ${item.locationReason}` : ''}`
+    }
+
     const name = item.name.toLowerCase()
 
     if (name.includes('frozen') || name.includes('ice cream')) {
@@ -996,6 +1051,15 @@ function getRecommendation(item) {
 const storageRecommendations = computed(() =>
     filteredItems.value.filter(item => getRecommendation(item))
 )
+
+// Display a count when recorded, otherwise show the item's optional total weight.
+function amountLabel(item) {
+    const quantity = Number(item.quantity)
+    if (Number.isFinite(quantity) && quantity > 0) return `${item.quantity} ${item.unit || 'items'}`
+    const weight = Number(item.weightKg)
+    if (Number.isFinite(weight) && weight > 0) return `${item.weightKg} kg`
+    return 'Quantity not recorded'
+}
 
 // ============================================================
 // 10. CAROUSEL, COMPARTMENT DETAILS, EXPIRY PANEL AND ACTION ZONES
@@ -1420,7 +1484,7 @@ onBeforeUnmount(cancelActionReaction)
                     <button type="button" class="primary-button small-button" @click="openAddForm(selectedCompartment.storage, selectedCompartment.zone)">＋ Add to this compartment</button>
                 </div>
                 <div v-if="compartmentItems.length" class="modal-food-list">
-                    <!-- Food cards expose editing and quantity controls alongside dragging. -->
+                    <!-- Food cards expose editing and removal; Consume/Discard use the external drag dock. -->
                     <FoodItemCard
                         v-for="item in compartmentItems"
                         :key="item.id"
@@ -1428,7 +1492,6 @@ onBeforeUnmount(cancelActionReaction)
                         :dragging="draggedItemId === item.id"
                         @edit="openEditForm"
                         @remove="removeItem"
-                        @consume="consumeItem" @discard="discardItem"
                         @drag-start="startModalDrag"
                         @drag-end="finishDrag"
                     />
@@ -1463,7 +1526,7 @@ onBeforeUnmount(cancelActionReaction)
                 <div v-if="expiryItems.length" class="modal-food-list">
                     <button v-for="item in expiryItems" :key="item.id" type="button" class="expiry-food-row" @click="jumpToItem(item)">
                         <span class="modal-food-emoji"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
-                        <span class="modal-food-info"><strong>{{ item.name }}</strong><span>{{ locationLabel(item) }} · {{ item.quantity }} {{ item.unit }}</span></span>
+                        <span class="modal-food-info"><strong>{{ item.name }}</strong><span>{{ locationLabel(item) }} · {{ amountLabel(item) }}</span></span>
                         <span class="expiry-label" :class="{ 'is-expired': expiryDays(item) < 0 }">{{ expiryLabel(item) }}</span>
                         <span aria-hidden="true">›</span>
                     </button>

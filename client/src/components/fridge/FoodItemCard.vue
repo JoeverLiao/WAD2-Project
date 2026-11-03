@@ -15,8 +15,6 @@ const props = defineProps({
 const emit = defineEmits([
     'edit',
     'remove',
-    'consume',
-    'discard',
     'drag-start',
     'drag-end'
 ])
@@ -56,6 +54,40 @@ const expiryClass = computed(() => {
     }
 
     return 'expiry-normal'
+})
+
+// Show the recorded amount without implying that missing quantities equal one.
+const amountLabel = computed(() => {
+    const quantity = Number(props.item.quantity)
+    if (Number.isFinite(quantity) && quantity > 0) return `${props.item.quantity} ${props.item.unit || 'items'}`
+    const weight = Number(props.item.weightKg)
+    if (Number.isFinite(weight) && weight > 0) return `${props.item.weightKg} kg`
+    return 'Quantity not recorded'
+})
+
+const dietLabels = {
+    vegan: 'Vegan',
+    vegetarian: 'Vegetarian',
+    other: 'Contains meat or fish',
+    unknown: 'Check the label'
+}
+const dietLabel = computed(() => dietLabels[props.item.dietType] || '')
+
+// Compare the item's current zone against the allowed zones supplied by the
+// inventory record, and explain the mismatch beside the item's other details.
+const storageWarning = computed(() => {
+    const allowed = Array.isArray(props.item.allowedLocations) ? props.item.allowedLocations : []
+    if (!allowed.length || allowed.includes(props.item.storageZone)) return ''
+
+    const zoneLabels = {
+        'upper-shelf': 'Upper shelf', 'middle-shelf': 'Middle shelf',
+        'lower-shelf': 'Lower shelf', door: 'Upper door shelf',
+        'door-lower': 'Lower door shelf', crisper: 'Crisper drawer',
+        'freezer-main': 'Freezer', 'dry-storage': 'Pantry'
+    }
+    const allowedNames = allowed.map(zone => zoneLabels[zone] || zone).join(', ')
+    const suggested = zoneLabels[props.item.suggestedLocation] || props.item.suggestedLocation
+    return `Currently in ${zoneLabels[props.item.storageZone] || props.item.storageZone || 'an unknown zone'}; allowed locations: ${allowedNames}.${suggested ? ` Suggested: ${suggested}.` : ''}${props.item.locationReason ? ` ${props.item.locationReason}` : ''}`
 })
 
 // Suppress the native snapshot; the parent supplies an animated food preview.
@@ -117,16 +149,17 @@ function handleDragEnd() {
         <h4>{{ item.name }}</h4>
 
         <p class="quantity">
-            {{ item.quantity }} {{ item.unit }}
+            {{ amountLabel }}
         </p>
 
         <span class="expiry-badge" :class="expiryClass" :aria-label="`Expiry status: ${expiryStatus}`">
             {{ expiryStatus }}
         </span>
-        <div class="food-quantity-actions" role="group" :aria-label="`Use ${item.name}`">
-            <button type="button" @click.stop="emit('consume', item)">😊 Consume</button>
-            <button type="button" @click.stop="emit('discard', item)">🗑 Discard</button>
-        </div>
+        <span v-if="dietLabel" class="diet-badge" :class="`diet-${item.dietType}`">{{ dietLabel }}</span>
+        <p v-if="storageWarning" class="storage-warning" role="note">
+            <strong>⚠ Storage warning</strong>
+            {{ storageWarning }}
+        </p>
     </article>
 </template>
 
@@ -274,6 +307,35 @@ h4 {
     color: var(--ink);
 }
 
+.diet-badge {
+    display: inline-block;
+    margin: 8px 4px 0 0;
+    padding: 4px 8px;
+    border: 1px solid #739c90;
+    border-radius: 8px;
+    background: #edf8f3;
+    color: #214a3c;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.diet-other { background: #fff0eb; border-color: #c59887; color: #733b30; }
+.diet-unknown { background: #fff7d6; border-color: #cfaf5a; color: #64501b; }
+
+.storage-warning {
+    margin: 10px 0 0;
+    padding: 9px 10px;
+    border: 2px solid #b45b32;
+    border-radius: 9px;
+    background: #fff0e6;
+    color: #713519;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.storage-warning strong { display: block; margin-bottom: 3px; }
+
 .icon-button:focus-visible {
     outline: 3px dashed var(--aqua);
     outline-offset: 3px;
@@ -285,8 +347,5 @@ h4 {
         transition: none !important;
     }
 }
-.food-quantity-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
-.food-quantity-actions button { padding:8px 12px; border:1px solid #739c90; border-radius:8px; background:#edf8f3; color:#214a3c; font:inherit; font-size:16px; cursor:pointer; }
-.food-quantity-actions button:last-child { background:#fff0eb; border-color:#c59887; }
 </style>
 
