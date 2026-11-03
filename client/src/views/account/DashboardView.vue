@@ -2,6 +2,9 @@
 import EggCompanion from '../../components/analytics/VegetableCompanions.vue'
 
 const eggTips = [
+  'The expiry filters can help you focus on what needs attention.',
+  'Tap the impact cards to jump to the daily graph.',
+  'Use the arrows above the fridge if you have another one.',
   'Quick Bites shows you what to use up first!',
   'Tap a food in the expiry list and I’ll help you spot it.',
   'Need dinner ideas? See what you can cook with what you have!',
