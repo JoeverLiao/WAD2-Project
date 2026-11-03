@@ -235,9 +235,24 @@ function interact(index) {
   if (dragged) { dragged = false; return }
   speak(index)
 }
-async function speak(index) {
+function allowFoodDrop(event) {
+  if (event.dataTransfer?.types.includes('application/x-full-circle-food')) event.preventDefault()
+}
+function reactToFood(event, index) {
+  const name = event.dataTransfer?.getData('application/x-full-circle-food')
+  if (!name) return
+  event.preventDefault()
+  event.stopPropagation()
+  speak(index, [
+    `Is that ${name}? I’m flattered!`,
+    `A little ${name} for me? You’re too kind.`,
+    `${name}! Now you’ve got me thinking about dinner.`,
+    `Thanks for showing me your ${name}! I’ll let you keep it.`,
+  ])
+}
+async function speak(index, reactions) {
   dismissSpeech()
-  const messages = props.messages || (props.alwaysHappy ? receiptMessages : vegetableMessages[mood.value.expression])
+  const messages = reactions || props.messages || (props.alwaysHappy ? receiptMessages : vegetableMessages[mood.value.expression])
   const choices = messages.filter(text => text !== lastMessages.get(index))
   const pool = choices.length ? choices : messages
   if (!pool.length) return
@@ -263,6 +278,7 @@ async function speak(index) {
       <button ref="eggButton" type="button" class="vegetable-button" :class="{ held, mirrored: facingLeftSide, reacting: reacting[index], gloomy: ['sad', 'crying'].includes(mood.expression) }"
         :aria-label="`Talk to ${character.name}, feeling ${mood.expression}`"
         @pointerdown="grabEgg" @pointermove="moveEgg" @pointerup="releaseEgg" @pointercancel="releaseEgg" @lostpointercapture="releaseEgg"
+        @dragover="allowFoodDrop" @drop="reactToFood($event, index)"
         @click="interact(index)" @animationend.self="reacting[index] = false">
         <span class="vegetable-sprite" :class="{ 'is-tossing': tossing }" aria-hidden="true">
           <img v-show="held" class="egg-picked-up" :style="{ '--drag-tilt': (facingLeftSide ? -dragTilt : dragTilt) + 'deg' }"

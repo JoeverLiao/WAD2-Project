@@ -1018,6 +1018,7 @@ function foodActionAnchor(item, event) {
 }
 
 function startDrag(item, event) {
+    event?.dataTransfer?.setData('application/x-full-circle-food', item.name)
     storageAction.value = item.storage === 'pantry' ? 'fridge' : 'pantry'
     if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set([item.id])
     if (event) {
