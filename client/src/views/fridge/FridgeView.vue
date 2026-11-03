@@ -226,6 +226,23 @@ function openLinkedCompartment() {
 
 // v-model connects this value to the search input in the template.
 const searchQuery = ref('')
+const fridgeSearch = ref(null)
+
+function typeToSearch(event) {
+    const input = fridgeSearch.value
+    if (!input || props.embedded || !fridgeDoorOpen.value || activeStorage.value !== 'fridge' ||
+        event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey ||
+        event.key.length !== 1 || !event.key.trim() ||
+        event.target.closest?.('input, textarea, select, [contenteditable], [role="dialog"]') ||
+        selectedCompartment.value || expiryPanelOpen.value || formVisible.value || shiftingFood.value) return
+
+    event.preventDefault()
+    searchQuery.value += event.key
+    input.focus()
+}
+
+onMounted(() => document.addEventListener('keydown', typeToSearch))
+onBeforeUnmount(() => document.removeEventListener('keydown', typeToSearch))
 
 const selectedFoodIds = ref(new Set())
 const selectionBox = ref(null)
@@ -365,10 +382,138 @@ function scrollCompartment(event) {
 
 // `computed` updates this list automatically when the inventory or
 // search text changes. An empty query matches every item.
+const mainFridge = 'Main fridge'
+const mainPantry = 'Pantry'
+const activeFridge = ref(mainFridge)
+const activePantry = ref(mainPantry)
+
+function readStorageNames(key) {
+    try {
+        const names = JSON.parse(localStorage.getItem(key) || '[]')
+        return Array.isArray(names) ? names.filter(name => typeof name === 'string') : []
+    } catch { return [] }
+}
+
+const storageKeys = { fridge: 'full-circle-fridges', pantry: 'full-circle-pantries' }
+const extraNames = { fridge: ref(readStorageNames(storageKeys.fridge)), pantry: ref(readStorageNames(storageKeys.pantry)) }
+const mainNames = { fridge: mainFridge, pantry: mainPantry }
+const assignmentFields = { fridge: 'fridgeName', pantry: 'pantryName' }
+const activeNames = { fridge: activeFridge, pantry: activePantry }
+const mainLabels = ref(readStorageNames('full-circle-main-storage-labels'))
+const storageOptions = computed(() => ['fridge', 'pantry'].flatMap(type =>
+    [...new Set([mainNames[type], ...extraNames[type].value, ...items.value.map(item => item[assignmentFields[type]]).filter(Boolean)])]
+        .map(name => ({
+            type, name,
+            label: name === mainNames[type] ? mainLabels.value[type === 'fridge' ? 0 : 1] || (type === 'fridge' ? 'Fridge' : 'Pantry') : name,
+        })),
+))
+const fridgeItems = computed(() => items.value.filter(item => props.embedded ||
+    (item.storage === 'pantry'
+        ? (item.pantryName || mainPantry) === activePantry.value
+        : (item.fridgeName || mainFridge) === activeFridge.value),
+))
+const storageIndex = computed(() => storageOptions.value.findIndex(option =>
+    option.type === activeStorage.value && option.name === activeNames[option.type].value,
+))
+const currentStorage = computed(() => storageOptions.value[storageIndex.value])
+const fridgeDoorTitle = computed(() => storageDisplayName('fridge', activeFridge.value))
+
+function storageDisplayName(type, name) {
+    return storageOptions.value.find(option => option.type === type && option.name === name)?.label || name
+}
+
+function itemStorageName(item) {
+    return item.storage === 'pantry'
+        ? storageDisplayName('pantry', item.pantryName || mainPantry)
+        : storageDisplayName('fridge', item.fridgeName || mainFridge)
+}
+
+function storeNames(key, names) {
+    try { localStorage.setItem(key, JSON.stringify(names)) } catch { /* Keep the current session usable. */ }
+}
+
+function selectStorage(option) {
+    activeNames[option.type].value = option.name
+    changeStorage(option.type)
+}
+
+function stepStorage(direction) {
+    const count = storageOptions.value.length
+    selectStorage(storageOptions.value[(storageIndex.value + direction + count) % count])
+}
+
+async function editStorage(type, previous = null) {
+    const current = storageOptions.value.find(option => option.type === type && option.name === previous)
+    const input = await showPrompt({
+        title: previous ? `Rename ${current.label}` : `Add a ${type}`,
+        label: 'Storage name',
+        defaultValue: current?.label || '',
+        confirmLabel: previous ? 'Rename' : 'Add',
+        validate: value => {
+            const name = value.trim()
+            if (!name || name.length > 60) return 'Enter a name of 1 to 60 characters.'
+            if (name.toLowerCase() === mainNames[type].toLowerCase() ||
+                storageOptions.value.some(option => option.type === type && option.name !== previous &&
+                    [option.name, option.label].some(existing => existing.toLowerCase() === name.toLowerCase()))) return 'That name is already used.'
+            return ''
+        },
+    })
+    if (!input?.trim() || input.trim() === current?.label) return
+    const name = input.trim()
+    if (previous === mainNames[type]) {
+        const labels = [mainLabels.value[0] || '', mainLabels.value[1] || '']
+        labels[type === 'fridge' ? 0 : 1] = name
+        mainLabels.value = labels
+        storeNames('full-circle-main-storage-labels', labels)
+        return
+    }
+    if (previous && !await reassignStorage(type, previous, name)) {
+        extraNames[type].value = [...new Set([...extraNames[type].value, previous, name])]
+        storeNames(storageKeys[type], extraNames[type].value)
+        return
+    }
+    extraNames[type].value = [...extraNames[type].value.filter(existing => existing !== previous), name]
+    storeNames(storageKeys[type], extraNames[type].value)
+    selectStorage({ type, name })
+}
+
+async function reassignStorage(type, from, to) {
+    const field = assignmentFields[type]
+    const group = items.value.filter(item => item[field] === from)
+    errorMessage.value = ''
+    shiftingFood.value = true
+    try {
+        const moved = await saveFoodGroup(group, 'PATCH', { [field]: to })
+        if (moved.size === group.length) return true
+        errorMessage.value = 'Some foods could not be moved. Both storage locations remain available.'
+        return false
+    } finally { shiftingFood.value = false }
+}
+
+async function deleteStorage() {
+    const { type, name, label } = currentStorage.value
+    if (name === mainNames[type]) return
+    const confirmed = await showConfirm({
+        title: `Delete ${label}?`,
+        message: `Food assigned here will move to ${mainNames[type]}.`,
+        confirmLabel: `Delete ${type}`,
+        danger: true,
+    })
+    if (!confirmed || !await reassignStorage(type, name, mainNames[type])) return
+    extraNames[type].value = extraNames[type].value.filter(existing => existing !== name)
+    storeNames(storageKeys[type], extraNames[type].value)
+    selectStorage({ type, name: mainNames[type] })
+}
+
+watch(activeFridge, () => {
+    selectedFoodIds.value = new Set()
+    foodTooltip.value = null
+})
+
 const filteredItems = computed(() => {
     const query = searchQuery.value.trim().toLowerCase()
 
-    return items.value.filter(item => {
+    return fridgeItems.value.filter(item => {
         return !query || [item.name, item.unit, locationLabel(item), item.storageZone]
             .some(value => String(value || '').toLowerCase().includes(query))
     })
@@ -403,22 +548,21 @@ const pantryShelves = computed(() => {
 
 // Count inventory records by broad location; quantity is shown separately.
 function countItems(storage) {
-    return items.value.filter(item => item.storage === storage).length
+    return fridgeItems.value.filter(item => item.storage === storage).length
 }
 
 // Vue updates these counts whenever the inventory changes.
-const totalItems = computed(() => items.value.length)
-const expiredCount = computed(() => items.value.filter(item => {
+const totalItems = computed(() => fridgeItems.value.length)
+const expiredCount = computed(() => fridgeItems.value.filter(item => {
     const days = expiryDays(item)
     return days !== null && days < 0
 }).length)
-const expiringSoonCount = computed(() => items.value.filter(item => {
+const expiringSoonCount = computed(() => fridgeItems.value.filter(item => {
     const days = expiryDays(item)
     return days !== null && days >= 0 && days <= 3
 }).length)
 
 // These values make the most useful inventory health information visible above the stage.
-const searchResultCount = computed(() => filteredItems.value.length)
 
 // ============================================================
 // 4. ADD / EDIT FORM STATE
@@ -530,6 +674,10 @@ async function saveItem(formData) {
     const isEditing = Boolean(editingItem.value)
     const itemId = editingItem.value?.id
     const payload = prepareItemForApi(formData)
+    if (!isEditing || editingItem.value.storage !== payload.storage) {
+        const type = payload.storage === 'pantry' ? 'pantry' : 'fridge'
+        if (activeNames[type].value !== mainNames[type]) payload[assignmentFields[type]] = activeNames[type].value
+    }
     const originalItem = editingItem.value
     const origins = originalItem ? foodTransfer.capture([originalItem]) : []
 
@@ -1003,7 +1151,16 @@ async function dropOnArea(area, event, onSuccess) {
     shiftingFood.value = true
     if (onSuccess) actionPending.value = true
     try {
-        const succeeded = await saveFoodGroup(group, 'PATCH', { storage, storageZone })
+        const destination = { storage, storageZone }
+        if (!props.embedded && storage === 'pantry' &&
+            (activePantry.value !== mainPantry || group.some(food => food.pantryName))) {
+            destination.pantryName = activePantry.value
+        }
+        if (!props.embedded && storage !== 'pantry' &&
+            (activeFridge.value !== mainFridge || group.some(food => food.fridgeName))) {
+            destination.fridgeName = activeFridge.value
+        }
+        const succeeded = await saveFoodGroup(group, 'PATCH', destination)
         if (succeeded.size) showStorage(storage)
         await foodTransfer.play(origins, succeeded, locationLabel({ storage, storageZone }))
         if (succeeded.size) onSuccess?.()
@@ -1182,6 +1339,29 @@ const expiryItems = computed(() => {
 })
 
 const expiryItemCount = computed(() => expiryItems.value.length)
+const discardingExpired = ref(false)
+
+async function discardExpiredFoods() {
+    if (discardingExpired.value || !expiryItems.value.length) return
+    discardingExpired.value = true
+    try {
+        const confirmed = await showConfirm({
+            title: 'Discard all expired food?',
+            message: 'This removes the full quantities of expired foods across all fridges and pantries.',
+            confirmLabel: 'Discard all expired food',
+            danger: true,
+        })
+        if (!confirmed) return
+        errorMessage.value = ''
+        const expired = [...expiryItems.value]
+        const discarded = await saveFoodGroup(expired, 'DELETE')
+        if (discarded.size < expired.length) {
+            errorMessage.value = 'Some expired foods could not be discarded. Please try again.'
+        }
+    } finally {
+        discardingExpired.value = false
+    }
+}
 
 function expiryLabel(item) {
     const days = expiryDays(item)
@@ -1206,26 +1386,26 @@ function locationLabel(item) {
     return names[item.storageZone] || 'Main fridge'
 }
 
-function jumpToItem(item) {
-    // Leave the expiry button as the return focus target after routing from
-    // this panel, since the clicked row disappears when the panel closes.
+async function jumpToItem(item) {
     expiryPanelOpen.value = false
-    cancelActionReaction()
-    showStorage(item.storage)
-    if (item.storage === 'pantry') {
-        selectedCompartment.value = { id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' }
-        focusDialog()
-    } else {
-        fridgeDoorOpen.value = true
-        selectedCompartment.value = item.storage === 'freezer'
-            ? { id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' }
-            : {
-                id: item.storageZone,
-                title: locationLabel(item),
-                storage: 'fridge',
-                zone: item.storageZone
-            }
-        focusDialog()
+    searchQuery.value = ''
+    const type = item.storage === 'pantry' ? 'pantry' : 'fridge'
+    selectStorage({ type, name: item[assignmentFields[type]] || mainNames[type] })
+    if (type === 'fridge') fridgeDoorOpen.value = true
+    await nextTick()
+
+    const icon = [...(kitchenStage.value?.querySelectorAll('[data-food-id]') || [])]
+        .find(element => element.dataset.foodId === item.id)
+    if (!icon) return
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    icon.scrollIntoView?.({ behavior: reduceMotion ? 'instant' : 'smooth', block: 'center', inline: 'nearest' })
+    icon.focus({ preventScroll: true })
+    selectedFoodIds.value = new Set([item.id])
+    if (!reduceMotion) {
+        icon.animate?.(
+            [{ rotate: '0deg' }, { rotate: '-9deg' }, { rotate: '8deg' }, { rotate: '-5deg' }, { rotate: '0deg' }],
+            { duration: 520, delay: 450, easing: 'ease-in-out' },
+        )
     }
 }
 
@@ -1323,42 +1503,22 @@ onBeforeUnmount(cancelActionReaction)
             </div>
         </header>
 
-        <!-- Keep the three main storage counts visible above the fridge and pantry. -->
-        <section v-if="!embedded" class="inventory-summary" aria-label="Inventory summary">
-            <article class="summary-card summary-total">
-                <span class="summary-icon" aria-hidden="true"><FoodIcon kind="box" /></span>
-                <span class="summary-label">Tracked foods</span>
-                <strong>{{ totalItems }}</strong>
-            </article>
-            <article class="summary-card summary-fridge">
-                <span class="summary-icon" aria-hidden="true"><FoodIcon kind="ice" /></span>
-                <span class="summary-label">Fridge &amp; freezer</span>
-                <strong>{{ countItems('fridge') + countItems('freezer') }}</strong>
-            </article>
-            <article class="summary-card summary-pantry">
-                <span class="summary-icon" aria-hidden="true"><FoodIcon kind="can" /></span>
-                <span class="summary-label">Pantry</span>
-                <strong>{{ countItems('pantry') }}</strong>
-            </article>
-        </section>
-
-        <!-- Search filters shelf previews and the full compartment list below. -->
-        <section v-if="!embedded" class="toolbar">
-            <label for="inventory-search">🔎</label>
-            <input id="inventory-search" v-model="searchQuery" type="search" placeholder="Search milk, rice, carrots...">
-            <div class="inventory-total" aria-live="polite">
-                {{ searchQuery.trim() ? `${searchResultCount} matching foods` : `${totalItems} tracked foods` }}
-            </div>
-        </section>
-
         <nav v-if="!embedded" class="storage-switcher" aria-label="Storage slideshow">
-            <button type="button" class="storage-slide-arrow" :aria-label="`Previous storage: ${activeStorage === 'fridge' ? 'Pantry' : 'Fridge'}`" @click="changeStorage(activeStorage === 'fridge' ? 'pantry' : 'fridge')"><span aria-hidden="true">‹</span></button>
-            <div class="storage-slide-options">
-                <button type="button" :aria-pressed="activeStorage === 'fridge'" @click="changeStorage('fridge')">Fridge</button>
-                <button type="button" :aria-pressed="activeStorage === 'pantry'" @click="changeStorage('pantry')">Pantry</button>
-                <span class="storage-slide-status" role="status">{{ activeStorage === 'fridge' ? '1 / 2' : '2 / 2' }}</span>
+            <button type="button" class="storage-slide-arrow" aria-label="Previous storage" :disabled="shiftingFood || saving" @click="stepStorage(-1)">‹</button>
+            <div class="storage-slide-options fridge-switcher-options">
+                <button v-for="(option, index) in storageOptions" :key="option.type + ':' + option.name" type="button"
+                    :disabled="shiftingFood || saving" :aria-pressed="storageIndex === index"
+                    @click="selectStorage(option)">{{ option.label }}</button>
+                <span :key="storageIndex" class="storage-slide-status storage-switch-pulse" role="status">{{ storageIndex + 1 }} / {{ storageOptions.length }}</span>
+                <div class="fridge-switcher-actions">
+                    <button type="button" :disabled="shiftingFood || saving" @click="editStorage('fridge')">＋ Add fridge</button>
+                    <button type="button" :disabled="shiftingFood || saving" @click="editStorage('pantry')">＋ Add pantry</button>
+                    <button type="button" :disabled="shiftingFood || saving" @click="editStorage(currentStorage.type, currentStorage.name)">Rename {{ activeStorage }}</button>
+                    <button v-if="currentStorage.name !== mainNames[activeStorage]" type="button"
+                        :disabled="shiftingFood || saving" @click="deleteStorage">Delete {{ activeStorage }}</button>
+                </div>
             </div>
-            <button type="button" class="storage-slide-arrow" :aria-label="`Next storage: ${activeStorage === 'fridge' ? 'Pantry' : 'Fridge'}`" @click="changeStorage(activeStorage === 'fridge' ? 'pantry' : 'fridge')"><span aria-hidden="true">›</span></button>
+            <button type="button" class="storage-slide-arrow" aria-label="Next storage" :disabled="shiftingFood || saving" @click="stepStorage(1)">›</button>
         </nav>
         <section ref="kitchenStage" class="kitchen-stage storage-slideshow" :class="{ 'instant-storage-slide': !animateStorageSlide }" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dblclick.capture="openFoodCompartment" @keydown.capture="selectFoodWithKeyboard" @dragstart.capture="setStageEmojiDragImage($event)">
 
@@ -1367,7 +1527,7 @@ onBeforeUnmount(cancelActionReaction)
                 <div class="carousel-track">
                     <!-- Refrigerator unit -->
                     <section class="storage-unit fridge-unit" :class="{ 'slide-active': activeStorage === 'fridge' }" :inert="activeStorage !== 'fridge' ? true : undefined" :aria-hidden="activeStorage !== 'fridge'" aria-label="Refrigerator">
-                        <div class="storage-unit-content">
+                        <div class="storage-unit-content" :key="activeFridge" :class="{ 'storage-switch-pulse': animateStorageSlide }">
                         <div v-if="!embedded" class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
                         <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn, 'fridge-is-idle': embedded && doorAngle === 0 && !doorGesture }" :style="{ '--door-angle': `${doorAngle}deg`, '--open-progress': doorAngle / 170 }">
                             <div class="fridge-cabinet">
@@ -1381,7 +1541,11 @@ onBeforeUnmount(cancelActionReaction)
                                 </div>
                                 <div class="fridge-interior" :inert="!fridgeDoorOpen">
                                     <div class="interior-header">
-                                        <span>YOUR FRIDGE</span>
+                                        <input v-if="!embedded" ref="fridgeSearch" v-model="searchQuery" class="storage-search" type="search"
+                                            aria-label="Search fridge food" placeholder="Search food…">
+                                        <span v-else>YOUR FRIDGE</span>
+                                        <button v-if="!embedded" type="button" class="storage-search-clear"
+                                            :disabled="!searchQuery" @click="searchQuery = ''; fridgeSearch?.focus()">Clear</button>
                                         <span class="temperature">❄ 4°C</span>
                                     </div>
                                     <div class="fridge-compartments">
@@ -1415,7 +1579,7 @@ onBeforeUnmount(cancelActionReaction)
                                     </div>
                                 </div>
                                 <div class="fridge-door" :class="{ 'door-open': fridgeDoorOpen }" role="button" tabindex="0" :aria-expanded="fridgeDoorOpen" :aria-label="fridgeDoorOpen ? 'Close refrigerator door' : 'Open refrigerator door'" @click="toggleDoor" @pointerdown="startDoorGesture" @pointermove="moveDoorGesture" @pointerup="endDoorGesture" @pointercancel="endDoorGesture($event, true)" @lostpointercapture="endDoorGesture($event, true)" @keydown.enter.prevent="fridgeDoorOpen = !fridgeDoorOpen" @keydown.space.prevent="fridgeDoorOpen = !fridgeDoorOpen">
-                                    <span class="door-brand">FULL CIRCLE</span>
+                                    <span class="door-brand" :title="fridgeDoorTitle">{{ fridgeDoorTitle }}</span>
                                     <span v-if="!fridgeDoorOpen" class="closed-fridge-dashboard" aria-label="Fridge inventory summary">
                                         <span class="dashboard-title">FRIDGE STATUS</span>
                                         <span class="dashboard-stat"><strong>{{ totalItems }}</strong><small>Total tracked</small></span>
@@ -1447,7 +1611,9 @@ onBeforeUnmount(cancelActionReaction)
 
                     <!-- Pantry unit -->
                     <section v-if="!embedded" class="storage-unit pantry-unit" :class="{ 'slide-active': activeStorage === 'pantry' }" :inert="activeStorage !== 'pantry' ? true : undefined" :aria-hidden="activeStorage !== 'pantry'" aria-label="Pantry">
-                        <div class="storage-unit-content">
+                        <input v-if="activeStorage === 'pantry'" v-model="searchQuery" class="storage-search pantry-search" type="search"
+                            aria-label="Search pantry food" placeholder="Search food…">
+                        <div class="storage-unit-content" :key="activePantry" :class="{ 'storage-switch-pulse': animateStorageSlide }">
                         <div class="unit-top-label pantry-label">{{ countItems('pantry') }} pantry items · Four open shelves</div>
                         <div class="pantry-cabinet pantry-single-storage open-pantry">
                             <div class="open-pantry-shelves">
@@ -1536,10 +1702,17 @@ onBeforeUnmount(cancelActionReaction)
                     <div><p class="eyebrow">REDUCE FOOD WASTE</p><h2 id="expiry-title"><NoticeIcon name="bell" /> Expired Food</h2><p>Food past its expiry date across your fridge, freezer and pantry.</p></div>
                     <button type="button" class="modal-close" aria-label="Close expiry panel" @click="closeExpiryPanel">✕</button>
                 </header>
+                <button v-if="expiryItems.length" type="button" class="expiry-button mb-3"
+                    :disabled="discardingExpired" @click="discardExpiredFoods">
+                    {{ discardingExpired ? 'Discarding…' : 'Discard all expired food' }}
+                </button>
                 <div v-if="expiryItems.length" class="modal-food-list">
                     <button v-for="item in expiryItems" :key="item.id" type="button" class="expiry-food-row" @click="jumpToItem(item)">
                         <span class="modal-food-emoji"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
-                        <span class="modal-food-info"><strong>{{ item.name }}</strong><span>{{ locationLabel(item) }} · {{ amountLabel(item) }}</span></span>
+                        <span class="modal-food-info">
+                            <strong>{{ item.name }}</strong>
+                            <span>{{ itemStorageName(item) }}<template v-if="item.storage !== 'pantry'"> · {{ locationLabel(item) }}</template> · {{ amountLabel(item) }}</span>
+                        </span>
                         <span class="expiry-label" :class="{ 'is-expired': expiryDays(item) < 0 }">{{ expiryLabel(item) }}</span>
                         <span aria-hidden="true">›</span>
                     </button>
@@ -1663,7 +1836,11 @@ onBeforeUnmount(cancelActionReaction)
 .dashboard-expired strong { color:#c64d42; }
 .dashboard-soon strong { color:#c18427; }
 .fridge-door.door-open .closed-fridge-dashboard { opacity:0; pointer-events:none; }
-.fridge-door .door-brand { align-self:center; margin-right:0; color:#53646d; }
+.fridge-door .door-brand {
+    align-self:center; margin-right:0; max-width:100%; padding:3px 8px;
+    border-radius:6px; background:#effbff; color:#234d50; text-align:center;
+    overflow-wrap:anywhere;
+}
 .fridge-door .door-handle { position:absolute; top:28%; right:14px; width:7px; height:42%; background:linear-gradient(90deg,#63737c,#f5f7f8 45%,#788890); }
 .fridge-door .door-hint { position:absolute; right:12px; bottom:12px; padding:4px 6px; border-radius:4px; background:rgba(255,255,255,.65); }
  .door-inner { position:absolute; inset:0; display:flex; flex-direction:column; gap:10px; padding:16px 12px 18px; border:3px solid #8499a4; border-radius:12px 17px 17px 12px; background:linear-gradient(100deg,#9eafb8 0%,#e6edf0 16%,#d4e0e5 78%,#8da2ad 100%); color:#304e5a; transform:rotateY(180deg) translateZ(2px); transform-origin:center; backface-visibility:visible; opacity:0; transition:opacity .25s ease .15s; pointer-events:none; }
@@ -2457,5 +2634,35 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     25% { rotate: -8deg; }
     50% { rotate: 7deg; }
     75% { rotate: -4deg; }
+}
+.storage-slide-options.fridge-switcher-options { display:flex; flex-wrap:wrap; justify-content:center; max-width: min(660px, 70vw); }
+.storage-switcher {
+    position:relative;
+    width:min(100%, 780px);
+    padding-inline:56px;
+}
+.storage-switcher > .storage-slide-arrow {
+    position:absolute;
+    top:0;
+}
+.storage-switcher > .storage-slide-arrow:first-child { left:0; }
+.storage-switcher > .storage-slide-arrow:last-child { right:0; }
+.fridge-switcher-options .storage-slide-status { flex-basis:100%; text-align:center; }
+.fridge-switcher-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; flex-basis:100%; }
+.storage-search {
+    flex:1; min-width:0; width:100%; max-width:320px;
+    padding:4px 8px; border:1px solid #416f77; border-radius:8px;
+    background:#f5ffff; color:#173d39; font:600 16px/1.25 var(--font-sans);
+}
+.storage-search:focus-visible { outline:2px solid #176d72; outline-offset:2px; }
+.storage-search-clear {
+    flex:none; padding:4px 6px; border:1px solid #416f77; border-radius:8px;
+    background:#f5ffff; color:#173d39; font:600 14px/1.25 var(--font-sans);
+}
+.storage-search-clear:disabled { opacity:.55; }
+.pantry-search { display:block; margin:0 auto 12px; }
+@media (prefers-reduced-motion: no-preference) {
+    .storage-switch-pulse { animation: storage-arrive .35s ease-out; }
+    .fridge-switcher-options button { transition: background-color .2s, border-color .2s, box-shadow .2s; }
 }
 </style>

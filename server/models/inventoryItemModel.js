@@ -23,6 +23,8 @@ const inventoryItemSchema = new mongoose.Schema(
     suggestedLocation: { type: String, enum: ZONE_IDS },
     allowedLocations: { type: [String], enum: ZONE_IDS, default: undefined },
     locationReason: { type: String },
+    pantryName: { type: String, trim: true, maxlength: 60 },
+    fridgeName: { type: String, trim: true, maxlength: 60 },
     storageZone: { type: String, enum: ZONE_IDS },
     purchasedAt: Date,
     expiresAt: Date,

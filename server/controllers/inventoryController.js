@@ -21,6 +21,8 @@ const editableFields = [
   'unit',
   'storage',
   'storageZone',
+  'fridgeName',
+  'pantryName',
   'purchasedAt',
   'expiresAt',
   'purchasePrice',
@@ -43,6 +45,13 @@ function pickEditableFields(body = {}) {
 // Validate fields shared by create and update requests.
 // Returning a message lets each endpoint send a clear HTTP 400 response.
 function validateItemFields(fields, { creating = false } = {}) {
+  for (const key of ['fridgeName', 'pantryName']) {
+    if (!Object.prototype.hasOwnProperty.call(fields, key)) continue
+    if (typeof fields[key] !== 'string' || !fields[key].trim() || fields[key].trim().length > 60) {
+      return 'Storage name must be between 1 and 60 characters.'
+    }
+    fields[key] = fields[key].trim()
+  }
   if (creating || Object.prototype.hasOwnProperty.call(fields, 'name')) {
     if (typeof fields.name !== 'string' || !fields.name.trim()) {
       return 'Name is required and must be text.'
