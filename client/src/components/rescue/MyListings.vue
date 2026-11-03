@@ -2,7 +2,27 @@
 import { computed, ref, watch } from 'vue'
 import FoodIcon from '../FoodIcon.vue'
 
-// Local demo data only. Replace with your inventory/listings API later.
+// Modal visibility
+const props = defineProps({
+  activeSection: {
+    type: String,
+    default: null,
+  },
+})
+
+const emit = defineEmits(['close'])
+
+const isEditorOpen = ref(false)
+const isRemovalOpen = ref(false)
+
+function close() {
+  isEditorOpen.value = false
+  isRemovalOpen.value = false
+  pendingRemoval.value = null
+
+  emit('close')
+}
+// Local demo data
 const examples = [
   ['Organic veggie box', '1 box · 1 kg', 'Today, 5–7 pm', 2],
   ['Extra sourdough', '1 whole loaf', 'Tomorrow, 6–8 pm', 3],
@@ -25,7 +45,7 @@ const listings = ref(
       quantity,
       pickup,
       requests,
-      image: '', // Add your local image path, e.g. '/images/veggie-box.jpg'.
+      image: '',
       status:
         index === 2 || (index >= 16 && index <= 18)
           ? 'reserved'
@@ -36,10 +56,12 @@ const listings = ref(
   }),
 )
 
+// Search, filters and pagination
 const search = ref('')
 const status = ref('all')
 const page = ref(1)
 const pageSize = 5
+
 const statuses = ['all', 'available', 'reserved', 'collected']
 
 const filteredListings = computed(() =>
@@ -93,8 +115,7 @@ watch(pageCount, count => {
   }
 })
 
-// Minimal local demo form. No props, emits or backend calls.
-const editor = ref(null)
+// Add / edit listing
 const editingId = ref(null)
 
 const form = ref({
@@ -121,26 +142,34 @@ function openEditor(item) {
         status: 'available',
       }
 
-  editor.value.showModal()
+  isRemovalOpen.value = false
+  pendingRemoval.value = null
+  isEditorOpen.value = true
 }
 
 function saveListing() {
-  if (
-    !form.value.name.trim() ||
-    !form.value.quantity.trim() ||
-    !form.value.pickup.trim()
-  ) {
+  const values = {
+    name: form.value.name.trim(),
+    quantity: form.value.quantity.trim(),
+    pickup: form.value.pickup.trim(),
+    status: form.value.status,
+  }
+
+  if (!values.name || !values.quantity || !values.pickup) {
     return
   }
 
   if (editingId.value !== null) {
-    Object.assign(
-      listings.value.find(item => item.id === editingId.value),
-      form.value,
+    const item = listings.value.find(
+      item => item.id === editingId.value,
     )
+
+    if (!item) return
+
+    Object.assign(item, values)
   } else {
     listings.value.unshift({
-      ...form.value,
+      ...values,
       id: Date.now(),
       image: '',
       requests: 0,
@@ -151,326 +180,391 @@ function saveListing() {
     page.value = 1
   }
 
-  editor.value.close()
+  isEditorOpen.value = false
 }
 
-const removalDialog = ref(null)
+// Remove listing
 const pendingRemoval = ref(null)
 
 function askRemove(item) {
   pendingRemoval.value = item
-  removalDialog.value.showModal()
+  isEditorOpen.value = false
+  isRemovalOpen.value = true
+}
+
+function cancelRemoval() {
+  isRemovalOpen.value = false
+  pendingRemoval.value = null
 }
 
 function removeListing() {
+  if (!pendingRemoval.value) return
+
   listings.value = listings.value.filter(
     item => item.id !== pendingRemoval.value.id,
   )
 
-  removalDialog.value.close()
-  pendingRemoval.value = null
+  cancelRemoval()
 }
 
+// Request preview placeholder
 const requestNotice = ref('')
 
 function viewRequests(item) {
-  // TODO: Later select the same item in SharingCorner
-  // using props/emits or your store.
+  // Connect this to your sharing corner later.
   requestNotice.value = `Demo: open requests for ${item.name}.`
 }
+watch(
+  () => props.activeSection,
+  section => {
+    isEditorOpen.value = false
+    isRemovalOpen.value = false
+    pendingRemoval.value = null
+
+    if (section === 'add') {
+      openEditor()
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <section
-    class="my-listings container py-4"
-    aria-labelledby="my-listings-title"
+  <!-- Main listings modal -->
+  <div
+    v-if="activeSection === 'listings' || activeSection === 'add'"
+    class="listings-overlay"
+    @click.self="close"
   >
-    <header class="section-heading">
-      <h2 id="my-listings-title">
-        My listings · {{ listings.length }}
-      </h2>
+    <div
+      class="listings-modal my-listings"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="my-listings-title"
+    >
+      <div class="section-heading">
+        <h2 id="my-listings-title">
+          My listings · {{ listings.length }}
+        </h2>
 
-      <button
-        type="button"
-        class="listing-button primary"
-        @click="openEditor()"
-      >
-        + Add listing
-      </button>
-    </header>
+        <div class="heading-actions">
+          <button
+            type="button"
+            class="listing-button primary"
+            @click="openEditor()"
+          >
+            + Add listing
+          </button>
 
-    <!-- Search and status filters -->
-    <div class="listing-toolbar">
-      <label class="listing-search">
-        <span class="visually-hidden">Search your listings</span>
+          <button
+            type="button"
+            class="modal-close"
+            aria-label="Close my listings"
+            @click="close"
+          >
+            ×
+          </button>
+        </div>
+      </div>
 
-        <input
-          v-model="search"
-          type="search"
-          placeholder="Search your food…"
-        />
-      </label>
+      <!-- Search and status filters -->
+      <div class="listing-toolbar">
+        <label class="listing-search">
+          <span class="visually-hidden">Search your listings</span>
 
-      <div
-        class="status-filters"
-        aria-label="Filter listings by status"
-      >
-        <button
-          v-for="value in statuses"
-          :key="value"
-          type="button"
-          class="listing-button"
-          :class="{ primary: status === value }"
-          :aria-pressed="status === value"
-          @click="status = value"
+          <input
+            v-model="search"
+            type="search"
+            placeholder="Search your food…"
+          />
+        </label>
+
+        <div
+          class="status-filters"
+          aria-label="Filter listings by status"
         >
-          {{ label(value) }} · {{ countFor(value) }}
-        </button>
+          <button
+            v-for="value in statuses"
+            :key="value"
+            type="button"
+            class="listing-button"
+            :class="{ primary: status === value }"
+            :aria-pressed="status === value"
+            @click="status = value"
+          >
+            {{ label(value) }} · {{ countFor(value) }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Listings table -->
+      <div
+        class="listing-table-wrapper"
+        tabindex="0"
+        aria-label="Your listings table, scroll horizontally on small screens"
+      >
+        <table class="listing-table">
+          <thead>
+            <tr>
+              <th scope="col">Food</th>
+              <th scope="col">Pickup</th>
+              <th scope="col">Status</th>
+              <th scope="col">Requests</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr v-for="item in visibleListings" :key="item.id">
+              <td>
+                <div class="food-identity">
+                  <img
+                    v-if="item.image"
+                    :src="item.image"
+                    :alt="item.name"
+                  />
+
+                  <span
+                    v-else
+                    class="food-placeholder"
+                    aria-hidden="true"
+                  >
+                    <FoodIcon :food="item.name" />
+                  </span>
+
+                  <div>
+                    <h3>{{ item.name }}</h3>
+                    <p>{{ item.quantity }}</p>
+                  </div>
+                </div>
+              </td>
+
+              <td>{{ item.pickup }}</td>
+
+              <td>
+                <span class="status-badge" :class="item.status">
+                  {{ label(item.status) }}
+                </span>
+              </td>
+
+              <td>
+                <span
+                  v-if="item.status === 'collected'"
+                  class="muted"
+                >
+                  Completed
+                </span>
+
+                <button
+                  v-else-if="item.requests"
+                  type="button"
+                  class="text-button"
+                  @click="viewRequests(item)"
+                >
+                  {{ item.requests }}
+                  {{ item.requests === 1 ? 'request' : 'requests' }} →
+                </button>
+
+                <span v-else class="muted">No requests</span>
+              </td>
+
+              <td>
+                <div class="row-actions">
+                  <button
+                    type="button"
+                    class="text-button"
+                    :aria-label="`Edit ${item.name}`"
+                    @click="openEditor(item)"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    class="text-button muted"
+                    :aria-label="`Remove ${item.name}`"
+                    @click="askRemove(item)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+
+            <tr v-if="!visibleListings.length">
+              <td colspan="5" class="empty-state">
+                No matching listings.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination-footer">
+        <p class="muted">
+          Showing {{ rangeStart }}–{{ rangeEnd }} of
+          {{ filteredListings.length }}
+        </p>
+
+        <div
+          class="pagination-controls"
+          role="navigation"
+          aria-label="Listing pages"
+        >
+          <button
+            type="button"
+            class="listing-button"
+            :disabled="page === 1"
+            @click="page--"
+          >
+            ← Previous
+          </button>
+
+          <span>Page {{ page }} of {{ pageCount }}</span>
+
+          <button
+            type="button"
+            class="listing-button"
+            :disabled="page === pageCount"
+            @click="page++"
+          >
+            Next →
+          </button>
+        </div>
+      </div>
+
+      <p v-if="requestNotice" class="demo-notice" role="status">
+        {{ requestNotice }}
+      </p>
+    </div>
+
+    <!-- Add / edit modal -->
+    <div
+      v-if="isEditorOpen"
+      class="listings-overlay listings-overlay--nested"
+      @click.self="isEditorOpen = false"
+    >
+      <div
+        class="listing-dialog my-listings"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="listing-editor-title"
+      >
+        <form class="editor-form" @submit.prevent="saveListing">
+          <h3 id="listing-editor-title">
+            {{ editingId !== null ? 'Edit listing' : 'Add listing' }}
+          </h3>
+
+          <label>
+            Food name
+            <input v-model="form.name" required />
+          </label>
+
+          <label>
+            Quantity
+            <input
+              v-model="form.quantity"
+              required
+              placeholder="1 box · 1 kg"
+            />
+          </label>
+
+          <label>
+            Preferred pickup
+            <input
+              v-model="form.pickup"
+              required
+              placeholder="Tomorrow, 5–7 pm"
+            />
+          </label>
+
+          <label>
+            Status
+            <select v-model="form.status">
+              <option value="available">Available</option>
+              <option value="reserved">Reserved</option>
+              <option value="collected">Collected</option>
+            </select>
+          </label>
+
+          <div class="row-actions">
+            <button
+              type="button"
+              class="listing-button"
+              @click="isEditorOpen = false"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              class="listing-button primary"
+            >
+              Save listing
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 
-    <!-- Listings table -->
+    <!-- Removal confirmation modal -->
     <div
-      class="listing-table-wrapper"
-      tabindex="0"
-      aria-label="Your listings table, scroll horizontally on small screens"
+      v-if="isRemovalOpen"
+      class="listings-overlay listings-overlay--nested"
+      @click.self="cancelRemoval"
     >
-      <table class="listing-table">
-        <thead>
-          <tr>
-            <th scope="col">Food</th>
-            <th scope="col">Pickup</th>
-            <th scope="col">Status</th>
-            <th scope="col">Requests</th>
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          <tr v-for="item in visibleListings" :key="item.id">
-            <td>
-              <div class="food-identity">
-                <img
-                  v-if="item.image"
-                  :src="item.image"
-                  :alt="item.name"
-                />
-
-                <span
-                  v-else
-                  class="food-placeholder"
-                  aria-hidden="true"
-                >
-                  <FoodIcon :food="item.name" />
-                </span>
-
-                <div>
-                  <h3>{{ item.name }}</h3>
-                  <p>{{ item.quantity }}</p>
-                </div>
-              </div>
-            </td>
-
-            <td>{{ item.pickup }}</td>
-
-            <td>
-              <span class="status-badge" :class="item.status">
-                {{ label(item.status) }}
-              </span>
-            </td>
-
-            <td>
-              <span
-                v-if="item.status === 'collected'"
-                class="muted"
-              >
-                Completed
-              </span>
-
-              <button
-                v-else-if="item.requests"
-                type="button"
-                class="text-button"
-                @click="viewRequests(item)"
-              >
-                {{ item.requests }}
-                {{ item.requests === 1 ? 'request' : 'requests' }} →
-              </button>
-
-              <span v-else class="muted">No requests</span>
-            </td>
-
-            <td>
-              <div class="row-actions">
-                <button
-                  type="button"
-                  class="text-button"
-                  :aria-label="`Edit ${item.name}`"
-                  @click="openEditor(item)"
-                >
-                  Edit
-                </button>
-
-                <button
-                  type="button"
-                  class="text-button muted"
-                  :aria-label="`Remove ${item.name}`"
-                  @click="askRemove(item)"
-                >
-                  Remove
-                </button>
-              </div>
-            </td>
-          </tr>
-
-          <tr v-if="!visibleListings.length">
-            <td colspan="5" class="empty-state">
-              No matching listings.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Pagination -->
-    <footer class="pagination-footer">
-      <p class="muted">
-        Showing {{ rangeStart }}–{{ rangeEnd }} of
-        {{ filteredListings.length }}
-      </p>
-
-      <nav class="pagination-controls" aria-label="Listing pages">
-        <button
-          class="listing-button"
-          type="button"
-          :disabled="page === 1"
-          @click="page--"
-        >
-          ← Previous
-        </button>
-
-        <span>Page {{ page }} of {{ pageCount }}</span>
-
-        <button
-          class="listing-button"
-          type="button"
-          :disabled="page === pageCount"
-          @click="page++"
-        >
-          Next →
-        </button>
-      </nav>
-    </footer>
-
-    <p v-if="requestNotice" class="demo-notice" role="status">
-      {{ requestNotice }}
-    </p>
-
-    <!-- Add / edit listing -->
-    <dialog
-      ref="editor"
-      class="listing-dialog"
-      aria-labelledby="listing-editor-title"
-    >
-      <form class="editor-form" @submit.prevent="saveListing">
-        <h3 id="listing-editor-title">
-          {{ editingId !== null ? 'Edit listing' : 'Add listing' }}
+      <div
+        class="listing-dialog my-listings"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-title"
+      >
+        <h3 id="remove-title">
+          Remove {{ pendingRemoval?.name }}?
         </h3>
 
-        <label>
-          Food name
-          <input v-model="form.name" required />
-        </label>
-
-        <label>
-          Quantity
-          <input
-            v-model="form.quantity"
-            required
-            placeholder="1 box · 1 kg"
-          />
-        </label>
-
-        <label>
-          Preferred pickup
-          <input
-            v-model="form.pickup"
-            required
-            placeholder="Tomorrow, 5–7 pm"
-          />
-        </label>
-
-        <label>
-          Status
-          <select v-model="form.status">
-            <option value="available">Available</option>
-            <option value="reserved">Reserved</option>
-            <option value="collected">Collected</option>
-          </select>
-        </label>
+        <p>This removes the listing from this local demo.</p>
 
         <div class="row-actions">
           <button
             type="button"
             class="listing-button"
-            @click="editor.close()"
+            @click="cancelRemoval"
           >
-            Cancel
+            Keep listing
           </button>
 
-          <button class="listing-button primary" type="submit">
-            Save listing
+          <button
+            type="button"
+            class="listing-button primary"
+            @click="removeListing"
+          >
+            Remove
           </button>
         </div>
-      </form>
-    </dialog>
-
-    <!-- Remove listing confirmation -->
-    <dialog
-      ref="removalDialog"
-      class="listing-dialog"
-      aria-labelledby="remove-title"
-    >
-      <h3 id="remove-title">
-        Remove {{ pendingRemoval?.name }}?
-      </h3>
-
-      <p>This removes the listing from this local demo.</p>
-
-      <div class="row-actions">
-        <button
-          class="listing-button"
-          @click="removalDialog.close()"
-        >
-          Keep listing
-        </button>
-
-        <button
-          class="listing-button primary"
-          @click="removeListing"
-        >
-          Remove
-        </button>
       </div>
-    </dialog>
-  </section>
+    </div>
+  </div>
 </template>
 
 <style scoped>
+/* Base */
 .my-listings {
   color: var(--ink);
   font: 19px/1.4 var(--font-sans);
 }
 
-.my-listings * {
+.listings-overlay,
+.listings-overlay * {
   box-sizing: border-box;
 }
 
 h2,
 h3 {
+  margin: 0;
   font-family: var(--font-display);
   font-weight: 700;
-  margin: 0;
 }
 
 h2 {
@@ -500,20 +594,78 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Modal overlay */
+.listings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(18, 63, 59, 0.45);
+}
+
+.listings-overlay--nested {
+  z-index: 1060;
+}
+
+/* Main listings modal */
+.listings-modal {
+  width: 100%;
+  max-width: 1200px;
+  max-height: calc(100dvh - 48px);
+  min-width: 0;
+  padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid var(--ink);
+  border-radius: 22px;
+  background: var(--paper);
+  box-shadow: var(--shadow-paper);
+}
+
+/* Heading */
 .section-heading,
 .pagination-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
   flex-wrap: wrap;
+  gap: 16px;
+}
+
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper-bright);
+  color: var(--ink);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  background: var(--aqua-soft);
 }
 
 /* Search and filters */
 .listing-toolbar {
   display: flex;
-  gap: 12px;
   flex-wrap: wrap;
+  gap: 12px;
   margin: 22px 0;
 }
 
@@ -526,11 +678,11 @@ input,
 select {
   width: 100%;
   min-height: 44px;
+  padding: 9px 12px;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
   background: var(--paper-bright);
   color: var(--ink);
-  padding: 9px 12px;
 }
 
 .status-filters,
@@ -538,13 +690,13 @@ select {
 .pagination-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
   flex-wrap: wrap;
+  gap: 12px;
 }
 
 /* Buttons */
 .listing-button {
-  min-height: 42px;
+  min-height: 44px;
   padding: 8px 16px;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
@@ -557,13 +709,40 @@ select {
   color: var(--paper-bright);
 }
 
+.listing-button:hover:not(:disabled) {
+  background: var(--aqua-soft);
+}
+
+.listing-button.primary:hover:not(:disabled) {
+  background: #0d968b;
+}
+
+.text-button {
+  min-height: 44px;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: var(--aqua);
+  text-align: left;
+}
+
+.text-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
 /* Listings table */
 .listing-table-wrapper {
+  max-width: 100%;
+  padding: 12px;
+  overflow-x: auto;
   border: 1.5px solid var(--ink);
   border-radius: 18px;
-  padding: 12px;
   background: var(--paper-bright);
-  overflow-x: auto;
 }
 
 .listing-table {
@@ -574,11 +753,11 @@ select {
 }
 
 th {
-  font-size: 14px;
-  text-transform: uppercase;
   color: var(--muted);
+  font-size: 14px;
   font-weight: 400;
   text-align: left;
+  text-transform: uppercase;
 }
 
 th,
@@ -592,8 +771,8 @@ tbody tr:nth-child(odd) td {
 }
 
 td:first-child {
-  border-radius: 10px 0 0 10px;
   width: 34%;
+  border-radius: 10px 0 0 10px;
 }
 
 td:last-child {
@@ -612,8 +791,8 @@ td:last-child {
   flex: 0 0 56px;
   width: 56px;
   height: 56px;
-  object-fit: cover;
   border-radius: 9px;
+  object-fit: cover;
 }
 
 .food-placeholder {
@@ -624,8 +803,8 @@ td:last-child {
 }
 
 .food-identity p {
-  font-size: 17px;
   color: var(--muted);
+  font-size: 17px;
 }
 
 /* Listing status */
@@ -634,31 +813,19 @@ td:last-child {
   padding: 4px 12px;
   border-radius: 7px;
   font-size: 17px;
+  white-space: nowrap;
 }
 
-.available {
+.status-badge.available {
   background: var(--aqua-soft);
 }
 
-.reserved {
+.status-badge.reserved {
   background: var(--yellow);
 }
 
-.collected {
+.status-badge.collected {
   background: #e9eeea;
-}
-
-.text-button {
-  padding: 7px 0;
-  min-height: 40px;
-  border: 0;
-  background: transparent;
-  color: var(--aqua);
-  text-align: left;
-}
-
-.muted {
-  color: var(--muted);
 }
 
 /* Pagination and notices */
@@ -667,8 +834,8 @@ td:last-child {
 }
 
 .empty-state {
-  text-align: center;
   padding: 32px;
+  text-align: center;
 }
 
 .demo-notice {
@@ -676,18 +843,19 @@ td:last-child {
   color: var(--muted);
 }
 
-/* Add / edit / remove dialogs */
+/* Add / edit / removal modals */
 .listing-dialog {
-  width: min(480px, calc(100vw - 32px));
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100dvh - 48px);
   padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 2px solid var(--ink);
   border-radius: 18px;
-  color: var(--ink);
   background: var(--paper);
-}
-
-.listing-dialog::backdrop {
-  background: rgba(18, 63, 59, 0.4);
+  color: var(--ink);
+  box-shadow: var(--shadow-paper);
 }
 
 .editor-form {
@@ -705,6 +873,7 @@ td:last-child {
   margin-top: 18px;
 }
 
+/* Keyboard focus */
 :focus-visible {
   outline: 3px solid var(--aqua);
   outline-offset: 3px;
@@ -712,6 +881,21 @@ td:last-child {
 
 /* Responsive layout */
 @media (max-width: 575px) {
+  .listings-overlay {
+    padding: 12px;
+  }
+
+  .listings-modal,
+  .listing-dialog {
+    max-height: calc(100dvh - 24px);
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .heading-actions {
+    gap: 8px;
+  }
+
   .listing-search {
     max-width: none;
   }
