@@ -73,7 +73,8 @@ describe('FoodIcon', () => {
   it('draws the resolved icon for an item, hidden from screen readers', () => {
     const wrapper = mount(FoodIcon, { props: { item: { name: 'Bananas', icon: '🍎', category: 'fruit' } } })
     expect(wrapper.attributes('data-food-icon')).toBe('banana')
-    expect(wrapper.get('.food-shape').attributes('d')).toBe(FOOD_ICONS.banana.shape)
+    // Drawn with the one fruit shape, in the banana's own colour.
+    expect(wrapper.get('.food-shape').attributes('d')).toBe(FOOD_ICONS.avocado.shape)
     expect(wrapper.get('.food-shape').attributes('fill')).toBe(FOOD_ICONS.banana.color)
     expect(wrapper.attributes('aria-hidden')).toBe('true')
   })
@@ -87,7 +88,7 @@ describe('FoodIcon', () => {
   it('lets a colour replace the icon colour without changing its shape', () => {
     const wrapper = mount(FoodIcon, { props: { food: 'Apple', color: '#123456' } })
     expect(wrapper.get('.food-shape').attributes('fill')).toBe('#123456')
-    expect(wrapper.get('.food-shape').attributes('d')).toBe(FOOD_ICONS.apple.shape)
+    expect(wrapper.get('.food-shape').attributes('d')).toBe(FOOD_ICONS.avocado.shape)
   })
 })
 

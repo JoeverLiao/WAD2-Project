@@ -17,14 +17,16 @@ const bowl = 'M10 33C12 12 58 12 60 33c0 14-9 25-20 25H30C19 58 10 47 10 33Z'
 const block = 'M8 32 18 22h44v16L52 48H8V32Z'
 const steam = 'M26 22c-3-3 3-6 0-9M36 22c-3-3 3-6 0-9'
 
+// icon is the one shape every food of that type is drawn with; only its colour changes
+// (a red apple and a yellow banana are both the round fruit). See foodTypeIcon below.
 export const FOOD_ICON_GROUPS = [
-  { id: 'fruit', label: 'Fruit' },
-  { id: 'vegetables', label: 'Vegetables' },
-  { id: 'meat_seafood', label: 'Meat & seafood' },
-  { id: 'dairy_eggs', label: 'Dairy & eggs' },
-  { id: 'grains', label: 'Grains & bakery' },
-  { id: 'drinks', label: 'Drinks' },
-  { id: 'other', label: 'Other food' },
+  { id: 'fruit', label: 'Fruit', icon: 'avocado' },
+  { id: 'vegetables', label: 'Vegetables', icon: 'leafy' },
+  { id: 'meat_seafood', label: 'Meat & seafood', icon: 'steak' },
+  { id: 'dairy_eggs', label: 'Dairy & eggs', icon: 'milk' },
+  { id: 'grains', label: 'Grains & bakery', icon: 'bread' },
+  { id: 'drinks', label: 'Drinks', icon: 'bottle' },
+  { id: 'other', label: 'Other food', icon: 'box' },
 ]
 
 export const FOOD_ICONS = {
@@ -110,16 +112,16 @@ export const FOOD_ICONS = {
     detail: `${circle(35, 36, 7)}M35 21h.1M35 51h.1M20 36h.1M50 36h.1M24 25h.1M46 25h.1M24 47h.1M46 47h.1`,
   },
   avocado: {
-    label: 'Avocado', group: 'fruit', color: '#B7DC72',
-    shape: 'M35 8c9 0 13 11 16 20 3 8 7 12 7 18 0 8-10 14-23 14S12 54 12 46c0-6 4-10 7-18C22 19 26 8 35 8Z',
-    detail: 'M27 35h.1M43 35h.1M29 43c4 3 8 3 12 0',
+    label: 'Avocado', group: 'fruit', color: '#C8DB72',
+    shape: circle(35, 38, 20),
+    detail: 'M35 18c0-5 2-9 6-11M28 38h.1M42 38h.1M30 45c3 3 7 3 10 0',
   },
 
   // Vegetables
   leafy: {
     label: 'Leafy greens', group: 'vegetables', color: '#91D985',
-    shape: 'M35 56V31M35 38C18 38 12 27 15 13c15 0 24 9 20 25Zm0 8c15 0 24-9 21-23-15-1-24 8-21 23Z',
-    detail: smile,
+    shape: 'M35 38C18 38 12 27 15 13c15 0 24 9 20 25Zm0 8c15 0 24-9 21-23-15-1-24 8-21 23Z',
+    detail: 'M35 58V38',
   },
   broccoli: {
     label: 'Broccoli', group: 'vegetables', color: '#91D985',
@@ -261,7 +263,7 @@ export const FOOD_ICONS = {
     detail: 'M8 32h44l10-10M52 32v16M24 38c3 2 6 2 9 0',
   },
   yoghurt: {
-    label: 'Yoghurt', group: 'dairy_eggs', color: '#B9EAE5',
+    label: 'Yoghurt', group: 'dairy_eggs', color: '#FFFFFF',
     shape: 'M18 18h34l-4 39H22l-4-39Zm-3-8h40v10H15V10Z',
     detail: smile,
   },
@@ -472,3 +474,7 @@ export const FOOD_ICON_IDS = Object.keys(FOOD_ICONS)
 
 // Used whenever nothing else matches, so every food always gets an icon.
 export const DEFAULT_FOOD_ICON = 'box'
+
+/** The shape a food is drawn with: its type's icon (banana -> the round fruit, cola -> the bottle). */
+export const foodTypeIcon = (id) =>
+  FOOD_ICON_GROUPS.find((group) => group.id === FOOD_ICONS[id]?.group)?.icon ?? DEFAULT_FOOD_ICON

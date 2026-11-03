@@ -13,6 +13,7 @@ import { useInventoryStore, storageAreas, isInArea } from '../../stores/inventor
 import { getDaysRemaining, getExpiryStatus } from '../../utils/expiryUtils.js'
 import { useAuthStore } from '../../stores/auth.js'
 import SmartKitchen from '../fridge/FridgeView.vue'
+import FoodIcon from '../../components/FoodIcon.vue'
 
 const authStore = useAuthStore()
 const { user, isAuthenticated } = storeToRefs(authStore)
@@ -176,7 +177,7 @@ const vReveal = {
           <h2 id="quick-bites-heading">◷ Quick Bites <span>Use these up first</span></h2>
           <ul v-if="urgentItems.length" class="quick-bites-list">
             <li v-for="item in urgentItems" :key="item.id">
-              <strong>{{ item.name }}</strong>
+              <strong><FoodIcon :item="item" /> {{ item.name }}</strong>
               <span>{{ useByLabel(item.daysRemaining) }}</span>
               <RouterLink :to="{ name: 'freshness-recipes', query: { search: item.name } }">Cook →</RouterLink>
             </li>
@@ -254,7 +255,7 @@ const vReveal = {
               </thead>
               <TransitionGroup tag="tbody" name="row">
                 <tr v-for="item in filteredExpiryItems" :key="item.id">
-                  <td class="fw-bold">{{ item.name }}</td>
+                  <td class="fw-bold"><FoodIcon :item="item" /> {{ item.name }}</td>
                   <td class="muted">{{ item.storageLabel }}</td>
                   <td>{{ item.quantity }}</td>
                   <td><span class="pill pill-sm" :class="pillClass(item.daysRemaining)">{{ useByLabel(item.daysRemaining) }}</span></td>

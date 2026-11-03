@@ -1300,7 +1300,7 @@ onBeforeUnmount(cancelActionReaction)
                 <p class="page-description">Switch between your fridge and pantry. Keep food visible, fresh and organised.</p>
             </div>
             <div class="header-actions">
-                <span class="hero-doodle" aria-hidden="true">🧊</span>
+                <span class="hero-doodle" aria-hidden="true"><FoodIcon kind="ice" /></span>
                 <button type="button" class="expiry-button" @click="openExpiryPanel($event)">
                     <NoticeIcon name="bell" /> Expired <span class="expiry-count">{{ expiryItemCount }}</span>
                 </button>
@@ -1313,12 +1313,12 @@ onBeforeUnmount(cancelActionReaction)
         <!-- Keep the three main storage counts visible above the fridge and pantry. -->
         <section v-if="!embedded" class="inventory-summary" aria-label="Inventory summary">
             <article class="summary-card summary-total">
-                <span class="summary-icon" aria-hidden="true">📦</span>
+                <span class="summary-icon" aria-hidden="true"><FoodIcon kind="box" /></span>
                 <span class="summary-label">Tracked foods</span>
                 <strong>{{ totalItems }}</strong>
             </article>
             <article class="summary-card summary-fridge">
-                <span class="summary-icon" aria-hidden="true">🧊</span>
+                <span class="summary-icon" aria-hidden="true"><FoodIcon kind="ice" /></span>
                 <span class="summary-label">Fridge &amp; freezer</span>
                 <strong>{{ countItems('fridge') + countItems('freezer') }}</strong>
             </article>
@@ -1373,7 +1373,7 @@ onBeforeUnmount(cancelActionReaction)
                                     </div>
                                     <div class="fridge-compartments">
                                         <button type="button" class="compartment freezer-compartment" @wheel="scrollCompartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
-                                            <span class="compartment-heading">❄️ Freezer <small>{{ countItems('freezer') }} items</small></span>
+                                            <span class="compartment-heading"><span><FoodIcon kind="ice" /> Freezer</span><small>{{ countItems('freezer') }} items</small></span>
                                             <span class="food-preview">
                                                 <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
@@ -1391,7 +1391,7 @@ onBeforeUnmount(cancelActionReaction)
                                         </button>
 
                                         <div class="fridge-bottom">
-                                            <button type="button" class="compartment crisper-compartment" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: '🥬' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
+                                            <button type="button" class="compartment crisper-compartment" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: 'leafy' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
                                                 <span class="compartment-heading"><span><FoodIcon kind="leafy" /> Crisper drawer</span> <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
                                                 <span class="food-preview">
                                                 <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
