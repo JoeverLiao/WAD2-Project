@@ -77,10 +77,19 @@ const facingLeftSide = ref(false)
 const eggButton = ref(null)
 const speechBox = ref(null)
 const speechBelow = ref(false)
+const speechShift = ref(0)
+const speechPointer = ref(0)
 function positionSpeech() {
   const egg = eggButton.value?.[0]?.getBoundingClientRect()
   const bubble = speechBox.value?.[0]?.getBoundingClientRect()
-  if (egg && bubble) speechBelow.value = egg.top < bubble.height + 38
+  if (egg && bubble) {
+    speechBelow.value = egg.top < bubble.height + 38
+    const scale = layout.value.size / 100
+    const left = bubble.left - speechShift.value * scale
+    speechShift.value = Math.max(8 - left, Math.min(0, window.innerWidth - 8 - left - bubble.width)) / scale
+    const eggCenter = (egg.left + egg.width / 2 - left) / scale
+    speechPointer.value = Math.max(16, Math.min(bubble.width / scale - 16, eggCenter - speechShift.value))
+  }
 }
 function updateFacing() {
   if (held.value || tossing.value) return
@@ -282,8 +291,10 @@ async function speak(index, reactions) {
     <div v-for="(character, index) in characters" v-show="!hidden" :key="character.name" class="companion" :class="`companion-${character.row}`"
       :style="{ transform: `translate(${layout.x}px, ${layout.y}px) scale(${layout.size / 100})`, '--egg-control-scale': 100 / layout.size }">
       <button type="button" class="egg-close" aria-label="Hide egg companion" @click="setEggHidden(true)">×</button>
-      <div ref="speechBox" class="companion-speech" :class="{ 'speech-below': speechBelow }" role="status" aria-live="polite" aria-atomic="true">
-        <span v-if="activeCharacter === index">{{ message }}</span>
+      <div ref="speechBox" class="companion-speech" :class="{ 'speech-below': speechBelow }"
+        :style="{ translate: speechShift + 'px 0', '--speech-pointer': speechPointer + 'px' }" role="status" aria-live="polite" aria-atomic="true">
+        <button v-if="activeCharacter === index" type="button" class="speech-message"
+          aria-label="Dismiss message" @click="dismissSpeech">{{ message }}</button>
       </div>
       <button ref="eggButton" type="button" class="vegetable-button" :class="{ held, mirrored: facingLeftSide, reacting: reacting[index], gloomy: ['sad', 'crying'].includes(mood.expression) }"
         :aria-label="`Talk to ${character.name}, feeling ${mood.expression}`"
@@ -338,9 +349,9 @@ async function speak(index, reactions) {
 }
 .companion-speech { position:absolute; bottom:calc(100% + 30px); left:50%; transform:translateX(-50%); width:min(220px, 65vw); z-index:2; pointer-events:none; }
 .companion-speech.speech-below { top:calc(100% + 14px); bottom:auto; }
-.companion-speech span { position:relative; display:block; padding:12px 16px; border:2px solid #6c9172; border-radius:20px; background:#fffff3; color:#294b3d; box-shadow:3px 4px 0 #57755122; font-size:clamp(14px, 1.1vw, 18px); font-weight:600; line-height:1.4; text-align:center; }
-.companion-speech span::after { content:''; position:absolute; left:50%; bottom:-9px; width:15px; height:15px; border-right:2px solid #6c9172; border-bottom:2px solid #6c9172; background:#fffff3; transform:translateX(-50%) rotate(45deg); }
-.companion-speech.speech-below span::after { top:-9px; bottom:auto; transform:translateX(-50%) rotate(225deg); }
+.companion-speech .speech-message { position:relative; display:block; width:100%; pointer-events:auto; cursor:pointer; padding:12px 16px; border:2px solid #6c9172; border-radius:20px; background:#fffff3; color:#294b3d; box-shadow:3px 4px 0 #57755122; font-size:clamp(14px, 1.1vw, 18px); font-weight:600; line-height:1.4; text-align:center; }
+.companion-speech .speech-message::after { content:''; position:absolute; left:var(--speech-pointer, 50%); bottom:-9px; width:15px; height:15px; border-right:2px solid #6c9172; border-bottom:2px solid #6c9172; background:#fffff3; transform:translateX(-50%) rotate(45deg); }
+.companion-speech.speech-below .speech-message::after { top:-9px; bottom:auto; transform:translateX(-50%) rotate(225deg); }
 .vegetable-button { display:block; width:100%; aspect-ratio:1; padding:0; border:0; background:transparent; cursor:pointer; border-radius:40%; touch-action:manipulation; }
 .vegetable-button:focus-visible { outline:3px solid #36776a; outline-offset:4px; }
 .vegetable-button:hover .vegetable-sprite { filter:drop-shadow(0 7px 5px #365c3733); }
@@ -398,10 +409,9 @@ async function speak(index, reactions) {
   .companion-speech {
     right:0;
     left:auto;
-    width:min(240px, calc(100vw - 24px));
+    width:min(240px, 60vw);
     transform:none;
   }
-  .companion-speech span::after { left:auto; right:28px; }
 }
 @keyframes vegetable-sway { 0%,100% { transform:rotate(-4deg); } 50% { transform:rotate(4deg); } }
 @keyframes vegetable-bounce { 0%,100% { transform:translateY(0); } 25%,65% { transform:translateY(-24px); } 45%,85% { transform:translateY(0); } }
