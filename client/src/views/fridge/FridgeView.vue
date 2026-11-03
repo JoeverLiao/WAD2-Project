@@ -1691,7 +1691,6 @@ onBeforeUnmount(cancelActionReaction)
                                 </div>
                             </div>
                         </div>
-                        <p class="unit-caption">Click or drag the door to {{ fridgeDoorOpen ? 'close' : 'open' }} · Drag empty space to select foods · Ctrl/⌘-click to add · Double-click food for details</p>
                         </div>
 
                     </section>

@@ -228,16 +228,19 @@ const vReveal = {
             <p v-else-if="!recipes.length" class="empty m-0">
               {{ usableIngredients.length ? 'No recipes found for your ingredients yet.' : 'Add some food to get recipe ideas.' }}
             </p>
-            <ul v-else class="recipe-list">
+            <ul v-else class="dashboard-recipe-grid">
               <li v-for="recipe in recipes.slice(0, 3)" :key="recipe.id">
-                <RouterLink :to="{ name: 'recipe-detail', params: { id: String(recipe.id) } }" class="recipe-link">
-                  <div>
+                <RouterLink :to="{ name: 'recipe-detail', params: { id: String(recipe.id) } }" class="dashboard-recipe-card">
+                  <div class="dashboard-recipe-photo">
+                    <img v-if="recipe.image" :src="recipe.image" alt="" loading="lazy">
+                    <FoodIcon v-else kind="bowl" />
+                  </div>
+                  <div class="dashboard-recipe-copy">
                     <strong class="recipe-name">{{ recipe.name }}</strong>
                     <span v-if="recipe.ingredients?.length" class="recipe-meta">
-                      {{ recipe.matchedIngredients?.length ?? 0 }} of {{ recipe.ingredients.length }} ingredients in your fridge
+                      {{ recipe.matchedIngredients?.length ?? 0 }}/{{ recipe.ingredients.length }} ingredients
                     </span>
                   </div>
-                  <span class="link-arrow">View <span aria-hidden="true">→</span></span>
                 </RouterLink>
               </li>
             </ul>
@@ -312,6 +315,24 @@ const vReveal = {
 </template>
 
 <style scoped>
+.dashboard-recipe-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%, 150px),1fr));
+  gap:12px; margin:0; padding:0; list-style:none;
+}
+.dashboard-recipe-card {
+  display:flex; flex-direction:column; height:100%; overflow:hidden;
+  border:1.5px solid var(--ink); border-radius:14px; background:var(--paper-bright);
+  color:var(--ink); text-decoration:none;
+}
+.dashboard-recipe-card:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
+.dashboard-recipe-photo {
+  aspect-ratio:4 / 3; display:grid; place-items:center; overflow:hidden;
+  background:var(--aqua-soft);
+}
+.dashboard-recipe-photo img { width:100%; height:100%; object-fit:cover; }
+.dashboard-recipe-photo :deep(.food-icon) { width:48px; height:48px; }
+.dashboard-recipe-copy { display:grid; gap:5px; padding:10px 12px; }
+.dashboard-recipe-copy .recipe-meta { margin:0; }
 .expiry-item-row { position:relative; cursor:pointer; }
 .expiry-food-link { color:inherit; background:none; border:0; padding:0; text-align:left; font:inherit; }
 .expiry-food-link::after { content:''; position:absolute; inset:0; }
