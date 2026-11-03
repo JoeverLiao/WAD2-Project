@@ -340,7 +340,14 @@ onBeforeUnmount(() => {
 const foodTooltip = ref(null)
 function showFoodName(item, event) {
     const rect = event.currentTarget.getBoundingClientRect()
-    foodTooltip.value = { name: item.name, x: Math.max(100, Math.min(window.innerWidth - 100, rect.left + rect.width / 2)), y: rect.top }
+    const badge = expiryBadge(item)
+    foodTooltip.value = {
+        name: item.name,
+        expiry: badge === 'Expired' ? badge : badge ? expiryLabel(item) : null,
+        expired: badge === 'Expired',
+        x: Math.max(100, Math.min(window.innerWidth - 100, rect.left + rect.width / 2)),
+        y: rect.top,
+    }
 }
 
 function scrollCompartment(event) {
@@ -1150,6 +1157,12 @@ function itemCount(compartment) {
 }
 
 
+function expiryBadge(item) {
+    const days = expiryDays(item)
+    if (days === null || days > 3) return null
+    return days < 0 ? 'Expired' : 'Expiring soon'
+}
+
 function expiryDays(item) {
     if (!item.expiresAt) return null
     const expiry = new Date(`${item.expiresAt}T00:00:00`)
@@ -1356,7 +1369,7 @@ onBeforeUnmount(cancelActionReaction)
                     <section class="storage-unit fridge-unit" :class="{ 'slide-active': activeStorage === 'fridge' }" :inert="activeStorage !== 'fridge' ? true : undefined" :aria-hidden="activeStorage !== 'fridge'" aria-label="Refrigerator">
                         <div class="storage-unit-content">
                         <div v-if="!embedded" class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
-                        <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn }" :style="{ '--door-angle': `${doorAngle}deg`, '--open-progress': doorAngle / 170 }">
+                        <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn, 'fridge-is-idle': embedded && doorAngle === 0 && !doorGesture }" :style="{ '--door-angle': `${doorAngle}deg`, '--open-progress': doorAngle / 170 }">
                             <div class="fridge-cabinet">
                                 <div v-for="side in (fridgeLightOn ? ['left', 'right'] : [])" :key="side" class="cold-air" :class="`cold-air-${side}`" aria-hidden="true">
                                     <svg v-for="n in 3" :key="n" class="cold-air-puff" :style="{ '--puff-index': n - 1 }" viewBox="0 0 150 100">
@@ -1375,7 +1388,7 @@ onBeforeUnmount(cancelActionReaction)
                                         <button type="button" class="compartment freezer-compartment" @wheel="scrollCompartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon kind="ice" /> Freezer</span><small>{{ countItems('freezer') }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
@@ -1385,7 +1398,7 @@ onBeforeUnmount(cancelActionReaction)
                                         ]" :key="compartment.id" type="button" class="compartment shelf-compartment" @wheel="scrollCompartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon :kind="compartment.icon" /> {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
@@ -1394,7 +1407,7 @@ onBeforeUnmount(cancelActionReaction)
                                             <button type="button" class="compartment crisper-compartment" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: 'leafy' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
                                                 <span class="compartment-heading"><span><FoodIcon kind="leafy" /> Crisper drawer</span> <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
                                                 <span class="food-preview">
-                                                <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                                 </span>
                                             </button>
@@ -1415,11 +1428,11 @@ onBeforeUnmount(cancelActionReaction)
                                     <span class="door-inner" :inert="!fridgeDoorOpen">
                                         <span class="door-inner-title">DOOR SHELVES</span>
                                         <span class="door-bin" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" aria-label="Upper door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                            <span v-for="item in itemsInZone('fridge', 'door')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                             <span v-if="itemsInZone('fridge', 'door').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span class="door-bin door-bin-small" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door-lower" role="button" tabindex="0" aria-label="Lower door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door-lower' }, $event)" @click.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.enter.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.space.prevent.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door-lower')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                            <span v-for="item in itemsInZone('fridge', 'door-lower')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                             <span v-if="itemsInZone('fridge', 'door-lower').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span v-if="fridgeDoorOpen" class="fridge-close-button" role="button" tabindex="0" aria-label="Close refrigerator door" @click.stop="fridgeDoorOpen = false" @keydown.enter.stop="fridgeDoorOpen = false" @keydown.space.prevent.stop="fridgeDoorOpen = false">✕ Close door</span>
@@ -1440,7 +1453,7 @@ onBeforeUnmount(cancelActionReaction)
                             <div class="open-pantry-shelves">
                             <button v-for="(shelf, index) in pantryShelves" :key="index" type="button" class="pantry-shelf pantry-whole-storage" :aria-label="`Pantry shelf ${index + 1}, ${shelf.length} foods. View pantry items`" @wheel="scrollCompartment" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
                                 <span class="pantry-foods pantry-all-foods">
-                                <span v-for="item in shelf" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                <span v-for="item in shelf" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @mouseenter="showFoodName(item, $event)" @mouseleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                 </span>
                             </button>
                             </div>
@@ -1548,7 +1561,10 @@ onBeforeUnmount(cancelActionReaction)
         <footer v-if="!embedded" class="page-footer"><p>Full Circle · Interactive Smart Fridge</p><p>Your inventory is loaded from and saved to the backend.</p></footer>
         </div></div>
     <Teleport to="body">
-        <span v-if="foodTooltip" role="tooltip" class="fridge-food-tooltip" :style="{ left: foodTooltip.x + 'px', top: foodTooltip.y + 'px' }">{{ foodTooltip.name }}</span>
+        <div v-if="foodTooltip" role="tooltip" class="fridge-food-tooltip" :style="{ left: foodTooltip.x + 'px', top: foodTooltip.y + 'px' }">
+            <span class="food-tooltip-name">{{ foodTooltip.name }}</span>
+            <span v-if="foodTooltip.expiry" class="food-tooltip-expiry" :class="{ expired: foodTooltip.expired }">{{ foodTooltip.expiry }}</span>
+        </div>
     </Teleport>
 </template>
 
@@ -2088,10 +2104,16 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .kitchen-stage .pantry-shelf-label { font-size:20px; }
 .fridge-food-tooltip {
     position:fixed; z-index:4000; transform:translate(-50%, calc(-100% - 9px));
-    max-width:190px; padding:8px 12px; border-radius:8px; background:#173d39;
+    display:grid; justify-items:center; gap:5px; max-width:190px;
     color:white; font-size:17px; line-height:1.3; text-align:center; pointer-events:none;
+    overflow-wrap:anywhere;
+}
+.food-tooltip-name, .food-tooltip-expiry {
+    padding:8px 12px; border-radius:8px; background:#173d39;
     box-shadow:0 3px 12px #173d3933; overflow-wrap:anywhere;
 }
+.food-tooltip-expiry { background:#ffdc59; color:#4e371e; font-weight:700; }
+.food-tooltip-expiry.expired { background:#b53630; color:white; }
 
 
 /* The dashboard has less room than the full fridge page: keep food inside its shelf. */
@@ -2417,4 +2439,23 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .food-transfer-arrival { outline:3px solid #73b999; outline-offset:3px; animation:food-transfer-arrival 1.1s ease-out; }
 @keyframes food-transfer-arrival { 0%,100% { box-shadow:0 0 0 0 #73b99900; } 55% { box-shadow:0 0 0 8px #73b99945; } }
 @media(prefers-reduced-motion:reduce) { .food-transfer-arrival { animation:none; } }
+.food-expiry-badge {
+    position:absolute; top:0; right:0; z-index:2; pointer-events:none;
+    display:grid; place-items:center; width:21px; height:21px;
+    border:2px solid #4e371e; border-radius:7px 7px 9px 9px;
+    background:#ffdc59; color:#4e371e; font:900 16px/1 sans-serif;
+    transform:rotate(9deg); box-shadow:1px 2px 0 #4e371e;
+}
+.food-expiry-badge.expired { background:#df4640; color:white; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    :is(.mini-food, .door-food):not(.food-being-dragged):hover :deep(.food-icon) {
+        animation: fridge-icon-wiggle 420ms ease-in-out;
+    }
+}
+@keyframes fridge-icon-wiggle {
+    0%, 100% { rotate: 0deg; }
+    25% { rotate: -8deg; }
+    50% { rotate: 7deg; }
+    75% { rotate: -4deg; }
+}
 </style>

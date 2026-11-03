@@ -479,7 +479,7 @@ function saveDay() {
       :animated-totals="animatedTotals"
       :period-change="comparison.complete ? periodChange : undefined"
     />
-    <section class="panel chart-panel mb-5" aria-labelledby="impact-chart-heading">
+    <section id="daily-food-impact" class="panel chart-panel mb-5" aria-labelledby="impact-chart-heading">
       <div>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div>

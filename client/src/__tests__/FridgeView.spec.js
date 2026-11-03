@@ -643,3 +643,21 @@ describe('selected food group actions', () => {
     expect(document.querySelectorAll('.food-transfer-flight')).toHaveLength(1)
   })
 })
+
+it('renders visible expiry badges for expired and soon-to-expire shelf food', async () => {
+  const dateAt = offset => {
+    const date = new Date()
+    date.setDate(date.getDate() + offset)
+    return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+      .map(part => String(part).padStart(2, '0')).join('-')
+  }
+  request.mockResolvedValueOnce({ ok: true, json: async () => [
+    { ...food, _id: 'expired', expiresAt: dateAt(-1) },
+    { ...food, _id: 'soon', expiresAt: dateAt(2) },
+    { ...food, _id: 'fresh', expiresAt: dateAt(10) },
+  ] })
+  await openFridge()
+  expect(wrapper.get('[data-food-id="expired"] .food-expiry-badge.expired').isVisible()).toBe(true)
+  expect(wrapper.get('[data-food-id="soon"] .food-expiry-badge').classes()).not.toContain('expired')
+  expect(wrapper.find('[data-food-id="fresh"] .food-expiry-badge').exists()).toBe(false)
+})

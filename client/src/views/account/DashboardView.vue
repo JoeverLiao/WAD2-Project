@@ -5,7 +5,7 @@ import { summarizeFoodEvents } from '../../utils/analyticsUtils.js'
 
 const impactTotals = summarizeFoodEvents(sampleAnalyticsEvents)
 
-import { usePageLoading } from '../../utils/pageLoading.js'
+import { pageIsLoading, usePageLoading } from '../../utils/pageLoading.js'
 import { computed, ref, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 
@@ -134,8 +134,15 @@ function animateCount(target) {
 }
 watch(() => allExpiryItems.value.length, animateCount)
 
-onMounted(() => {
-  inventoryStore.loadInventory()
+const inventoryReady = ref(false)
+const entranceReady = ref(false)
+watch([inventoryReady, pageIsLoading, loading, recipesLoading], ([ready, pageBusy, inventoryBusy, recipesBusy]) => {
+  if (ready && !pageBusy && !inventoryBusy && !recipesBusy) entranceReady.value = true
+}, { flush: 'post' })
+
+onMounted(async () => {
+  await inventoryStore.loadInventory()
+  inventoryReady.value = true
   animateCount(allExpiryItems.value.length)
 })
 
@@ -166,7 +173,7 @@ const vReveal = {
 
 <template>
   <div class="dashboard-page">
-  <section aria-label="Dashboard" class="dashboard container-xl py-3">
+  <section aria-label="Dashboard" class="dashboard container-xl py-3" :class="{ 'entrance-ready': entranceReady }">
       <header class="dashboard-header fc-page-heading">
         <div>
           <p class="eyebrow">✿ {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} KITCHEN AT A GLANCE</p>
@@ -280,12 +287,67 @@ const vReveal = {
           </section>
         </div>
       </div>
-    <ImpactOverview class="mt-4 mb-3" :totals="impactTotals" demo />
+    <RouterLink class="impact-link d-block mt-4 mb-3" :to="{ name: 'analytics', hash: '#daily-food-impact' }">
+      <ImpactOverview :totals="impactTotals" demo />
+    </RouterLink>
   </section>
   </div>
 </template>
 
 <style scoped>
+.impact-link { color: inherit; text-decoration: none; }
+.impact-link:focus-visible { outline: 3px solid var(--ink); outline-offset: 6px; border-radius: 20px; }
+@media (prefers-reduced-motion: no-preference) {
+  .entrance-ready :deep(.fridge-is-idle) {
+    animation: dashboard-fridge-shake 4.6s ease-in-out 700ms infinite;
+  }
+  .entrance-ready .dashboard-header {
+    position: relative;
+    animation: dashboard-arrive 520ms cubic-bezier(.2,.75,.25,1) both;
+  }
+  .entrance-ready .dashboard-header::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(115deg, transparent 35%, #fff9d3aa 50%, transparent 65%);
+    background-size: 250% 100%;
+    animation: dashboard-glint 850ms ease-out 150ms both;
+  }
+  .entrance-ready [aria-labelledby="dashboard-fridge-heading"] {
+    animation: dashboard-arrive 560ms cubic-bezier(.2,.75,.25,1) 100ms backwards;
+  }
+  .dashboard :is(a, button):not(:disabled) {
+    transition: translate 160ms ease, filter 160ms ease;
+  }
+  .dashboard :is(a, button):not(:disabled):focus-visible {
+    translate: 0 -2px;
+  }
+  @media (hover: hover) {
+    .dashboard :is(a, button):not(:disabled):hover {
+      translate: 0 -2px;
+      filter: brightness(1.04);
+    }
+  }
+  .dashboard :is(a, button):not(:disabled):active {
+    translate: 0 1px;
+  }
+}
+@keyframes dashboard-fridge-shake {
+  0%, 25%, 100% { rotate: 0deg; }
+  5%, 15% { rotate: -.65deg; }
+  10%, 20% { rotate: .65deg; }
+}
+@keyframes dashboard-arrive {
+  from { opacity: 0; translate: 0 14px; }
+  to { opacity: 1; translate: none; }
+}
+@keyframes dashboard-glint {
+  from { background-position: 100% 0; opacity: 0; }
+  30% { opacity: 1; }
+  to { background-position: 0 0; opacity: 0; }
+}
 /* Same page shell as Home: grid paper, handwritten fonts, ink text */
 .dashboard-page {
   --aqua-dark: #087d73;
