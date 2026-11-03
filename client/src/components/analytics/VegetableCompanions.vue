@@ -88,7 +88,7 @@ async function interact(index) {
 .companion-3 .vegetable-sprite { animation-delay:-3s; }
 .vegetable-button.reacting { animation:vegetable-bounce .7s ease-in-out; }
 .vegetable-button.reacting.gloomy { animation:vegetable-shake .6s ease-in-out; }
-@media(min-width:1200px) {
+@media(width > 1900px) {
   .vegetable-companions { padding:0; }
   .companion { position:fixed; z-index:15; }
   .companion-3 { right:1vw; top:56vh; }
