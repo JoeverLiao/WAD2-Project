@@ -38,6 +38,7 @@ const { default: inventoryRoutes } = await import('./routes/inventoryRoutes.js')
 const { default: freshnessRoutes } = await import('./routes/freshnessRoutes.js');
 const { default: rescueRoutes } = await import('./routes/rescueRoutes.js');
 const { default: analyticsRoutes } = await import('./routes/analyticsRoutes.js');
+const { default: iconRoutes } = await import('./routes/iconRoutes.js');
 
 const server = express();
 // Parse URL-encoded data from POST requests
@@ -77,6 +78,7 @@ server.use('/api/inventory', inventoryRoutes)
 server.use('/api/freshness', freshnessRoutes)
 server.use('/api/rescue', rescueRoutes)
 server.use('/api/analytics', analyticsRoutes)
+server.use('/api/icons', iconRoutes)
 
 
 

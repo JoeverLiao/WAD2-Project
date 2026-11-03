@@ -5,6 +5,8 @@ import { computed, nextTick, reactive, ref } from 'vue'
 import { confirmReceiptItems, suggestItemDetails } from '../services/scanningApi.js'
 import DietBadge from './common/DietBadge.vue'
 import { CATEGORIES, DIETS, ZONES, categoryByValue, zoneByValue } from '../utils/inventoryOptions.js'
+import { FOOD_ICONS } from '../utils/foodIcons.js'
+import { foodIconForEmoji } from '../utils/foodIconMap.js'
 import {
   MAX_ITEMS,
   UNIT_SUGGESTIONS,
@@ -136,10 +138,26 @@ const dietCounts = computed(() =>
   DIETS.map((diet) => ({ ...diet, count: includedRows.value.filter((row) => row.dietType === diet.value).length })),
 )
 
-const iconsFor = (row) => categoryByValue(row.category)?.icons ?? []
+// The stored value is still the emoji, but the picker names the library icon it draws as.
+// Several emojis share one library icon (🍎 and 🍏 are both the apple), so each icon is listed
+// once, keeping whichever of them the row already has.
+const libraryIcon = (emoji) => foodIconForEmoji(emoji) ?? emoji
+const iconLabel = (emoji) => FOOD_ICONS[foodIconForEmoji(emoji)]?.label ?? emoji
+function uniqueIcons(emojis, current) {
+  const byIcon = new Map()
+  for (const emoji of emojis) {
+    if (!byIcon.has(libraryIcon(emoji)) || emoji === current) byIcon.set(libraryIcon(emoji), emoji)
+  }
+  return [...byIcon.values()]
+}
+
+const iconsFor = (row) => uniqueIcons(categoryByValue(row.category)?.icons ?? [], row.icon)
 // Every icon is available on every row; the ones for the chosen category are listed first.
 const ALL_ICONS = [...new Set(CATEGORIES.flatMap((c) => c.icons))]
-const otherIcons = (row) => ALL_ICONS.filter((icon) => !iconsFor(row).includes(icon))
+const otherIcons = (row) => {
+  const listed = new Set(iconsFor(row).map(libraryIcon))
+  return uniqueIcons(ALL_ICONS.filter((icon) => !listed.has(libraryIcon(icon))), row.icon)
+}
 const isOffSuggestion = (row) =>
   Boolean(row.suggestedLocation) && row.allowedLocations.length > 0 && !row.allowedLocations.includes(row.storageZone)
 
@@ -502,10 +520,10 @@ const totalWarning = computed(() => {
                 >
                   <option v-if="!row.icon" value="">–</option>
                   <optgroup v-if="iconsFor(row).length" :label="categoryByValue(row.category).label">
-                    <option v-for="icon in iconsFor(row)" :key="icon" :value="icon">{{ icon }}</option>
+                    <option v-for="icon in iconsFor(row)" :key="icon" :value="icon">{{ iconLabel(icon) }}</option>
                   </optgroup>
                   <optgroup label="All icons">
-                    <option v-for="icon in otherIcons(row)" :key="icon" :value="icon">{{ icon }}</option>
+                    <option v-for="icon in otherIcons(row)" :key="icon" :value="icon">{{ iconLabel(icon) }}</option>
                   </optgroup>
                 </select>
               </div>
