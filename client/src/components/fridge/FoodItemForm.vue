@@ -75,7 +75,9 @@ let returnFocusElement = null
 
 const form = reactive({
     name: '',
-    quantity: 1,
+    // The inventory model no longer assumes every food has one unit.
+    // Start blank so the user records the actual quantity.
+    quantity: '',
     unit: 'pieces',
     storage: 'fridge',
     storageZone: 'middle-shelf',
@@ -130,7 +132,7 @@ watch(
         if (props.item) {
             // Editing: copy the existing values into the form.
             form.name = props.item.name
-            form.quantity = props.item.quantity
+            form.quantity = props.item.quantity ?? ''
             form.unit = props.item.unit
             form.storage = props.item.storage
             form.storageZone = props.item.storageZone
@@ -138,7 +140,7 @@ watch(
         } else {
             // Adding: start with an empty form.
             form.name = ''
-            form.quantity = 1
+            form.quantity = ''
             form.unit = 'pieces'
             form.storage = props.defaultStorage
             // Prefer the exact area the user clicked. Otherwise use the
