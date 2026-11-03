@@ -117,4 +117,8 @@ async function interact(index) {
   .vegetable-sprite,.vegetable-button.reacting,.vegetable-button.reacting.gloomy { animation:none; }
   .expression-frame { transition:none; }
 }
+.compact-egg-companion .companion-3 {
+  scale: .8;
+  translate: 16px 0;
+}
 </style>

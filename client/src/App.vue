@@ -2,6 +2,7 @@
 import { computed, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import EggLoader from './components/EggLoader.vue'
+import EggCompanion from './components/analytics/VegetableCompanions.vue'
 import { pageIsLoading, pageLoadingLabel } from './utils/pageLoading.js'
 import AppDialog from './components/AppDialog.vue'
 import AppNavbar from './components/AppNavbar.vue'
@@ -12,6 +13,14 @@ import { dismissDialog } from './utils/dialog.js'
 const auth = useAuthStore()
 const route = useRoute()
 const needsLogin = computed(() => !route.meta.public && auth.checked && !auth.isAuthenticated)
+const pagesWithCompanion = new Set(['dashboard', 'analytics', 'scanning'])
+const showCompanion = computed(() => Boolean(route.name) && route.name !== 'home' &&
+  (needsLogin.value || !pagesWithCompanion.has(route.name)))
+const companionMessages = [
+  'Small habits make a big difference!',
+  'Use what you have before shopping for more.',
+  'Got a little extra? Share it with a neighbour!',
+]
 
 // A dialog left open across navigation (e.g. browser Back) must not act on the page behind it.
 watch(() => route.fullPath, dismissDialog)
@@ -25,6 +34,8 @@ watch(() => route.fullPath, dismissDialog)
       :feature="route.meta.promptLabel || route.meta.navLabel || 'this page'"
     />
     <RouterView v-else />
+    <EggCompanion v-if="showCompanion" :key="route.name" always-happy :messages="companionMessages"
+      :class="{ 'compact-egg-companion': ['food-rescue', 'freshness-recipes', 'recipe-detail'].includes(route.name) }" />
   </main>
   <AppDialog />
   <EggLoader :visible="pageIsLoading" :label="pageLoadingLabel" />
