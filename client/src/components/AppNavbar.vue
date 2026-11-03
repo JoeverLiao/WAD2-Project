@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import NavIcon from './NavIcon.vue'
+import { navbarBusy } from '../utils/pageLoading.js'
 import { useAuthStore } from '../stores/auth.js'
 
 const route = useRoute()
@@ -44,6 +45,17 @@ const entries = [
 const navbar = ref(null)
 const toggle = ref(null)
 const opened = ref(false)
+watch(opened, async (open, _previous, onCleanup) => {
+  let current = true
+  onCleanup(() => { current = false })
+  navbarBusy.value = true
+  if (open) return
+  await nextTick()
+  const panel = navbar.value?.querySelector('.radial-panel')
+  await Promise.allSettled((panel?.getAnimations?.() ?? []).map(animation => animation.finished))
+  if (current) navbarBusy.value = false
+}, { flush: 'sync' })
+onBeforeUnmount(() => { navbarBusy.value = false })
 const accountOpen = ref(false)
 const hovered = ref(false)
 const tooltip = ref(null)

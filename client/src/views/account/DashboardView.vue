@@ -5,7 +5,7 @@ import { summarizeFoodEvents } from '../../utils/analyticsUtils.js'
 
 const impactTotals = summarizeFoodEvents(sampleAnalyticsEvents)
 
-import { pageIsLoading, usePageLoading } from '../../utils/pageLoading.js'
+import { navbarBusy, pageIsLoading, usePageLoading } from '../../utils/pageLoading.js'
 import { computed, ref, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 
@@ -13,6 +13,8 @@ import { useInventoryStore, storageAreas, isInArea } from '../../stores/inventor
 import { getDaysRemaining, getExpiryStatus } from '../../utils/expiryUtils.js'
 import { useAuthStore } from '../../stores/auth.js'
 import SmartKitchen from '../fridge/FridgeView.vue'
+
+const dashboardFridge = ref(null)
 import FoodIcon from '../../components/FoodIcon.vue'
 
 const authStore = useAuthStore()
@@ -136,8 +138,8 @@ watch(() => allExpiryItems.value.length, animateCount)
 
 const inventoryReady = ref(false)
 const entranceReady = ref(false)
-watch([inventoryReady, pageIsLoading, loading, recipesLoading], ([ready, pageBusy, inventoryBusy, recipesBusy]) => {
-  if (ready && !pageBusy && !inventoryBusy && !recipesBusy) entranceReady.value = true
+watch([inventoryReady, pageIsLoading, loading, recipesLoading, navbarBusy], ([ready, pageBusy, inventoryBusy, recipesBusy, navBusy]) => {
+  if (ready && !pageBusy && !inventoryBusy && !recipesBusy && !navBusy) entranceReady.value = true
 }, { flush: 'post' })
 
 onMounted(async () => {
@@ -204,7 +206,7 @@ const vReveal = {
         <div class="col-lg-7 d-flex flex-column gap-3">
           <section aria-labelledby="dashboard-fridge-heading">
             <h2 id="dashboard-fridge-heading" class="section-title">Your Smart Fridge</h2>
-            <SmartKitchen embedded :inventory-items="items"
+            <SmartKitchen ref="dashboardFridge" embedded :inventory-items="items"
               @inventory-change="items = $event" @reload="inventoryStore.loadInventory()" />
           </section>
 
@@ -261,8 +263,12 @@ const vReveal = {
                 </tr>
               </thead>
               <TransitionGroup tag="tbody" name="row">
-                <tr v-for="item in filteredExpiryItems" :key="item.id">
-                  <td class="fw-bold"><FoodIcon :item="item" /> {{ item.name }}</td>
+                <tr v-for="item in filteredExpiryItems" :key="item.id" class="expiry-item-row">
+                  <td class="fw-bold">
+                    <button type="button" class="expiry-food-link" :aria-label="`Show ${item.name} in storage`" @click="dashboardFridge?.highlightFood(item.id)">
+                      <FoodIcon :item="item" /> {{ item.name }}
+                    </button>
+                  </td>
                   <td class="muted">{{ item.storageLabel }}</td>
                   <td>{{ item.quantity }}</td>
                   <td><span class="pill pill-sm" :class="pillClass(item.daysRemaining)">{{ useByLabel(item.daysRemaining) }}</span></td>
@@ -295,6 +301,10 @@ const vReveal = {
 </template>
 
 <style scoped>
+.expiry-item-row { position:relative; cursor:pointer; }
+.expiry-food-link { color:inherit; background:none; border:0; padding:0; text-align:left; font:inherit; }
+.expiry-food-link::after { content:''; position:absolute; inset:0; }
+.expiry-item-row:focus-within { outline:2px solid var(--ink); outline-offset:-2px; }
 .impact-link { color: inherit; text-decoration: none; }
 .impact-link:focus-visible { outline: 3px solid var(--ink); outline-offset: 6px; border-radius: 20px; }
 @media (prefers-reduced-motion: no-preference) {
