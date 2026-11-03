@@ -54,6 +54,30 @@ const router = inject(routerKey, null)
 const route = inject(routeLocationKey, null)
 const localItems = ref([])
 const activeStorage = ref('fridge')
+const storageSettingsOpen = ref(false)
+const storageSettingsGear = ref(null)
+let gearStartX
+let gearShift
+
+function animateSettingsGear() {
+    const gear = storageSettingsGear.value
+    if (!gear || gearStartX === undefined) return
+    gearShift?.cancel()
+    const offset = gearStartX - gear.getBoundingClientRect().left
+    gearStartX = undefined
+    if (offset && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        gearShift = gear.animate?.(
+            [{ translate: `${offset}px 0` }, { translate: '0 0' }],
+            { duration: 240, easing: 'ease-out' },
+        )
+    }
+}
+
+function toggleStorageSettings() {
+    gearStartX = storageSettingsGear.value?.getBoundingClientRect().left
+    storageSettingsOpen.value = !storageSettingsOpen.value
+    if (storageSettingsOpen.value) nextTick(animateSettingsGear)
+}
 const animateStorageSlide = ref(true)
 function showStorage(storage, animate = false) {
     if (props.embedded) return
@@ -1661,12 +1685,19 @@ onBeforeUnmount(cancelActionReaction)
                     :disabled="shiftingFood || saving" :aria-pressed="storageIndex === index"
                     @click="selectStorage(option)">{{ option.label }}</button>
                 <span :key="storageIndex" class="storage-slide-status storage-switch-pulse" role="status">{{ storageIndex + 1 }} / {{ storageOptions.length }}</span>
-                <div class="fridge-switcher-actions">
+                <div class="storage-settings-row">
+                <button ref="storageSettingsGear" type="button" class="storage-settings-toggle" aria-label="Storage settings"
+                    :aria-expanded="storageSettingsOpen" aria-controls="storage-settings"
+                    @click="toggleStorageSettings"><span aria-hidden="true">⚙︎</span></button>
+                <Transition name="storage-settings" @after-leave="animateSettingsGear">
+                <div v-show="storageSettingsOpen" id="storage-settings" class="fridge-switcher-actions">
                     <button type="button" :disabled="shiftingFood || saving" @click="editStorage('fridge')">＋ Add fridge</button>
                     <button type="button" :disabled="shiftingFood || saving" @click="editStorage('pantry')">＋ Add pantry</button>
                     <button type="button" :disabled="shiftingFood || saving" @click="editStorage(currentStorage.type, currentStorage.name)">Rename {{ activeStorage }}</button>
                     <button v-if="currentStorage.name !== mainNames[activeStorage]" type="button"
                         :disabled="shiftingFood || saving" @click="deleteStorage">Delete {{ activeStorage }}</button>
+                </div>
+                </Transition>
                 </div>
             </div>
             <button type="button" class="storage-slide-arrow" aria-label="Next storage" :disabled="shiftingFood || saving" @click="stepStorage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6l6 6-6 6" /></svg></button>
@@ -2783,7 +2814,22 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .storage-switcher > .storage-slide-arrow:first-child { left:0; }
 .storage-switcher > .storage-slide-arrow:last-child { right:0; }
 .fridge-switcher-options .storage-slide-status { flex-basis:100%; text-align:center; }
-.fridge-switcher-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; flex-basis:100%; }
+.storage-settings-row,.fridge-switcher-actions {
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px;
+}
+.storage-settings-row { flex-basis:100%; }
+.storage-slide-options .storage-settings-toggle {
+    display:grid; place-items:center; width:44px; height:44px; padding:0;
+    border:2px solid var(--ink); border-radius:50%; background:var(--paper);
+}
+.storage-settings-toggle span { display:inline-block; font:26px/1 sans-serif; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .storage-settings-toggle:hover span { animation:settings-gear-spin 480ms ease-in-out; }
+}
+@keyframes settings-gear-spin {
+    from { rotate:0deg; }
+    to { rotate:180deg; }
+}
 .storage-search {
     flex:1; min-width:0; width:100%; max-width:320px;
     padding:4px 8px; border:1px solid #416f77; border-radius:8px;
@@ -2877,5 +2923,9 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     .inventory-modal :deep(.food-quantity-actions button),
     .inventory-modal :deep(.icon-button) { min-height:44px; min-width:44px; }
     .expiry-dropdown-panel { max-height:55dvh; }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .storage-settings-enter-active,.storage-settings-leave-active { transition:opacity 200ms ease, translate 200ms ease; }
+    .storage-settings-enter-from,.storage-settings-leave-to { opacity:0; translate:-14px 0; }
 }
 </style>
