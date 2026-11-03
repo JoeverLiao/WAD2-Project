@@ -1,4 +1,10 @@
 <script setup>
+import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
+import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
+import { summarizeFoodEvents } from '../../utils/analyticsUtils.js'
+
+const impactTotals = summarizeFoodEvents(sampleAnalyticsEvents)
+
 import { usePageLoading } from '../../utils/pageLoading.js'
 import { computed, ref, watch, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -273,6 +279,7 @@ const vReveal = {
           </section>
         </div>
       </div>
+    <ImpactOverview class="mt-4 mb-3" :totals="impactTotals" demo />
   </section>
   </div>
 </template>

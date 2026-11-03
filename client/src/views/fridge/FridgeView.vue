@@ -2046,7 +2046,7 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .is-embedded .toolbar { margin-bottom:8px; }
 .is-embedded .kitchen-stage { padding:0; }
 .is-embedded .kitchen-stage .unit-top-label { margin-bottom:8px; }
-.is-embedded .kitchen-stage .fridge-body { --closed-width:100%; --open-width:49%; }
+.is-embedded .kitchen-stage .fridge-body { --open-width:49%; --closed-width:var(--open-width); }
 .is-embedded .kitchen-stage .fridge-cabinet { min-height:var(--dashboard-fridge-height,600px); height:var(--dashboard-fridge-height,600px); }
 .is-embedded .kitchen-stage .pantry-unit { margin-top:20px; padding-top:0; }
 .is-embedded .kitchen-stage .pantry-cabinet { max-width:100%; }

@@ -1,4 +1,5 @@
 <script setup>
+import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
@@ -453,111 +454,12 @@ function saveDay() {
       <span class="pill pill-aqua">Demo data</span> {{ events.length }} fictional food activity
       records. No account data is used.
     </p>
-    <section class="panel panel-tint mb-5" aria-labelledby="impact-heading">
-      <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
-        <div>
-          <h2 id="impact-heading" class="panel-title">Your impact at a glance</h2>
-          <p class="panel-sub">Small habits. Good food. A little less waste.</p>
-        </div>
-        <p class="scrawl d-none d-md-block">Every little bit counts! ↘</p>
-      </div>
-      <div class="row g-3">
-        <div class="col-6 col-lg-3">
-          <article class="metric-card">
-            <span class="metric-icon icon-lime"
-              ><svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 19C5 10 11 5 20 4c-1 9-6 15-15 15Zm0 0 8-8" /></svg
-            ></span>
-            <h3 class="metric-label">Food kept from waste</h3>
-            <strong class="metric-value" :aria-label="`${totals.saved.toFixed(2)} kg`"
-              ><span aria-hidden="true">{{ animatedTotals.saved.toFixed(2) }} kg</span></strong
-            >
-            <p class="metric-note">Consumed, shared and rescued</p>
-            <p
-              v-if="comparison.complete"
-              :key="periodChange('saved').text"
-              class="period-change"
-              :class="`change-${periodChange('saved').tone}`"
-            >
-              {{ periodChange('saved').text }}
-            </p>
-          </article>
-        </div>
-        <div class="col-6 col-lg-3">
-          <article class="metric-card">
-            <span class="metric-icon icon-coral"
-              ><svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7h16 M9 7V4h6v3 M6 7l1 14h10l1-14 M10 11v6 M14 11v6" /></svg
-            ></span>
-            <h3 class="metric-label">Food discarded</h3>
-            <strong class="metric-value" :aria-label="`${totals.discarded.toFixed(2)} kg`"
-              ><span aria-hidden="true">{{ animatedTotals.discarded.toFixed(2) }} kg</span></strong
-            >
-            <p
-              class="discarded-cost"
-              :aria-label="`${currency.format(totals.discardedValue)} discarded food value`"
-            >
-              <span aria-hidden="true">{{ currency.format(animatedTotals.discardedValue) }}</span>
-              in food value
-            </p>
-            <p class="metric-note">Opportunities to reduce waste</p>
-            <p
-              v-if="comparison.complete"
-              :key="periodChange('discarded').text"
-              class="period-change"
-              :class="`change-${periodChange('discarded').tone}`"
-            >
-              {{ periodChange('discarded').text }}
-            </p>
-          </article>
-        </div>
-        <div class="col-6 col-lg-3">
-          <article class="metric-card">
-            <span class="metric-icon icon-yellow"
-              ><svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M15 8h-4a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4H9 M12 6v12" /></svg
-            ></span>
-            <h3 class="metric-label">Food value preserved</h3>
-            <strong class="metric-value" :aria-label="currency.format(totals.value)"
-              ><span aria-hidden="true">{{ currency.format(animatedTotals.value) }}</span></strong
-            >
-            <p class="metric-note">Demo value of food kept from waste</p>
-            <p
-              v-if="comparison.complete"
-              :key="periodChange('value').text"
-              class="period-change"
-              :class="`change-${periodChange('value').tone}`"
-            >
-              {{ periodChange('value').text }}
-            </p>
-          </article>
-        </div>
-        <div class="col-6 col-lg-3">
-          <article class="metric-card">
-            <span class="metric-icon icon-aqua"
-              ><svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"
-                /></svg
-            ></span>
-            <h3 class="metric-label">Community activity</h3>
-            <strong class="metric-value" :aria-label="String(totals.community)"
-              ><span aria-hidden="true">{{ Math.round(animatedTotals.community) }}</span></strong
-            >
-            <p class="metric-note">Sharing and rescue events</p>
-            <p
-              v-if="comparison.complete"
-              :key="periodChange('community').text"
-              class="period-change"
-              :class="`change-${periodChange('community').tone}`"
-            >
-              {{ periodChange('community').text }}
-            </p>
-          </article>
-        </div>
-      </div>
-    </section>
+    <ImpactOverview
+      class="mb-5"
+      :totals="totals"
+      :animated-totals="animatedTotals"
+      :period-change="comparison.complete ? periodChange : undefined"
+    />
     <div class="comparison-note" aria-live="polite">
       <template v-if="comparison.complete"
         >Comparing {{ formatDate(visibleDays[0]) }}–{{ formatDate(visibleDays.at(-1)) }} with
