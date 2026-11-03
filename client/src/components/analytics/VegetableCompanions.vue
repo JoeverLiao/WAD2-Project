@@ -21,6 +21,9 @@ function saveLayout() {
 let gesture
 let dragged = false
 const held = ref(false)
+const dragTilt = ref(0)
+let settleTiltTimer
+onBeforeUnmount(() => clearTimeout(settleTiltTimer))
 const facingLeftSide = ref(false)
 const eggButton = ref(null)
 function updateFacing() {
@@ -54,7 +57,8 @@ watch(layout, updateFacing, { deep: true, flush: 'post' })
 function grabEgg(event) {
   if (event.button !== 0) return
   dragged = false
-  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY }
+  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY,
+    lastX: event.clientX, lastTime: event.timeStamp }
   event.currentTarget.setPointerCapture(event.pointerId)
 }
 function moveEgg(event) {
@@ -64,6 +68,13 @@ function moveEgg(event) {
   if (!dragged && Math.hypot(dx, dy) < 5) return
   dragged = true
   held.value = true
+  const elapsed = Math.max(8, event.timeStamp - gesture.lastTime)
+  const velocity = (event.clientX - gesture.lastX) / elapsed
+  gesture.lastX = event.clientX
+  gesture.lastTime = event.timeStamp
+  dragTilt.value = Math.max(-28, Math.min(28, velocity * 16))
+  clearTimeout(settleTiltTimer)
+  settleTiltTimer = setTimeout(() => { dragTilt.value = 0 }, 90)
   const bounds = event.currentTarget.getBoundingClientRect()
   const centerX = Math.max(bounds.width / 2, Math.min(window.innerWidth - bounds.width / 2, event.clientX))
   layout.value.x += centerX - bounds.left - bounds.width / 2
@@ -75,6 +86,8 @@ function releaseEgg(event) {
   if (gesture?.id !== event.pointerId) return
   gesture = null
   held.value = false
+  clearTimeout(settleTiltTimer)
+  dragTilt.value = 0
   if (dragged) { keepEggOnScreen(); saveLayout() }
 }
 let resizeGesture
@@ -177,7 +190,8 @@ async function speak(index) {
         @pointerdown="grabEgg" @pointermove="moveEgg" @pointerup="releaseEgg" @pointercancel="releaseEgg" @lostpointercapture="releaseEgg"
         @click="interact(index)" @animationend.self="reacting[index] = false">
         <span class="vegetable-sprite" aria-hidden="true">
-          <img v-show="held" class="egg-picked-up" src="/images/analytics/egg-picked-up.png" alt="" draggable="false">
+          <img v-show="held" class="egg-picked-up" :style="{ '--drag-tilt': dragTilt + 'deg' }"
+            src="/images/analytics/egg-picked-up.png" alt="" draggable="false">
           <span
             v-for="(expression, column) in expressions"
             :key="expression"
@@ -236,6 +250,13 @@ async function speak(index) {
   pointer-events:none;
 }
 .egg-picked-up { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; object-position:top center; scale:-1 1; pointer-events:none; }
+@media (prefers-reduced-motion: no-preference) {
+  .egg-picked-up {
+    transform-origin:50% 10%;
+    rotate:var(--drag-tilt, 0deg);
+    transition:rotate 140ms ease-out;
+  }
+}
 .vegetable-button.held .expression-frame { transition:none; }
 .vegetable-sprite { position:relative; display:block; width:100%; height:100%; animation:vegetable-sway 4.2s ease-in-out infinite; transform-origin:50% 90%; }
 .vegetable-button .vegetable-sprite { transition:scale .28s ease, translate .2s ease, rotate .2s ease, filter .2s ease; }
