@@ -427,7 +427,7 @@ function saveDay() {
 
 <template>
   <section class="container-xl py-4 analytics-page" aria-label="Food Waste Analytics">
-    <header class="hero row align-items-center g-4 mb-5">
+    <header class="hero row align-items-center fc-page-heading">
       <div class="col-lg-8">
         <p class="eyebrow">✿ FOOD WASTE ANALYTICS</p>
         <h1 class="hero-title">Less waste, <span class="scribble">more impact.</span></h1>

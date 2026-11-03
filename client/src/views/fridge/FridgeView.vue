@@ -1293,7 +1293,7 @@ onBeforeUnmount(cancelActionReaction)
         </div>
 
         <!-- The paper hero makes the page title and main action read like the other feature pages. -->
-        <header v-if="!embedded" class="page-header paper hero">
+        <header v-if="!embedded" class="page-header paper hero fc-page-heading">
             <div>
                 <p class="eyebrow">FULL CIRCLE · INVENTORY MANAGEMENT</p>
                 <h1>My Smart Kitchen</h1>

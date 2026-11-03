@@ -87,3 +87,39 @@ textarea[aria-invalid='true'],
 select[aria-invalid='true'] {
   border-color: #b5382a !important;
 }
+
+/* Shared page header surface, based on the Smart Kitchen header. */
+.site-content .fc-page-heading.fc-page-heading {
+  box-sizing: border-box;
+  padding: clamp(20px, 2.5vw, 24px) clamp(20px, 3vw, 28px);
+  border: 2px solid var(--ink);
+  border-radius: 17px;
+  background: var(--paper-bright);
+  color: var(--ink);
+  box-shadow: var(--shadow-paper);
+  margin-bottom: 20px;
+}
+.site-content .fc-page-heading h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 4vw, 50px);
+  line-height: 1.1;
+}
+.site-content .fc-page-heading .eyebrow {
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #087d73;
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+.site-content .fc-page-heading :is(.hero-sub, .page-description, .login-subtitle) {
+  margin-top: 10px;
+  color: var(--muted);
+}
+.site-content .fc-page-heading.hero.row {
+  margin-inline: 0;
+  row-gap: 16px;
+}

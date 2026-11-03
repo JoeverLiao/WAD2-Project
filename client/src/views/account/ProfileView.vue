@@ -49,7 +49,7 @@ async function handleLogout() {
 
 <template>
   <section class="profile-page" aria-label="Profile">
-    <div v-if="auth.user" class="profile-card">
+    <div v-if="auth.user" class="profile-card fc-page-heading">
       <div class="profile-avatar">
         <svg viewBox="0 0 120 120" role="img" aria-label="Default profile picture">
           <circle cx="60" cy="60" r="60" fill="#72d7cc" />
@@ -102,7 +102,7 @@ async function handleLogout() {
         </div>
       </form>
     </div>
-    <div v-else class="profile-card">
+    <div v-else class="profile-card fc-page-heading">
       <h1>Profile</h1>
       <p>Please <RouterLink :to="{ name: 'login' }">log in</RouterLink> to view your profile.</p>
     </div>

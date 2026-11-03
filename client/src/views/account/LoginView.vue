@@ -37,7 +37,7 @@ async function handleLogin() {
 
 <template>
   <section aria-label="Login">
-    <h1>Login</h1>
+    <header class="fc-page-heading"><p class="eyebrow">FULL CIRCLE · ACCOUNT</p><h1>Login</h1></header>
     <form @submit.prevent="handleLogin">
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <div>

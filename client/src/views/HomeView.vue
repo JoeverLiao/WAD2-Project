@@ -81,14 +81,14 @@ async function handleLogin() {
     <div class="home-shell">
       <div class="home-hero">
         <div class="hero-copy">
-          <div v-if="auth.isAuthenticated" class="login-card">
+          <div v-if="auth.isAuthenticated" class="login-card fc-page-heading">
             <h1>Welcome back, {{ auth.user.username }}</h1>
             <p class="login-subtitle">You&rsquo;re already signed in.</p>
             <RouterLink :to="{ name: 'dashboard' }" class="home-button button-scan"
               >Go to my dashboard</RouterLink
             >
           </div>
-          <form v-else class="login-card" aria-label="Login" @submit.prevent="handleLogin">
+          <form v-else class="login-card fc-page-heading" aria-label="Login" @submit.prevent="handleLogin">
             <h1>Login</h1>
             <p class="login-subtitle">Sign in to your Full Circle account.</p>
             <p v-if="error" class="login-error" role="alert">{{ error }}</p>

@@ -11,7 +11,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
 
 <template>
     <div class="container py-4">
-    <div class="bulletin-board-container my-4">
+    <div class="bulletin-board-container fc-page-heading">
         <div class="tape-strip"></div>
         <div class="row align-items-center gy-4">
             <div class="col-12 col-lg-7 col-xl-6">
@@ -21,7 +21,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
                     </svg>
                     {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} COMMUNITY BOARD
                 </div>
-                <h1 class="hero-title mb-3" style="font-size: clamp(38px, 4.5vw, 60px);">
+                <h1 class="hero-title mb-3">
                     Got extra food?<br />
                     <span class="highlight-text">Share with your neighbours.</span>
                 </h1>

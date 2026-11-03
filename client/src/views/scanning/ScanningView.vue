@@ -35,7 +35,10 @@ function switchMode(next) {
 
 <template>
   <section class="container py-4 fc-scope" aria-label="Receipt &amp; Product Scanning">
-    <h1 class="h3 mb-3">Add to your inventory</h1>
+    <header class="fc-page-heading">
+      <p class="eyebrow">FULL CIRCLE · INVENTORY</p>
+      <h1>Add to your inventory</h1>
+    </header>
 
     <ul class="fc-tabs" role="tablist" aria-label="How do you want to add items?">
       <li role="presentation">

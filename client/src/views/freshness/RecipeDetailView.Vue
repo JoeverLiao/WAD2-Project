@@ -80,7 +80,7 @@ function goBack() {
     </div>
 
     <article v-else-if="recipe" class="recipe-paper">
-      <div class="recipe-hero">
+      <div class="recipe-hero fc-page-heading">
         <img
           v-if="recipe.image"
           :src="recipe.image"

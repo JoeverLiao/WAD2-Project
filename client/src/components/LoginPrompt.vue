@@ -8,7 +8,7 @@ const route = useRoute()
 </script>
 
 <template>
-  <section class="login-prompt" aria-label="Login required">
+  <section class="login-prompt fc-page-heading" aria-label="Login required">
     <span class="prompt-icon"><NavIcon name="login" /></span>
     <h1>Please login to access your {{ feature }}</h1>
     <p>Sign in to your Full Circle account to continue.</p>

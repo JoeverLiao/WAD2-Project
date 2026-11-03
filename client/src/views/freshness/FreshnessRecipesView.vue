@@ -699,7 +699,7 @@ onUnmounted(() => {
   <main class="freshness-page">
 
     <!-- HERO -->
-    <header class="hero-panel animate-rise">
+    <header class="hero-panel animate-rise fc-page-heading">
       <div class="hero-content">
         <p class="eyebrow">YOUR SMART KITCHEN</p>
         <h1>Freshness & Recipes</h1>

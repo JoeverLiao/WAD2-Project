@@ -167,7 +167,7 @@ const vReveal = {
 <template>
   <div class="dashboard-page">
   <section aria-label="Dashboard" class="dashboard container-xl py-3">
-      <header class="dashboard-header">
+      <header class="dashboard-header fc-page-heading">
         <div>
           <p class="eyebrow">✿ {{ isAuthenticated && user?.name ? `${user.name.toUpperCase()}'S` : 'YOUR' }} KITCHEN AT A GLANCE</p>
           <h1 class="hero-title">Good food, <span class="scribble">well kept.</span></h1>
