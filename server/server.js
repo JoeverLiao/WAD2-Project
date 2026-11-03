@@ -7,6 +7,8 @@ import session from 'express-session';
 import mongoose from 'mongoose';
 import MongoStore from 'connect-mongo';
 import cors from 'cors';
+// import userRecipeRoutes from './routes/userRecipeRoutes.js'
+// import recipeRecommendationRoutes from './routes/recipeRecommendationRoutes.js'
 
 // Load config relative to this file, regardless of the terminal's current folder.
 dotenv.config({ path: fileURLToPath(new URL('./config.env', import.meta.url)), quiet: true });
@@ -39,6 +41,8 @@ const { default: freshnessRoutes } = await import('./routes/freshnessRoutes.js')
 const { default: rescueRoutes } = await import('./routes/rescueRoutes.js');
 const { default: analyticsRoutes } = await import('./routes/analyticsRoutes.js');
 const { default: iconRoutes } = await import('./routes/iconRoutes.js');
+const { default: userRecipeRoutes } = await import('./routes/userRecipeRoutes.js');
+const { default: recipeRecommendationRoutes } = await import('./routes/recipeRecommendationRoutes.js');
 
 const server = express();
 // Parse URL-encoded data from POST requests
@@ -79,7 +83,8 @@ server.use('/api/freshness', freshnessRoutes)
 server.use('/api/rescue', rescueRoutes)
 server.use('/api/analytics', analyticsRoutes)
 server.use('/api/icons', iconRoutes)
-
+server.use('/api/user-recipes', userRecipeRoutes)
+server.use('/api/recipe-recommendations', recipeRecommendationRoutes)
 
 
 // async function to connect to DB
