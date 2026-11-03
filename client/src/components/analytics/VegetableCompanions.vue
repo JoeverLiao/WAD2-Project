@@ -22,8 +22,22 @@ let gesture
 let dragged = false
 const held = ref(false)
 const dragTilt = ref(0)
-let settleTiltTimer
-onBeforeUnmount(() => clearTimeout(settleTiltTimer))
+let swingFrame
+function swingEgg(now) {
+  if (!gesture || !held.value) return
+  const dt = Math.min(.025, (now - (gesture.frameTime ?? now)) / 1000)
+  gesture.frameTime = now
+  const { angle, ax, ay } = gesture
+  // Gravity pulls the egg down while acceleration at the grip swings it outward.
+  const torque = ax * Math.cos(angle) - (30 - ay) * Math.sin(angle)
+  gesture.spin = (gesture.spin + torque * dt) * Math.exp(-2.2 * dt)
+  gesture.angle += gesture.spin * dt
+  gesture.ax *= Math.exp(-14 * dt)
+  gesture.ay *= Math.exp(-14 * dt)
+  dragTilt.value = gesture.angle * 180 / Math.PI
+  swingFrame = requestAnimationFrame(swingEgg)
+}
+onBeforeUnmount(() => cancelAnimationFrame(swingFrame))
 const facingLeftSide = ref(false)
 const eggButton = ref(null)
 function updateFacing() {
@@ -58,7 +72,8 @@ function grabEgg(event) {
   if (event.button !== 0) return
   dragged = false
   gesture = { id: event.pointerId, x: event.clientX, y: event.clientY,
-    lastX: event.clientX, lastTime: event.timeStamp }
+    lastX: event.clientX, lastY: event.clientY, lastTime: event.timeStamp,
+    vx: 0, vy: 0, ax: 0, ay: 0, angle: 0, spin: 0 }
   event.currentTarget.setPointerCapture(event.pointerId)
 }
 function moveEgg(event) {
@@ -69,12 +84,19 @@ function moveEgg(event) {
   dragged = true
   held.value = true
   const elapsed = Math.max(8, event.timeStamp - gesture.lastTime)
-  const velocity = (event.clientX - gesture.lastX) / elapsed
+  const vx = (event.clientX - gesture.lastX) / elapsed
+  const vy = (event.clientY - gesture.lastY) / elapsed
+  const force = delta => Math.max(-180, Math.min(180, delta * 1100 / elapsed))
+  gesture.ax = gesture.ax * .55 + force(vx - gesture.vx)
+  gesture.ay = gesture.ay * .55 + force(vy - gesture.vy)
+  gesture.vx = vx
+  gesture.vy = vy
   gesture.lastX = event.clientX
+  gesture.lastY = event.clientY
   gesture.lastTime = event.timeStamp
-  dragTilt.value = Math.max(-28, Math.min(28, velocity * 16))
-  clearTimeout(settleTiltTimer)
-  settleTiltTimer = setTimeout(() => { dragTilt.value = 0 }, 90)
+  if (swingFrame === undefined && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    swingFrame = requestAnimationFrame(swingEgg)
+  }
   const bounds = event.currentTarget.getBoundingClientRect()
   const centerX = Math.max(bounds.width / 2, Math.min(window.innerWidth - bounds.width / 2, event.clientX))
   layout.value.x += centerX - bounds.left - bounds.width / 2
@@ -86,7 +108,8 @@ function releaseEgg(event) {
   if (gesture?.id !== event.pointerId) return
   gesture = null
   held.value = false
-  clearTimeout(settleTiltTimer)
+  cancelAnimationFrame(swingFrame)
+  swingFrame = undefined
   dragTilt.value = 0
   if (dragged) { keepEggOnScreen(); saveLayout() }
 }
@@ -190,7 +213,7 @@ async function speak(index) {
         @pointerdown="grabEgg" @pointermove="moveEgg" @pointerup="releaseEgg" @pointercancel="releaseEgg" @lostpointercapture="releaseEgg"
         @click="interact(index)" @animationend.self="reacting[index] = false">
         <span class="vegetable-sprite" aria-hidden="true">
-          <img v-show="held" class="egg-picked-up" :style="{ '--drag-tilt': dragTilt + 'deg' }"
+          <img v-show="held" class="egg-picked-up" :style="{ '--drag-tilt': (facingLeftSide ? -dragTilt : dragTilt) + 'deg' }"
             src="/images/analytics/egg-picked-up.png" alt="" draggable="false">
           <span
             v-for="(expression, column) in expressions"
@@ -254,7 +277,6 @@ async function speak(index) {
   .egg-picked-up {
     transform-origin:50% 10%;
     rotate:var(--drag-tilt, 0deg);
-    transition:rotate 140ms ease-out;
   }
 }
 .vegetable-button.held .expression-frame { transition:none; }
