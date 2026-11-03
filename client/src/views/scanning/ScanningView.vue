@@ -1,4 +1,5 @@
 <script setup>
+import EggCompanion from '../../components/analytics/VegetableCompanions.vue'
 import { ref } from 'vue'
 import ReceiptReviewForm from '../../components/ReceiptReviewForm.vue'
 import ReceiptUpload from '../../components/ReceiptUpload.vue'
@@ -77,5 +78,6 @@ function switchMode(next) {
       />
     </template>
     <ReceiptReviewForm v-else :key="`manual-${scanKey}`" manual @reset="startOver" />
+    <EggCompanion always-happy />
   </section>
 </template>

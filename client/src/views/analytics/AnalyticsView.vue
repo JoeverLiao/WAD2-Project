@@ -1,6 +1,6 @@
 <script setup>
 import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
 import VegetableCompanions from '../../components/analytics/VegetableCompanions.vue'
@@ -35,7 +35,19 @@ let suppressClick = false
 const drag = ref(null)
 const hover = ref(null)
 const chart = ref(null)
-const plot = { left: 70, right: 950, top: 30, bottom: 300 }
+const chartWidth = ref(1000)
+const compactChart = computed(() => chartWidth.value < 600)
+const plot = reactive({ left: 70, right: 950, top: 30, bottom: 300 })
+let chartObserver
+
+function resizeChart(width) {
+  if (width <= 0) return
+  const compact = width < 600
+  chartWidth.value = compact ? width : 1000
+  plot.left = compact ? 45 : 70
+  plot.right = compact ? width - 27 : 950
+  plot.bottom = compact ? 225 : 300
+}
 const currency = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' })
 const dateFormat = new Intl.DateTimeFormat('en-SG', {
   day: 'numeric',
@@ -150,11 +162,17 @@ function updateMotion() {
 }
 onMounted(() => {
   mounted = true
+  resizeChart(chart.value?.clientWidth ?? 0)
+  if (chart.value && typeof ResizeObserver !== 'undefined') {
+    chartObserver = new ResizeObserver(([entry]) => resizeChart(entry.contentRect.width))
+    chartObserver.observe(chart.value)
+  }
   motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)')
   motionPreference?.addEventListener('change', updateMotion)
 })
 onBeforeUnmount(() => {
   mounted = false
+  chartObserver?.disconnect()
   cancelAnimationFrame(numberFrame)
   cancelAnimationFrame(zoomFrame)
   motionPreference?.removeEventListener('change', updateMotion)
@@ -235,7 +253,8 @@ function setRange(next, animate = false) {
 }
 watch(events, () => updateViewport(false))
 const xTicks = computed(() => {
-  const count = Math.min(6, daily.value.length)
+  const count = Math.min(compactChart.value ? 3 : 6, daily.value.length)
+  if (count <= 1) return count ? [0] : []
   return [
     ...new Set(
       Array.from({ length: count }, (_, index) =>
@@ -460,32 +479,19 @@ function saveDay() {
       :animated-totals="animatedTotals"
       :period-change="comparison.complete ? periodChange : undefined"
     />
-    <div class="comparison-note" aria-live="polite">
-      <template v-if="comparison.complete"
-        >Comparing {{ formatDate(visibleDays[0]) }}–{{ formatDate(visibleDays.at(-1)) }} with
-        {{ formatDate(comparison.start) }}–{{ formatDate(comparison.end) }} ·
-        {{ comparison.length }} days each.
-        <span :class="`change-${periodChange('discardedValue').tone}`"
-          >Discarded value: {{ periodChange('discardedValue').text.toLowerCase() }}.</span
-        ></template
-      >
-      <template v-else
-        >Not enough earlier history to compare this {{ comparison.length }}-day period. Try Last 7
-        days or Last 14 days. Demo history: {{ formatDate(days[0]) }}–{{
-          formatDate(days.at(-1))
-        }}
-        2026.</template
-      >
-    </div>
     <section class="panel chart-panel mb-5" aria-labelledby="impact-chart-heading">
       <div>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div>
             <h2 id="impact-chart-heading" class="panel-title mb-2">Daily food impact</h2>
             <p id="chart-help" class="text-muted small">
-              Scroll up over the graph to zoom in and down to zoom out. When zoomed in, drag left or
-              right to move through the dates. Drag the bar handles to adjust the dates. Click a
-              date to view and edit its activity.
+              <template v-if="compactChart">
+                Pick a date range below. Swipe sideways when zoomed in, or tap a date to edit its activity.
+              </template>
+              <template v-else>
+                Scroll over the graph to zoom. When zoomed in, drag sideways to move through the dates.
+                Drag the bar handles to adjust the range, or click a date to edit its activity.
+              </template>
             </p>
           </div>
           <button class="btn-paper btn-paper-secondary" :disabled="!isZoomed" @click="resetZoom">
@@ -545,6 +551,23 @@ function saveDay() {
             ><span>{{ formatDate(days.at(-1)) }}</span>
           </div>
         </div>
+        <div class="comparison-note" aria-live="polite">
+          <template v-if="comparison.complete"
+            >Comparing {{ formatDate(visibleDays[0]) }}–{{ formatDate(visibleDays.at(-1)) }} with
+            {{ formatDate(comparison.start) }}–{{ formatDate(comparison.end) }} ·
+            {{ comparison.length }} days each.
+            <span :class="`change-${periodChange('discardedValue').tone}`"
+              >Discarded value: {{ periodChange('discardedValue').text.toLowerCase() }}.</span
+            ></template
+          >
+          <template v-else
+            >Not enough earlier history to compare this {{ comparison.length }}-day period. Try Last 7
+            days or Last 14 days. Demo history: {{ formatDate(days[0]) }}–{{
+              formatDate(days.at(-1))
+            }}
+            2026.</template
+          >
+        </div>
         <div class="d-flex flex-wrap gap-3 small mb-2">
           <span v-for="line in series" :key="line.key"
             ><span class="legend-dot" :style="{ background: line.color }"></span
@@ -554,8 +577,8 @@ function saveDay() {
         <svg
           ref="chart"
           class="impact-chart"
-          :class="{ 'is-dragging': drag }"
-          viewBox="0 0 1000 365"
+          :class="{ 'is-dragging': drag, 'is-compact': compactChart }"
+          :viewBox="`0 0 ${chartWidth} ${compactChart ? 265 : 365}`"
           role="img"
           aria-labelledby="chart-title chart-description"
           aria-describedby="chart-help"
@@ -649,7 +672,7 @@ function saveDay() {
               stroke="#65776c"
               stroke-dasharray="4 4"
             />
-            <g :transform="`translate(${Math.min(globalX(hover) + 10, plot.right - 220)}, 35)`">
+            <g :transform="`translate(${Math.max(8, Math.min(globalX(hover) + 10, chartWidth - 228))}, 35)`">
               <rect width="220" height="85" rx="8" fill="#fff" stroke="#ced8d1" />
               <text x="12" y="23" class="tooltip-label">{{ formatDate(hoverDay.date) }}</text>
               <text x="12" y="47" class="tooltip-label">
@@ -1007,7 +1030,7 @@ function saveDay() {
   display: block;
   width: 100%;
   min-height: 230px;
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
   cursor: grab;
 }
@@ -1019,6 +1042,10 @@ function saveDay() {
 .axis-label {
   font-size: 13px;
   fill: #536259;
+}
+
+.impact-chart.is-compact .axis-label {
+  font-size: 14px;
 }
 
 .tooltip-label {
@@ -1426,7 +1453,7 @@ function saveDay() {
   background: #eef4f2;
 }
 .comparison-note {
-  margin: -24px 0 28px;
+  margin: 0 0 1rem;
   color: var(--muted);
   font-size: 0.95rem;
 }
@@ -1628,6 +1655,13 @@ function saveDay() {
   }
 }
 @media (max-width: 767.98px) {
+  .period-presets .filter-chip,
+  .chart-panel .btn-paper {
+    min-height: 44px;
+  }
+  #chart-help {
+    font-size: .95rem;
+  }
   .ranking-layout {
     grid-template-columns: 1fr;
   }

@@ -32,6 +32,14 @@ async function dragAcross(svg, start, end) {
   await pointer(svg, 'pointerup', end)
 }
 
+const demoDates = [...new Set(sampleAnalyticsEvents.map(event => event.occurredAt.slice(0, 10)))].sort()
+function expectedVisibleRecords(wrapper) {
+  const start = Number(wrapper.get('[aria-label="Start date"]').element.value)
+  const end = Number(wrapper.get('[aria-label="End date"]').element.value)
+  const dates = new Set(demoDates.slice(start, end + 1))
+  return sampleAnalyticsEvents.filter(event => dates.has(event.occurredAt.slice(0, 10))).length
+}
+
 describe('Analytics demo', () => {
   beforeEach(() => {
     HTMLDialogElement.prototype.showModal = vi.fn(function () {
@@ -46,14 +54,14 @@ describe('Analytics demo', () => {
     delete HTMLDialogElement.prototype.close
     vi.restoreAllMocks()
   })
-  it('shows 50 unique records and calculates totals from their weights', () => {
-    expect(sampleAnalyticsEvents).toHaveLength(50)
-    expect(new Set(sampleAnalyticsEvents.map((event) => event._id)).size).toBe(50)
+  it('shows 60 unique records and calculates totals from their weights', () => {
+    expect(sampleAnalyticsEvents).toHaveLength(60)
+    expect(new Set(sampleAnalyticsEvents.map((event) => event._id)).size).toBe(60)
     const { wrapper } = mountChart()
     const saved = sampleAnalyticsEvents
       .filter((event) => event.action !== 'discarded')
       .reduce((sum, event) => sum + event.weightKg, 0)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     expect(wrapper.text()).toContain(`${saved.toFixed(2)} kg`)
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
     wrapper.unmount()
@@ -68,15 +76,15 @@ describe('Analytics demo', () => {
     await pointer(svg, 'pointermove', 290)
     expect(inputs[0].element.value).toBe('20')
     expect(inputs[1].element.value).toBe('40')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(21)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     await pointer(svg, 'pointerup', 290)
     expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
     await dragAcross(svg, 290, 730)
     expect(inputs[0].element.value).toBe('10')
     expect(inputs[1].element.value).toBe('30')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(21)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     await wrapper.get('button').trigger('click')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     expect(wrapper.get('[aria-label="Start date"]').element.value).toBe('0')
     wrapper.unmount()
   })
@@ -92,20 +100,20 @@ describe('Analytics demo', () => {
     await dragAcross(svg, 510, -1490)
     expect(inputs[0].element.value).toBe('29')
     expect(inputs[1].element.value).toBe('49')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(21)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     wrapper.unmount()
   })
 
   it('does not zoom on drag and ignores simple clicks and cancelled drags', async () => {
     const { wrapper, svg } = mountChart()
     await dragAcross(svg, 246, 774)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     await dragAcross(svg, 246, 249)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     await pointer(svg, 'pointerdown')
     await pointer(svg, 'pointercancel')
     await pointer(svg, 'pointerup', 774)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     wrapper.unmount()
   })
 
@@ -113,10 +121,10 @@ describe('Analytics demo', () => {
     const { wrapper } = mountChart()
     const inputs = wrapper.findAll('input[type="range"]')
     await inputs[0].setValue('37')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(13)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     await inputs[1].setValue('7')
     expect(inputs[1].element.value).toBe('38')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     await inputs[0].setValue('49')
     expect(inputs[0].element.value).toBe('37')
     wrapper.unmount()
@@ -137,24 +145,24 @@ describe('Analytics demo', () => {
       return event
     }
     expect((await wheel(-100)).defaultPrevented).toBe(true)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(40)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     const inputs = wrapper.findAll('input[type="range"]')
     expect(inputs[0].element.value).toBe('5')
     expect(inputs[1].element.value).toBe('44')
     await wheel(100)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(48)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     await wheel(100)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     // At the right edge, zooming retains the latest date.
     for (let index = 0; index < 25; index++) await wheel(-100, 950)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     expect(inputs[1].element.value).toBe('49')
     await wrapper.get('button').trigger('click')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     // Scrolling outside the plot still scrolls the page.
     expect((await wheel(-100, 20)).defaultPrevented).toBe(false)
     expect((await wheel(-100, 510, 340)).defaultPrevented).toBe(false)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     wrapper.unmount()
   })
 
@@ -204,7 +212,7 @@ describe('Analytics demo', () => {
   })
   it('shows discarded value, compares equal periods and filters ranked food activity', async () => {
     const { wrapper } = mountChart()
-    expect(wrapper.get('.discarded-cost').attributes('aria-label')).toContain('29.80')
+    expect(wrapper.get('.discarded-cost').attributes('aria-label')).toContain(sampleAnalyticsEvents.filter(event => event.action === 'discarded').reduce((sum, event) => sum + event.valueSgd, 0).toFixed(2))
     expect(wrapper.get('.comparison-note').text()).toContain('Not enough earlier history')
     const firstFood = wrapper.get('.ranking-row .ranking-food-heading b').text()
     await wrapper.get('.ranking-row').trigger('click')
@@ -216,12 +224,12 @@ describe('Analytics demo', () => {
       .findAll('button')
       .find((button) => button.text() === 'Clear food filter')
       .trigger('click')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Last 7 days')
       .trigger('click')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(7)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
     expect(wrapper.get('.comparison-note').text()).toContain('7 days each')
     expect(wrapper.findAll('.period-change')).toHaveLength(4)
     await wrapper
@@ -233,7 +241,7 @@ describe('Analytics demo', () => {
       .findAll('button')
       .find((button) => button.text() === 'All dates')
       .trigger('click')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(50)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     expect(wrapper.get('.comparison-note').text()).toContain('Not enough earlier history')
     wrapper.unmount()
   })

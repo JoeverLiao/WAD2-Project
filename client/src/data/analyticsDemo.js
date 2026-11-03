@@ -15,8 +15,8 @@ const foods = [
 const actions = ['consumed', 'shared', 'consumed', 'discarded', 'rescued', 'consumed', 'shared']
 const locations = ['Tampines', 'Bedok', 'Jurong East', 'Bishan', 'Queenstown']
 
-// Exactly 50 reproducible records, 25 August–13 October 2026.
-export const sampleAnalyticsEvents = Array.from({ length: 50 }, (_, index) => {
+// One baseline record per day, 25 August–13 October 2026.
+const baselineEvents = Array.from({ length: 50 }, (_, index) => {
   const [name, category, quantity, unit, weightKg, valueSgd] = foods[index % foods.length]
   const action = actions[index % actions.length]
   const multiplier = 1 + (Math.floor(index / 10) % 3)
@@ -35,3 +35,27 @@ export const sampleAnalyticsEvents = Array.from({ length: 50 }, (_, index) => {
     source: action === 'rescued' ? 'Community food rescue' : 'My fridge',
   }
 })
+
+
+// Ten sampled dates are fixed so the demo stays reproducible.
+const mixedDayIndices = [10, 11, 14, 22, 24, 29, 34, 40, 41, 42]
+const oppositeEvents = mixedDayIndices.map((dayIndex, index) => {
+  const original = baselineEvents[dayIndex]
+  const [name, category, quantity, unit, weightKg, valueSgd] = foods[(dayIndex + 3) % foods.length]
+  return {
+    ...original,
+    _id: `demo-event-mixed-${index + 1}`,
+    inventoryItem: `demo-inventory-mixed-${index + 1}`,
+    name,
+    category,
+    quantity,
+    unit,
+    weightKg,
+    valueSgd,
+    action: original.action === 'discarded' ? 'consumed' : 'discarded',
+    occurredAt: original.occurredAt.replace('T04:', 'T10:'),
+    source: 'My fridge',
+  }
+})
+
+export const sampleAnalyticsEvents = [...baselineEvents, ...oppositeEvents]
