@@ -1,251 +1,400 @@
 <script setup>
-  import {ref, reactive} from 'vue';
-  import Header from '@/components/rescue/RescueHeader.vue';
-  import SharingCorner from '@/components/rescue/SharingCorner.vue'
-  import MyListings from '@/components/rescue/MyListings.vue'
-  import RescueMap from '@/components/rescue/RescueMap.vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import Header from "@/components/rescue/RescueHeader.vue";
+import SharingCorner from "@/components/rescue/SharingCorner.vue";
+import MyListings from "@/components/rescue/MyListings.vue";
+import RescueMap from "@/components/rescue/RescueMap.vue";
+import { allPages, api, apiError, isCancelled } from "@/services/rescueApi.js";
+import { displayStatus } from "@/services/rescueForm.js";
 
-  const sharingSummary = reactive({
-  received: 6,
-  newRequests: 2,
-  needsReply: 3,
-  sent: 2,
-  awaitingReply: 1,
-  listings: 24,
-  available: 15,
-})
+const sharingSection = ref(null);
+const initialListingId = ref(null);
+const mapRefreshKey = ref(0);
+const rescueMap = ref(null);
+const nearbyState = reactive({
+  listings: [],
+  loading: true,
+  error: "",
+  searchLabel: "",
+});
+const summaryLoading = ref(false);
+const summaryError = ref("");
+const hasSummary = ref(false);
+const sharingSummary = reactive({
+  received: 0,
+  needsReply: 0,
+  sent: 0,
+  awaitingReply: 0,
+  listings: 0,
+  available: 0,
+});
+let summaryController = null;
+let alive = true;
 
-const sharingSection = ref(null)
+// Keep the last successful counts during refresh; never show invented zeros on error.
+function countLabel(value) {
+  return hasSummary.value ? value : summaryError.value ? "—" : "…";
+}
+const receivedDetail = computed(() =>
+  !hasSummary.value
+    ? summaryError.value
+      ? "Summary unavailable"
+      : "Loading…"
+    : sharingSummary.needsReply > 0
+      ? `${sharingSummary.needsReply} awaiting reply`
+      : "All caught up",
+);
+const sentDetail = computed(() =>
+  !hasSummary.value
+    ? summaryError.value
+      ? "Summary unavailable"
+      : "Loading…"
+    : sharingSummary.awaitingReply > 0
+      ? `${sharingSummary.awaitingReply} awaiting reply`
+      : "No replies pending",
+);
+const listingsDetail = computed(() =>
+  !hasSummary.value
+    ? summaryError.value
+      ? "Summary unavailable"
+      : "Loading…"
+    : `${sharingSummary.available} available`,
+);
 
+async function refreshSummary() {
+  summaryController?.abort();
+  const controller = new AbortController();
+  summaryController = controller;
+  summaryLoading.value = true;
+  summaryError.value = "";
+
+  try {
+    const requestCount = async (direction, status) => {
+      const { data } = await api.get("/rescue/requests", {
+        params: { direction, ...(status ? { status } : {}), limit: 1 },
+        signal: controller.signal,
+      });
+      if (!Number.isInteger(data.total) || data.total < 0) {
+        throw new Error("The server returned an invalid sharing summary.");
+      }
+      return data.total;
+    };
+    const [received, needsReply, sent, awaitingReply, listings] =
+      await Promise.all([
+        requestCount("received"),
+        requestCount("received", "pending"),
+        requestCount("sent"),
+        requestCount("sent", "pending"),
+        allPages("/rescue/mine", "listings", {}, controller.signal),
+      ]);
+    if (!alive || controller.signal.aborted) return;
+
+    Object.assign(sharingSummary, {
+      received,
+      needsReply,
+      sent,
+      awaitingReply,
+      listings: listings.length,
+      available: listings.filter((item) => displayStatus(item) === "available")
+        .length,
+    });
+    hasSummary.value = true;
+  } catch (error) {
+    if (alive && !controller.signal.aborted && !isCancelled(error)) {
+      summaryError.value = apiError(
+        error,
+        "Unable to load your sharing summary.",
+      );
+    }
+  } finally {
+    if (alive && summaryController === controller) summaryLoading.value = false;
+  }
+}
+
+function updateNearbyResults(state) {
+  Object.assign(nearbyState, state);
+}
+function exploreNearby() {
+  const section = document.getElementById("explore-map");
+  section?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+    block: "start",
+  });
+  document.getElementById("explore-title")?.focus({ preventScroll: true });
+}
+async function requestFromHeader(listingId) {
+  exploreNearby();
+  await rescueMap.value?.requestListing(listingId);
+}
+function refreshNearby() {
+  rescueMap.value?.refresh();
+}
 function openSharingSection(section) {
+  initialListingId.value = null;
   sharingSection.value = section;
 }
+function openReceivedRequests(listingId) {
+  initialListingId.value = listingId;
+  sharingSection.value = "received";
+}
+function openSentRequests(listingId) {
+  initialListingId.value = listingId;
+  sharingSection.value = "sent";
+}
+function onRescueChanged() {
+  mapRefreshKey.value += 1;
+  refreshSummary();
+}
+function closeSharingSection() {
+  sharingSection.value = null;
+  initialListingId.value = null;
+  onRescueChanged();
+}
+
+onMounted(refreshSummary);
+onBeforeUnmount(() => {
+  alive = false;
+  summaryController?.abort();
+});
 </script>
 
 <template>
-    <Header />
+  <Header
+    :nearby-listings="nearbyState.listings"
+    :nearby-loading="nearbyState.loading"
+    :nearby-error="nearbyState.error"
+    :search-label="nearbyState.searchLabel"
+    @post-listing="openSharingSection('add')"
+    @explore="exploreNearby"
+    @request-listing="requestFromHeader"
+    @refresh-nearby="refreshNearby"
+  />
 
-    <div class="container my-4">
-      <section
-        class="sharing-dashboard"
-        aria-labelledby="sharing-dashboard-title"
+  <div class="container my-4">
+    <section
+      class="sharing-dashboard"
+      aria-labelledby="sharing-dashboard-title"
+    >
+      <header class="sharing-dashboard__header">
+        <h2 id="sharing-dashboard-title">Your sharing</h2>
+
+        <button
+          type="button"
+          class="sharing-dashboard__add"
+          @click="openSharingSection('add')"
         >
-        <header class="sharing-dashboard__header">
-          <h2 id="sharing-dashboard-title">Your sharing</h2>
+          <svg class="sharing-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
 
-          <button
-            type="button"
-            class="sharing-dashboard__add"
-            @click="openSharingSection('add')"
-          >
+          Share food
+        </button>
+      </header>
+
+      <div v-if="summaryError" class="alert alert-danger" role="alert">
+        {{ summaryError }}
+        <span v-if="hasSummary">Showing your last loaded counts.</span>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-dark ms-2"
+          :disabled="summaryLoading"
+          @click="refreshSummary"
+        >
+          Retry
+        </button>
+      </div>
+
+      <div class="sharing-dashboard__grid" :aria-busy="summaryLoading">
+        <!-- Requests received -->
+        <button
+          type="button"
+          class="sharing-stat sharing-stat--received"
+          @click="openSharingSection('received')"
+        >
+          <span class="sharing-stat__heading">
+            <span class="sharing-stat__label">
+              <svg class="sharing-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+                <path
+                  d="m5.45 5.11-3.1 5.34A3 3 0 0 0 2 11.96V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6.04a3 3 0 0 0-.35-1.51l-3.1-5.34A2 2 0 0 0 16.82 4H7.18a2 2 0 0 0-1.73 1.11Z"
+                />
+              </svg>
+
+              Requests received
+            </span>
+
+            <span
+              v-if="hasSummary && sharingSummary.needsReply > 0"
+              class="sharing-stat__badge"
+              :aria-label="`${sharingSummary.needsReply} pending requests`"
+            >
+              {{ sharingSummary.needsReply }} PENDING
+            </span>
+          </span>
+
+          <span class="sharing-stat__value-row">
+            <span class="sharing-stat__total">
+              {{ countLabel(sharingSummary.received) }}
+              <span class="visually-hidden">requests received</span>
+            </span>
+
             <svg
-              class="sharing-icon"
+              class="sharing-icon sharing-stat__chevron"
               viewBox="0 0 24 24"
               aria-hidden="true"
             >
-              <path d="M12 5v14M5 12h14" />
+              <path d="m9 18 6-6-6-6" />
             </svg>
+          </span>
 
-            Share food
-          </button>
-        </header>
+          <span class="sharing-stat__detail">
+            {{ receivedDetail }}
+          </span>
+        </button>
 
-        <div class="sharing-dashboard__grid">
-          <!-- Requests received -->
-          <button
-            type="button"
-            class="sharing-stat sharing-stat--received"
-            @click="openSharingSection('received')"
-          >
-            <span class="sharing-stat__heading">
-              <span class="sharing-stat__label">
-                <svg
-                  class="sharing-icon"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path d="M22 12h-6l-2 3h-4l-2-3H2" />
-                  <path
-                    d="m5.45 5.11-3.1 5.34A3 3 0 0 0 2 11.96V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6.04a3 3 0 0 0-.35-1.51l-3.1-5.34A2 2 0 0 0 16.82 4H7.18a2 2 0 0 0-1.73 1.11Z"
-                  />
-                </svg>
-
-                Requests received
-              </span>
-
-              <span
-                v-if="sharingSummary.newRequests > 0"
-                class="sharing-stat__badge"
-                :aria-label="`${sharingSummary.newRequests} new requests`"
-              >
-                {{ sharingSummary.newRequests }} NEW
-              </span>
-            </span>
-
-            <span class="sharing-stat__value-row">
-              <span class="sharing-stat__total">
-                {{ sharingSummary.received }}
-                <span class="visually-hidden">requests received</span>
-              </span>
-
-              <svg
-                class="sharing-icon sharing-stat__chevron"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path d="m9 18 6-6-6-6" />
+        <!-- Requests sent -->
+        <button
+          type="button"
+          class="sharing-stat sharing-stat--sent"
+          @click="openSharingSection('sent')"
+        >
+          <span class="sharing-stat__heading">
+            <span class="sharing-stat__label">
+              <svg class="sharing-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m22 2-7 20-4-9-9-4Z" />
+                <path d="M22 2 11 13" />
               </svg>
+
+              Requests sent
+            </span>
+          </span>
+
+          <span class="sharing-stat__value-row">
+            <span class="sharing-stat__total">
+              {{ countLabel(sharingSummary.sent) }}
+              <span class="visually-hidden">requests sent</span>
             </span>
 
-            <span class="sharing-stat__detail">
-              {{
-                sharingSummary.needsReply > 0
-                  ? `${sharingSummary.needsReply} awaiting reply`
-                  : 'All caught up'
-              }}
-            </span>
-          </button>
+            <svg
+              class="sharing-icon sharing-stat__chevron"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </span>
 
-          <!-- Requests sent -->
-          <button
-            type="button"
-            class="sharing-stat sharing-stat--sent"
-            @click="openSharingSection('sent')"
-          >
-            <span class="sharing-stat__heading">
-              <span class="sharing-stat__label">
-                <svg
-                  class="sharing-icon"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path d="m22 2-7 20-4-9-9-4Z" />
-                  <path d="M22 2 11 13" />
-                </svg>
+          <span class="sharing-stat__detail">
+            {{ sentDetail }}
+          </span>
+        </button>
 
-                Requests sent
-              </span>
-            </span>
-
-            <span class="sharing-stat__value-row">
-              <span class="sharing-stat__total">
-                {{ sharingSummary.sent }}
-                <span class="visually-hidden">requests sent</span>
-              </span>
-
-              <svg
-                class="sharing-icon sharing-stat__chevron"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path d="m9 18 6-6-6-6" />
+        <!-- My listings -->
+        <button
+          type="button"
+          class="sharing-stat sharing-stat--listings"
+          @click="openSharingSection('listings')"
+        >
+          <span class="sharing-stat__heading">
+            <span class="sharing-stat__label">
+              <svg class="sharing-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4" y="4" width="16" height="17" rx="2" />
+                <path d="M9 4V2h6v2M8 9h8M8 13h8M8 17h5" />
               </svg>
+
+              My listings
+            </span>
+          </span>
+
+          <span class="sharing-stat__value-row">
+            <span class="sharing-stat__total">
+              {{ countLabel(sharingSummary.listings) }}
+              <span class="visually-hidden">listings</span>
             </span>
 
-            <span class="sharing-stat__detail">
-              {{
-                sharingSummary.awaitingReply > 0
-                  ? `${sharingSummary.awaitingReply} awaiting reply`
-                  : 'No replies pending'
-              }}
-            </span>
-          </button>
+            <svg
+              class="sharing-icon sharing-stat__chevron"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </span>
 
-          <!-- My listings -->
-          <button
-            type="button"
-            class="sharing-stat sharing-stat--listings"
-            @click="openSharingSection('listings')"
-          >
-            <span class="sharing-stat__heading">
-              <span class="sharing-stat__label">
-                <svg
-                  class="sharing-icon"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <rect x="4" y="4" width="16" height="17" rx="2" />
-                  <path d="M9 4V2h6v2M8 9h8M8 13h8M8 17h5" />
-                </svg>
+          <span class="sharing-stat__detail">
+            {{ listingsDetail }}
+          </span>
+        </button>
+      </div>
+    </section>
+  </div>
 
-                My listings
-              </span>
-            </span>
+  <MyListings
+    :active-section="sharingSection"
+    @close="closeSharingSection"
+    @changed="onRescueChanged"
+    @view-requests="openReceivedRequests"
+  />
 
-            <span class="sharing-stat__value-row">
-              <span class="sharing-stat__total">
-                {{ sharingSummary.listings }}
-                <span class="visually-hidden">listings</span>
-              </span>
+  <SharingCorner
+    :active-section="sharingSection"
+    :initial-listing-id="initialListingId"
+    @close="closeSharingSection"
+    @changed="onRescueChanged"
+  />
 
-              <svg
-                class="sharing-icon sharing-stat__chevron"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path d="m9 18 6-6-6-6" />
-              </svg>
-            </span>
-
-            <span class="sharing-stat__detail">
-              {{ sharingSummary.available }} available
-            </span>
-          </button>
-        </div>
-      </section>
-    </div>
-
-    <MyListings
-      :activeSection = "sharingSection"
-      @close = "sharingSection = null"
-    />
-
-    <SharingCorner 
-      :activeSection = "sharingSection"
-      @close = "sharingSection = null"
-    />
-
-    <RescueMap />
-
+  <RescueMap
+    ref="rescueMap"
+    :refresh-key="mapRefreshKey"
+    @changed="refreshSummary"
+    @results="updateNearbyResults"
+    @view-sent="openSentRequests"
+    @manage-listings="openSharingSection('listings')"
+  />
 </template>
 
 <style scoped>
 .primary-button {
-      font-family: var(--font-sans);
-      padding: 16px 26px;
-      border: 2px solid var(--ink);
-      border-radius: 14px 11px 16px 10px;
-      background: var(--aqua);
-      color: white;
-      font-size: 18px;
-      font-weight: 500;
-      box-shadow: var(--shadow-small);
-      transition: transform 150ms ease, box-shadow 150ms ease;
-      cursor: pointer;
-      text-wrap: nowrap;
+  font-family: var(--font-sans);
+  padding: 16px 26px;
+  border: 2px solid var(--ink);
+  border-radius: 14px 11px 16px 10px;
+  background: var(--aqua);
+  color: white;
+  font-size: 18px;
+  font-weight: 500;
+  box-shadow: var(--shadow-small);
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+  cursor: pointer;
+  text-wrap: nowrap;
 }
 .primary-button:hover:not(:disabled) {
-      box-shadow: 1px 2px 0 var(--ink);
-      transform: translate(2px, 2px);
-      background: #0d968b;
-      color: white;
-    }
-
-.sharing-basket{
-    background: var(--aqua-soft);
-    border: 3px solid var(--ink);
-    border-radius: 24px;
-    padding: 36px;
-    box-shadow: var(--shadow-paper);
-    position: relative;
-    font-family: var(--font-display);
+  box-shadow: 1px 2px 0 var(--ink);
+  transform: translate(2px, 2px);
+  background: #0d968b;
+  color: white;
 }
 
-.row-items{
+.sharing-basket {
+  background: var(--aqua-soft);
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  padding: 36px;
+  box-shadow: var(--shadow-paper);
+  position: relative;
+  font-family: var(--font-display);
+}
+
+.row-items {
   display: flex;
 }
 
-.item-expiring, .expire-soon {
+.item-expiring,
+.expire-soon {
   text-align: center;
   border-radius: 9px;
   font-weight: 500;
@@ -257,8 +406,8 @@ function openSharingSection(section) {
   background-color: var(--paper-bright);
 }
 
-.expire-soon{
-  background-color: #FFDD69;
+.expire-soon {
+  background-color: #ffdd69;
   color: black;
 }
 .sharing-dashboard {
@@ -319,12 +468,14 @@ function openSharingSection(section) {
   font-size: 18px;
   font-weight: 500;
   box-shadow: var(--shadow-small);
-  transition: transform 150ms ease, box-shadow 150ms ease;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
   cursor: pointer;
   text-wrap: nowrap;
 }
 
-.sharing-dashboard__add:hover(:disabled){
+.sharing-dashboard__add:hover:not(:disabled) {
   box-shadow: 1px 2px 0 var(--ink);
   transform: translate(2px, 2px);
   background: #0d968b;

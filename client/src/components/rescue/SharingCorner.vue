@@ -1,301 +1,286 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
-import FoodIcon from '../FoodIcon.vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-// Modal
+import FoodIcon from '../FoodIcon.vue'
+import { useInventoryStore } from '@/stores/inventory.js'
+import { allPages, api, apiError, isCancelled } from '@/services/rescueApi.js'
+import { toLocalInput, toISO } from '@/services/rescueForm.js'
+import { lockBodyScroll } from '@/services/rescueModal.js'
+import {
+  entityId,
+  groupRequests,
+  dateTimeLabel,
+  windowLabel,
+  makeClientKey,
+} from '@/services/rescueConversations.js'
+
+// Props, events and store
+
 const props = defineProps({
-  activeSection: {
-    type: String,
-    default: null,
-  },
+  activeSection: { type: String, default: null },
+  initialListingId: { type: String, default: null },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'changed'])
+const inventory = useInventoryStore()
 
-function close() {
-  reply.value = ''
-  emit('close')
-}
+// Element references
 
-// Local demo data
-const itemGroups = ref([
-  {
-    id: 1,
-    direction: 'received',
-    food: 'Organic veggie box',
-    quantity: '1 box · 1 kg',
-    image: '',
-    preferredPickup: 'Today, 5–7 pm',
-    requests: [
-      {
-        id: 101,
-        person: 'Jamie L.',
-        preview: 'Different time · Today, 8 pm',
-        requestedPickup: 'Today, 8–8:30 pm',
-        differentTime: true,
-        status: 'pending',
-        messages: [
-          {
-            id: 1,
-            text: 'Could I collect after work at 8 pm?',
-            author: 'Jamie',
-            time: '2:14 pm',
-            own: false,
-          },
-        ],
-      },
-      {
-        id: 102,
-        person: 'Priya K.',
-        preview: 'Today, 6 pm · Fits your time',
-        requestedPickup: 'Today, 6–6:30 pm',
-        differentTime: false,
-        status: 'pending',
-        messages: [
-          {
-            id: 1,
-            text: 'I can come at 6 pm. Thank you!',
-            author: 'Priya',
-            time: '2:20 pm',
-            own: false,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 2,
-    direction: 'received',
-    food: 'Extra sourdough',
-    quantity: '1 whole loaf',
-    image: '',
-    preferredPickup: 'Tomorrow, 6–8 pm',
-    requests: [
-      {
-        id: 201,
-        person: 'Alex T.',
-        preview: 'Tomorrow, 6 pm',
-        requestedPickup: 'Tomorrow, 6–6:30 pm',
-        differentTime: false,
-        status: 'pending',
-        messages: [
-          {
-            id: 1,
-            text: 'Hi! Could I collect at 6 pm?',
-            author: 'Alex',
-            time: '1:10 pm',
-            own: false,
-          },
-        ],
-      },
-      {
-        id: 202,
-        person: 'Mei L.',
-        preview: 'Tomorrow, 7 pm',
-        requestedPickup: 'Tomorrow, 7–7:30 pm',
-        differentTime: false,
-        status: 'pending',
-        messages: [
-          {
-            id: 1,
-            text: 'Would 7 pm work? I’ll bring a bag.',
-            author: 'Mei',
-            time: '1:30 pm',
-            own: false,
-          },
-        ],
-      },
-      {
-        id: 203,
-        person: 'Daniel T.',
-        preview: 'Pickup confirmed',
-        requestedPickup: 'Tomorrow, 7:30–8 pm',
-        differentTime: false,
-        status: 'accepted',
-        messages: [
-          {
-            id: 1,
-            text: 'Thanks for confirming. See you tomorrow!',
-            author: 'Daniel',
-            time: '2:00 pm',
-            own: false,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 3,
-    direction: 'received',
-    food: 'Garden tomatoes',
-    quantity: '500 g',
-    image: '',
-    preferredPickup: 'Today, 4–7 pm',
-    requests: [
-      {
-        id: 301,
-        person: 'Ben C.',
-        preview: 'Pickup confirmed',
-        requestedPickup: 'Today, 5–5:30 pm',
-        differentTime: false,
-        status: 'accepted',
-        messages: [
-          {
-            id: 1,
-            text: 'Thank you! I’ll come at 5 pm.',
-            author: 'Ben',
-            time: '12:40 pm',
-            own: false,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 4,
-    direction: 'sent',
-    food: 'Fresh bananas',
-    quantity: '1 bunch',
-    image: '',
-    preferredPickup: 'Tomorrow, 10 am–12 pm',
-    requests: [
-      {
-        id: 401,
-        person: 'Sarah M.',
-        preview: 'Waiting for Sarah’s reply',
-        requestedPickup: 'Tomorrow, 9–9:30 am',
-        differentTime: true,
-        status: 'pending',
-        messages: [
-          {
-            id: 1,
-            text: 'Could I come at 9 am instead? Thank you!',
-            author: 'You',
-            time: '2:14 pm',
-            own: true,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 5,
-    direction: 'sent',
-    food: 'Avocados',
-    quantity: '2 avocados',
-    image: '',
-    preferredPickup: 'Today, 6–8 pm',
-    requests: [
-      {
-        id: 501,
-        person: 'Jia W.',
-        preview: 'Pickup confirmed',
-        requestedPickup: 'Today, 6:30–7 pm',
-        differentTime: false,
-        status: 'accepted',
-        messages: [
-          {
-            id: 1,
-            text: '6:30 is great. See you then!',
-            author: 'Jia',
-            time: '1:45 pm',
-            own: false,
-          },
-        ],
-      },
-    ],
-  },
-])
+const dialog = ref(null)
+const collectionDialog = ref(null)
+const messageList = ref(null)
+const replyInput = ref(null)
 
 // Conversation state
+
+const received = ref([])
+const sent = ref([])
 const activeTab = ref('received')
 const search = ref('')
-const expandedIds = ref([1])
-const selectedGroupId = ref(1)
-const selectedRequestId = ref(101)
+
+const expandedIds = ref([])
+const selectedGroupId = ref(null)
+const selectedRequestId = ref(null)
+
 const reply = ref('')
-const replyInput = ref(null)
-const messageList = ref(null)
+const chatMessages = ref([])
+const legacyInitial = ref(null)
+
+const loading = ref(false)
+const messagesLoading = ref(false)
+const busy = ref(false)
+
+const inboxError = ref('')
+const messageError = ref('')
+const actionError = ref('')
+const notice = ref('')
+
+const isProposalOpen = ref(false)
+const proposalStart = ref('')
+const proposalEnd = ref('')
+
+const failedImages = ref(new Set())
+
+// Computed conversation data
+
+const open = computed(() =>
+  ['received', 'sent'].includes(props.activeSection),
+)
+
+const itemGroups = computed(() => [
+  ...groupRequests(received.value, 'received'),
+  ...groupRequests(sent.value, 'sent'),
+])
 
 const visibleGroups = computed(() => {
   const query = search.value.trim().toLowerCase()
 
   return itemGroups.value
-    .filter(group => group.direction === activeTab.value)
-    .map(group => ({
+    .filter((group) => group.direction === activeTab.value)
+    .map((group) => ({
       ...group,
       requests: group.food.toLowerCase().includes(query)
         ? group.requests
-        : group.requests.filter(request =>
+        : group.requests.filter((request) =>
             request.person.toLowerCase().includes(query),
           ),
     }))
-    .filter(group => group.requests.length)
+    .filter((group) => group.requests.length)
 })
 
 const selectedGroup = computed(
   () =>
     visibleGroups.value.find(
-      group => group.id === selectedGroupId.value,
+      (group) => group.id === selectedGroupId.value,
     ) || visibleGroups.value[0],
 )
 
-const selectedRequest = computed(
+const selectedBase = computed(
   () =>
     selectedGroup.value?.requests.find(
-      request => request.id === selectedRequestId.value,
+      (request) => request.id === selectedRequestId.value,
     ) || selectedGroup.value?.requests[0],
 )
 
+const selectedRaw = computed(() => selectedBase.value?.raw)
+
+const currentUserId = computed(() =>
+  entityId(
+    activeTab.value === 'received'
+      ? selectedRaw.value?.owner
+      : selectedRaw.value?.requester,
+  ),
+)
+
+const selectedRequest = computed(() =>
+  selectedBase.value
+    ? {
+        ...selectedBase.value,
+        messages: [
+          ...(legacyInitial.value ? [legacyInitial.value] : []),
+          ...chatMessages.value,
+        ]
+          .sort(
+            (a, b) =>
+              Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
+              String(a._id).localeCompare(String(b._id)),
+          )
+          .map((message) => ({
+            id: message._id,
+            text: message.text,
+            own: entityId(message.sender) === currentUserId.value,
+            author:
+              entityId(message.sender) === currentUserId.value
+                ? 'You'
+                : selectedBase.value.person,
+            time: dateTimeLabel(message.createdAt),
+          })),
+      }
+    : null,
+)
+
+const statusLabel = computed(() => {
+  const request = selectedRequest.value
+
+  if (!request) return ''
+
+  return (
+    {
+      accepted: 'Pickup confirmed',
+      completed: 'Collected',
+      declined: 'Request declined',
+      cancelled: 'Request cancelled',
+    }[request.status] ||
+    (request.raw.pickupProposal
+      ? 'Time change awaiting agreement'
+      : activeTab.value === 'sent'
+        ? 'Awaiting reply'
+        : request.differentTime
+          ? 'Different time'
+          : 'Fits your time')
+  )
+})
+
+const proposal = computed(() => selectedRaw.value?.pickupProposal)
+
+const ownProposal = computed(
+  () =>
+    proposal.value &&
+    entityId(proposal.value.proposedBy) === currentUserId.value,
+)
+
+const chatWritable = computed(() =>
+  ['pending', 'accepted'].includes(selectedRaw.value?.status),
+)
+
+const timeNegotiable = computed(
+  () =>
+    selectedRaw.value?.status === 'pending' &&
+    selectedRaw.value?.listing?.status === 'available' &&
+    Date.parse(selectedRaw.value?.listing?.expiresAt) > Date.now() &&
+    Date.parse(selectedRaw.value?.listing?.pickupEnd) > Date.now(),
+)
+
+const canAccept = computed(
+  () =>
+    activeTab.value === 'received' &&
+    timeNegotiable.value &&
+    !proposal.value &&
+    Date.parse(selectedRaw.value?.pickupEnd) > Date.now(),
+)
+
+// Request controllers and lifecycle state
+
+let alive = true
+let inboxController
+let messageController
+let pollTimer
+let releaseScroll
+let previousFocus
+
+let inboxSequence = 0
+let pendingSend = null
+let pendingProposalKey = null
+let pollInProgress = false
+
+// Conversation navigation
+
 function countRequests(direction) {
-  return itemGroups.value
-    .filter(group => group.direction === direction)
-    .reduce((total, group) => total + group.requests.length, 0)
+  return direction === 'received'
+    ? received.value.length
+    : sent.value.length
 }
 
 function groupSummary(group) {
-  const total = group.requests.length
   const pending = group.requests.filter(
-    request => request.status === 'pending',
+    (request) => request.status === 'pending',
   ).length
 
-  const count = `${total} ${total === 1 ? 'request' : 'requests'}`
+  return `${group.requests.length} ${
+    group.requests.length === 1 ? 'request' : 'requests'
+  }${
+    pending
+      ? ` · ${pending} awaiting ${
+          activeTab.value === 'received' ? 'your ' : ''
+        }reply`
+      : ''
+  }`
+}
 
-  if (pending) {
-    return `${count} · ${pending} ${
-      activeTab.value === 'received'
-        ? 'awaiting your reply'
-        : 'awaiting reply'
-    }`
+function close() {
+  if (!busy.value) {
+    emit('close')
   }
+}
 
-  const confirmed = group.requests.filter(
-    request => request.status === 'accepted',
-  ).length
+function chooseInitial() {
+  const target =
+    visibleGroups.value.find(
+      (group) => group.id === props.initialListingId,
+    ) || visibleGroups.value[0]
 
-  return confirmed
-    ? `${count} · ${confirmed} confirmed`
-    : `${count} · No pending requests`
+  if (target) {
+    selectedGroupId.value = target.id
+    selectedRequestId.value = target.requests[0]?.id
+    expandedIds.value = [target.id]
+  }
 }
 
 function switchTab(value) {
+  if (busy.value) return
+
   activeTab.value = value
   search.value = ''
   reply.value = ''
+  isProposalOpen.value = false
 
-  const first = itemGroups.value.find(
-    group => group.direction === value && group.requests.length,
-  )
+  pendingSend = null
+  pendingProposalKey = null
 
-  selectedGroupId.value = first?.id
-  selectedRequestId.value = first?.requests[0]?.id
-  expandedIds.value = first ? [first.id] : []
+  chooseInitial()
+}
+
+function selectRequest(group, request) {
+  if (busy.value) return
+
+  selectedGroupId.value = group.id
+  selectedRequestId.value = request.id
+
+  reply.value = ''
+  actionError.value = ''
+  notice.value = ''
+  isProposalOpen.value = false
+
+  pendingSend = null
+  pendingProposalKey = null
 }
 
 function toggleGroup(group) {
+  if (busy.value) return
+
   if (expandedIds.value.includes(group.id)) {
     expandedIds.value = expandedIds.value.filter(
-      id => id !== group.id,
+      (id) => id !== group.id,
     )
   } else {
     expandedIds.value.push(group.id)
@@ -303,112 +288,521 @@ function toggleGroup(group) {
   }
 }
 
-function selectRequest(group, request) {
-  selectedGroupId.value = group.id
-  selectedRequestId.value = request.id
-  reply.value = ''
+// Load requests and messages
+
+async function loadInbox({ silent = false, focus = false } = {}) {
+  inboxController?.abort()
+
+  const controller = new AbortController()
+  inboxController = controller
+
+  const sequence = ++inboxSequence
+
+  if (!silent) {
+    loading.value = true
+  }
+
+  try {
+    const [incoming, outgoing] = await Promise.all([
+      allPages(
+        '/rescue/requests',
+        'requests',
+        { direction: 'received' },
+        controller.signal,
+      ),
+      allPages(
+        '/rescue/requests',
+        'requests',
+        { direction: 'sent' },
+        controller.signal,
+      ),
+    ])
+
+    if (
+      !alive ||
+      !open.value ||
+      controller.signal.aborted ||
+      sequence !== inboxSequence
+    ) {
+      return
+    }
+
+    received.value = incoming
+    sent.value = outgoing
+    inboxError.value = ''
+
+    if (focus) {
+      chooseInitial()
+    }
+  } catch (error) {
+    if (
+      alive &&
+      open.value &&
+      !controller.signal.aborted &&
+      !isCancelled(error)
+    ) {
+      inboxError.value = apiError(error)
+    }
+  } finally {
+    if (alive && sequence === inboxSequence) {
+      loading.value = false
+    }
+  }
 }
 
-watch(
-  () => selectedRequest.value?.id,
-  async () => {
+async function loadMessages({ silent = false } = {}) {
+  const requestId = selectedBase.value?.id
+
+  if (!requestId) {
+    chatMessages.value = []
+    legacyInitial.value = null
+    return
+  }
+
+  messageController?.abort()
+
+  const controller = new AbortController()
+  messageController = controller
+
+  if (!silent) {
+    messagesLoading.value = true
+  }
+
+  const nearBottom =
+    !messageList.value ||
+    messageList.value.scrollHeight -
+      messageList.value.scrollTop -
+      messageList.value.clientHeight <
+      80
+
+  try {
+    const records = new Map()
+
+    let after = null
+    let hasMore = true
+    let initial = null
+
+    while (hasMore) {
+      const { data } = await api.get(
+        `/rescue/requests/${requestId}/messages`,
+        {
+          params: {
+            limit: 100,
+            ...(after ? { after } : {}),
+          },
+          signal: controller.signal,
+        },
+      )
+
+      if (!Array.isArray(data.messages)) {
+        throw new Error(
+          'Unexpected message response. Copy the updated backend files first.',
+        )
+      }
+
+      for (const message of data.messages) {
+        records.set(message._id, message)
+      }
+
+      initial = data.initialMessage
+      hasMore = data.hasMore
+
+      if (
+        hasMore &&
+        (!data.nextCursor || data.nextCursor === after)
+      ) {
+        throw new Error('Invalid message cursor.')
+      }
+
+      after = data.nextCursor
+    }
+
+    if (
+      !alive ||
+      !open.value ||
+      controller.signal.aborted ||
+      selectedBase.value?.id !== requestId
+    ) {
+      return
+    }
+
+    chatMessages.value = [...records.values()]
+    legacyInitial.value = initial
+    messageError.value = ''
+
+    if (!silent || nearBottom) {
+      await nextTick()
+
+      if (messageList.value) {
+        messageList.value.scrollTop =
+          messageList.value.scrollHeight
+      }
+    }
+  } catch (error) {
+    if (
+      alive &&
+      open.value &&
+      !controller.signal.aborted &&
+      !isCancelled(error)
+    ) {
+      messageError.value = apiError(error)
+    }
+  } finally {
+    if (alive && messageController === controller) {
+      messagesLoading.value = false
+    }
+  }
+}
+
+async function refresh() {
+  await loadInbox()
+  await loadMessages()
+}
+
+// Shared action handling
+
+async function runAction(callback, success) {
+  if (busy.value || !selectedRaw.value) return
+
+  const requestId = selectedBase.value.id
+
+  busy.value = true
+  actionError.value = ''
+  notice.value = ''
+
+  try {
+    const result = await callback(requestId)
+
+    notice.value = result || success
+
+    emit('changed')
+
+    await loadInbox({ silent: true })
+    await loadMessages({ silent: true })
+  } catch (error) {
+    actionError.value = apiError(error)
+    await loadInbox({ silent: true })
+  } finally {
+    busy.value = false
+  }
+}
+
+async function updateStatus(status) {
+  const action = {
+    accepted: 'accept',
+    declined: 'decline',
+    cancelled: 'cancel',
+  }[status]
+
+  if (!action) return
+
+  await runAction(
+    async (id) => {
+      await api.post(`/rescue/requests/${id}/${action}`)
+    },
+    {
+      accepted: 'Pickup confirmed.',
+      declined: 'Request declined.',
+      cancelled: 'Request cancelled. Any reservation was released.',
+    }[status],
+  )
+}
+
+// Send messages
+
+async function sendMessage() {
+  const text = reply.value.trim()
+  const requestId = selectedBase.value?.id
+
+  if (
+    !text ||
+    text.length > 1000 ||
+    busy.value ||
+    !chatWritable.value
+  ) {
+    return
+  }
+
+  if (
+    !pendingSend ||
+    pendingSend.requestId !== requestId ||
+    pendingSend.text !== text
+  ) {
+    pendingSend = {
+      requestId,
+      text,
+      clientMessageId: makeClientKey(),
+    }
+  }
+
+  const payload = {
+    text,
+    clientMessageId: pendingSend.clientMessageId,
+  }
+
+  busy.value = true
+  actionError.value = ''
+
+  try {
+    await api.post(
+      `/rescue/requests/${requestId}/messages`,
+      payload,
+    )
+
     reply.value = ''
+    pendingSend = null
+
+    await loadMessages({ silent: false })
+  } catch (error) {
+    actionError.value = `${apiError(error)} Your reply is kept. Retrying the same reply will not send it twice.`
+  } finally {
+    busy.value = false
 
     await nextTick()
+    replyInput.value?.focus()
+  }
+}
 
-    if (messageList.value) {
-      messageList.value.scrollTop = messageList.value.scrollHeight
+// Pickup time proposals
+
+function suggestTime() {
+  if (!timeNegotiable.value || busy.value) return
+
+  isProposalOpen.value = true
+  proposalStart.value = toLocalInput(selectedRaw.value.pickupStart)
+  proposalEnd.value = toLocalInput(selectedRaw.value.pickupEnd)
+  actionError.value = ''
+
+  pendingProposalKey = null
+}
+
+async function submitProposal() {
+  let start
+  let end
+
+  try {
+    start = toISO(proposalStart.value)
+    end = toISO(proposalEnd.value)
+
+    if (
+      Date.parse(end) <= Date.now() ||
+      Date.parse(end) <= Date.parse(start) ||
+      Date.parse(end) >
+        Date.parse(selectedRaw.value.listing.expiresAt)
+    ) {
+      throw new Error(
+        'Choose a future pickup window ending after its start and no later than expiry.',
+      )
+    }
+  } catch (error) {
+    actionError.value = error.message
+    return
+  }
+
+  const signature = `${start}|${end}`
+
+  if (
+    !pendingProposalKey ||
+    pendingProposalKey.signature !== signature
+  ) {
+    pendingProposalKey = {
+      signature,
+      key: makeClientKey(),
+    }
+  }
+
+  await runAction(
+    async (id) => {
+      await api.post(`/rescue/requests/${id}/pickup-proposal`, {
+        pickupStart: start,
+        pickupEnd: end,
+        clientProposalId: pendingProposalKey.key,
+      })
+
+      isProposalOpen.value = false
+      pendingProposalKey = null
+    },
+    'New pickup time sent for agreement. This has not reserved the food.',
+  )
+}
+
+async function respondProposal(action) {
+  const proposalId = proposal.value?._id
+
+  if (!proposalId) return
+
+  await runAction(
+    async (id) => {
+      await api.post(
+        `/rescue/requests/${id}/pickup-proposal/${action}`,
+        { proposalId },
+      )
+    },
+    action === 'accept'
+      ? 'Pickup time agreed. The owner still needs to accept the collection request.'
+      : action === 'withdraw'
+        ? 'Time suggestion withdrawn.'
+        : 'Time suggestion declined. The previous pickup window stays unchanged.',
+  )
+}
+
+// Collection confirmation
+
+async function openCollectionConfirmation() {
+  if (!busy.value) {
+    collectionDialog.value.showModal()
+  }
+}
+
+function closeCollectionConfirmation(event) {
+  event?.preventDefault()
+
+  if (!busy.value) {
+    collectionDialog.value?.close()
+  }
+}
+
+async function confirmCollection() {
+  const listingId = entityId(selectedRaw.value?.listing)
+
+  await runAction(
+    async () => {
+      await api.post(`/rescue/${listingId}/collect`)
+
+      const refreshed = await inventory.loadInventory()
+
+      collectionDialog.value.close()
+
+      if (!refreshed) {
+        return 'Collection saved. Please refresh inventory on your fridge page.'
+      }
+    },
+    'Collection confirmed. Your inventory is up to date.',
+  )
+}
+
+// Watchers
+
+watch(
+  () => selectedBase.value?.id,
+  async () => {
+    reply.value = ''
+    chatMessages.value = []
+    legacyInitial.value = null
+    messageError.value = ''
+    isProposalOpen.value = false
+
+    pendingSend = null
+
+    await loadMessages()
+  },
+)
+
+watch(
+  () => props.initialListingId,
+  () => {
+    if (open.value && !busy.value) {
+      chooseInitial()
     }
   },
 )
 
-// Request status
-const statusLabel = computed(() => {
-  const request = selectedRequest.value
-
-  if (!request) return ''
-  if (request.status === 'accepted') return 'Pickup confirmed'
-  if (request.status === 'declined') return 'Request declined'
-  if (request.status === 'cancelled') return 'Request cancelled'
-  if (activeTab.value === 'sent') return 'Awaiting reply'
-
-  return request.differentTime ? 'Different time' : 'Fits your time'
-})
-
-function updateStatus(status) {
-  if (!selectedRequest.value) return
-
-  selectedRequest.value.status = status
-
-  const labels = {
-    accepted: 'Pickup confirmed',
-    declined: 'Request declined',
-    cancelled: 'Request cancelled',
-  }
-
-  selectedRequest.value.preview = labels[status] || status
-
-  // Demo only. Connect status updates and competing
-  // request handling to your backend later.
-}
-
-// Messages
-async function suggestTime() {
-  reply.value = 'Would another pickup time work for you?'
-
-  await nextTick()
-  replyInput.value?.focus()
-}
-
-async function sendMessage() {
-  const text = reply.value.trim()
-
-  if (!text || !selectedRequest.value) return
-
-  selectedRequest.value.messages.push({
-    id: Date.now(),
-    text,
-    author: 'You',
-    own: true,
-    time: new Intl.DateTimeFormat('en-SG', {
-      timeZone: 'Asia/Singapore',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date()),
-  })
-
-  reply.value = ''
-
-  await nextTick()
-
-  if (messageList.value) {
-    messageList.value.scrollTop = messageList.value.scrollHeight
-  }
-}
-
 watch(
-    () => props.activeSection,
-    section => {
-      if (section === 'received' || section === 'sent') {
-        switchTab(section)
+  () => props.activeSection,
+  async (section) => {
+    if (!['received', 'sent'].includes(section)) {
+      clearInterval(pollTimer)
+
+      inboxController?.abort()
+      messageController?.abort()
+
+      collectionDialog.value?.close()
+      dialog.value?.close()
+
+      releaseScroll?.()
+      releaseScroll = null
+
+      if (previousFocus?.isConnected) {
+        previousFocus.focus()
       }
-    },
-    { immediate: true },
-  )
+
+      return
+    }
+
+    activeTab.value = section
+    search.value = ''
+    actionError.value = ''
+    notice.value = ''
+    reply.value = ''
+
+    await nextTick()
+
+    if (!alive || props.activeSection !== section) return
+
+    if (!dialog.value.open) {
+      previousFocus = document.activeElement
+      releaseScroll = lockBodyScroll()
+      dialog.value.showModal()
+    }
+
+    await loadInbox({ focus: true })
+
+    if (!alive || props.activeSection !== section) return
+
+    await loadMessages()
+
+    if (!alive || props.activeSection !== section) return
+
+    clearInterval(pollTimer)
+
+    pollTimer = setInterval(async () => {
+      if (
+        !open.value ||
+        busy.value ||
+        document.hidden ||
+        pollInProgress
+      ) {
+        return
+      }
+
+      pollInProgress = true
+
+      try {
+        await loadInbox({ silent: true })
+        await loadMessages({ silent: true })
+      } finally {
+        pollInProgress = false
+      }
+    }, 10000)
+  },
+  { immediate: true },
+)
+
+// Cleanup
+
+onBeforeUnmount(() => {
+  alive = false
+
+  clearInterval(pollTimer)
+
+  inboxController?.abort()
+  messageController?.abort()
+
+  collectionDialog.value?.close()
+  dialog.value?.close()
+
+  releaseScroll?.()
+})
 </script>
 
 <template>
-  <div
-    v-if="activeSection === 'received' || activeSection === 'sent'"
-    class="sharing-overlay"
-    @click.self="close"
-    @keydown.esc.stop="close"
-  > 
-    <div
+  <Teleport to="body">
+    <!-- Sharing corner -->
+    <dialog
+      ref="dialog"
       class="sharing-modal sharing-corner"
-      role="dialog"
-      aria-modal="true"
       aria-labelledby="sharing-corner-title"
+      @cancel.prevent="close"
     >
       <div class="section-heading">
         <div>
@@ -420,13 +814,40 @@ watch(
           type="button"
           class="modal-close"
           aria-label="Close sharing corner"
+          :disabled="busy"
           @click="close"
         >
           ×
         </button>
       </div>
 
-      <div class="sharing-inbox">
+      <!-- Loading, errors and notices -->
+      <div v-if="inboxError" class="alert alert-danger" role="alert">
+        {{ inboxError }}
+
+        <button
+          type="button"
+          class="filter-button"
+          :disabled="busy"
+          @click="refresh"
+        >
+          Retry
+        </button>
+      </div>
+
+      <p v-if="loading" class="py-3" role="status">
+        Loading your requests…
+      </p>
+
+      <div v-if="actionError" class="alert alert-danger" role="alert">
+        {{ actionError }}
+      </div>
+
+      <p v-if="notice" class="alert alert-success" role="status">
+        {{ notice }}
+      </p>
+
+      <div class="sharing-inbox" :aria-busy="loading">
         <!-- Conversation sidebar -->
         <div class="conversation-sidebar">
           <h3>Your conversations</h3>
@@ -439,6 +860,7 @@ watch(
               class="filter-button"
               :class="{ active: activeTab === tab }"
               :aria-pressed="activeTab === tab"
+              :disabled="busy || loading"
               @click="switchTab(tab)"
             >
               {{ tab === 'received' ? 'Received' : 'Sent' }} ·
@@ -453,15 +875,14 @@ watch(
 
             <input
               v-model="search"
+              :disabled="busy"
               type="search"
               placeholder="Find food or a neighbour…"
             />
           </label>
 
-          <div
-            class="item-groups"
-            aria-label="Requests grouped by food"
-          >
+          <!-- Requests grouped by food -->
+          <div class="item-groups" aria-label="Requests grouped by food">
             <div
               v-for="group in visibleGroups"
               :key="group.id"
@@ -475,13 +896,15 @@ watch(
                   expandedIds.includes(group.id) || !!search.trim()
                 "
                 :aria-controls="`food-group-${group.id}`"
+                :disabled="busy"
                 @click="toggleGroup(group)"
               >
                 <img
-                  v-if="group.image"
+                  v-if="group.image && !failedImages.has(group.id)"
                   :src="group.image"
                   alt=""
                   class="group-image"
+                  @error="failedImages.add(group.id)"
                 />
 
                 <span
@@ -520,6 +943,7 @@ watch(
                     selected: selectedRequest?.id === request.id,
                   }"
                   :aria-pressed="selectedRequest?.id === request.id"
+                  :disabled="busy"
                   @click="selectRequest(group, request)"
                 >
                   <strong>{{ request.person }}</strong>
@@ -528,10 +952,7 @@ watch(
               </div>
             </div>
 
-            <p
-              v-if="!visibleGroups.length"
-              class="muted sidebar-empty"
-            >
+            <p v-if="!visibleGroups.length" class="muted sidebar-empty">
               {{
                 search.trim()
                   ? 'No matching conversations.'
@@ -568,16 +989,16 @@ watch(
           <!-- Listing details -->
           <div class="listing-summary">
             <img
-              v-if="selectedGroup.image"
+              v-if="
+                selectedGroup.image &&
+                !failedImages.has(selectedGroup.id)
+              "
               :src="selectedGroup.image"
               :alt="selectedGroup.food"
+              @error="failedImages.add(selectedGroup.id)"
             />
 
-            <span
-              v-else
-              class="listing-placeholder"
-              aria-hidden="true"
-            >
+            <span v-else class="listing-placeholder" aria-hidden="true">
               <FoodIcon :food="selectedGroup.food" />
             </span>
 
@@ -593,6 +1014,23 @@ watch(
             </div>
           </div>
 
+          <!-- Message loading and errors -->
+          <div v-if="messageError" class="alert alert-danger" role="alert">
+            {{ messageError }}
+
+            <button
+              type="button"
+              class="filter-button"
+              @click="loadMessages()"
+            >
+              Retry messages
+            </button>
+          </div>
+
+          <p v-if="messagesLoading" role="status">
+            Loading messages…
+          </p>
+
           <!-- Message history -->
           <div
             ref="messageList"
@@ -607,11 +1045,16 @@ watch(
               :class="{ own: message.own }"
             >
               <p>{{ message.text }}</p>
-              <small>
-                {{ message.author }} · {{ message.time }}
-              </small>
+              <small>{{ message.author }} · {{ message.time }}</small>
             </div>
           </div>
+
+          <p
+            v-if="!messagesLoading && !selectedRequest.messages.length"
+            class="muted"
+          >
+            No messages yet.
+          </p>
 
           <!-- Pickup proposal -->
           <div class="pickup-proposal">
@@ -641,29 +1084,151 @@ watch(
               </span>
             </div>
 
+            <!-- Existing time suggestion -->
+            <div v-if="proposal" class="time-change-note">
+              <p>
+                <strong>
+                  {{
+                    ownProposal
+                      ? 'Your proposed time'
+                      : 'New time suggested'
+                  }}
+                </strong>
+              </p>
+
+              <p>
+                {{ windowLabel(proposal.pickupStart, proposal.pickupEnd) }}
+              </p>
+
+              <p class="muted">
+                A time agreement does not reserve the food.
+              </p>
+
+              <div class="proposal-actions mt-2">
+                <button
+                  v-if="ownProposal"
+                  type="button"
+                  class="action-button secondary"
+                  :disabled="busy"
+                  @click="respondProposal('withdraw')"
+                >
+                  Withdraw suggestion
+                </button>
+
+                <template v-else>
+                  <button
+                    type="button"
+                    class="action-button"
+                    :disabled="busy || !timeNegotiable"
+                    @click="respondProposal('accept')"
+                  >
+                    Agree to this time
+                  </button>
+
+                  <button
+                    type="button"
+                    class="action-button secondary"
+                    :disabled="busy || !timeNegotiable"
+                    @click="respondProposal('decline')"
+                  >
+                    Keep previous time
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <!-- Pending request actions -->
             <template v-if="selectedRequest.status === 'pending'">
               <div class="proposal-actions">
                 <button
                   v-if="activeTab === 'received'"
                   type="button"
                   class="action-button"
+                  :disabled="busy || !canAccept"
                   @click="updateStatus('accepted')"
                 >
                   Accept pickup
                 </button>
 
                 <button
+                  v-if="!proposal"
                   type="button"
                   class="action-button secondary"
+                  :disabled="busy || !timeNegotiable"
                   @click="suggestTime"
                 >
                   Suggest another time
                 </button>
               </div>
 
+              <p
+                v-if="selectedRaw.listing?.status === 'claimed'"
+                class="muted"
+              >
+                Another request currently reserves this listing.
+              </p>
+
+              <!-- New pickup time form -->
+              <form
+                v-if="isProposalOpen && !proposal"
+                class="pickup-time-form"
+                @submit.prevent="submitProposal"
+              >
+                <div class="row g-2">
+                  <div class="col-sm-6">
+                    <label for="proposal-start">From</label>
+
+                    <input
+                      id="proposal-start"
+                      v-model="proposalStart"
+                      type="datetime-local"
+                      :disabled="busy"
+                      required
+                    />
+                  </div>
+
+                  <div class="col-sm-6">
+                    <label for="proposal-end">Until</label>
+
+                    <input
+                      id="proposal-end"
+                      v-model="proposalEnd"
+                      type="datetime-local"
+                      :disabled="busy"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <p class="muted">
+                  Use your device's local time. The window must end by
+                  {{ dateTimeLabel(selectedRaw.listing?.expiresAt) }}.
+                </p>
+
+                <div class="proposal-actions mt-2">
+                  <button
+                    class="action-button"
+                    type="submit"
+                    :disabled="busy"
+                  >
+                    Send time suggestion
+                  </button>
+
+                  <button
+                    class="action-button secondary"
+                    type="button"
+                    :disabled="busy"
+                    @click="isProposalOpen = false"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+
               <button
                 type="button"
                 class="text-button"
+                :disabled="busy"
                 @click="
                   updateStatus(
                     activeTab === 'received' ? 'declined' : 'cancelled',
@@ -677,6 +1242,31 @@ watch(
                 }}
               </button>
             </template>
+
+            <!-- Accepted request actions -->
+            <div
+              v-if="selectedRequest.status === 'accepted'"
+              class="proposal-actions"
+            >
+              <button
+                v-if="activeTab === 'received'"
+                type="button"
+                class="action-button"
+                :disabled="busy"
+                @click="openCollectionConfirmation"
+              >
+                Confirm collection
+              </button>
+
+              <button
+                type="button"
+                class="action-button secondary"
+                :disabled="busy"
+                @click="updateStatus('cancelled')"
+              >
+                Cancel pickup
+              </button>
+            </div>
           </div>
 
           <!-- Message composer -->
@@ -689,6 +1279,8 @@ watch(
               id="sharing-reply"
               ref="replyInput"
               v-model="reply"
+              maxlength="1000"
+              :disabled="busy || !chatWritable || messagesLoading"
               placeholder="Write a reply…"
               autocomplete="off"
             />
@@ -696,22 +1288,89 @@ watch(
             <button
               type="submit"
               class="action-button"
-              :disabled="!reply.trim()"
+              :disabled="
+                !reply.trim() || busy || !chatWritable || messagesLoading
+              "
             >
               Send →
             </button>
           </form>
+
+          <p v-if="!chatWritable" class="muted">
+            This request has ended. Its conversation is kept as read-only
+            history.
+          </p>
+
+          <p class="refresh-note">
+            Messages refresh every 10 seconds while this window is open.
+
+            <button
+              class="text-button"
+              type="button"
+              :disabled="busy || loading"
+              @click="refresh"
+            >
+              Refresh now
+            </button>
+          </p>
         </div>
 
+        <!-- Empty conversation -->
         <div v-else class="empty-conversation">
           <h3>No conversation selected</h3>
+
           <p class="muted">
             Choose a food item and a neighbour to view their request.
           </p>
         </div>
       </div>
-    </div>
-  </div>
+    </dialog>
+
+    <!-- Collection confirmation dialog -->
+    <dialog
+      ref="collectionDialog"
+      class="sharing-confirm sharing-corner"
+      aria-labelledby="sharing-collection-title"
+      @cancel="closeCollectionConfirmation"
+    >
+      <h3 id="sharing-collection-title">
+        Has the food been collected?
+      </h3>
+
+      <p class="mt-3">
+        Confirm only after handing over the food. The accepted request will be
+        completed. Any linked inventory item will also be removed.
+      </p>
+
+      <p
+        v-if="actionError"
+        class="alert alert-danger mt-3"
+        role="alert"
+      >
+        {{ actionError }}
+      </p>
+
+      <div class="proposal-actions mt-3">
+        <button
+          type="button"
+          class="action-button secondary"
+          :disabled="busy"
+          @click="closeCollectionConfirmation"
+        >
+          Go back
+        </button>
+
+        <button
+          type="button"
+          class="action-button"
+          :disabled="busy"
+          @click="confirmCollection"
+        >
+          {{ busy ? 'Saving…' : 'Yes, collected' }}
+        </button>
+      </div>
+    </dialog>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -1242,6 +1901,94 @@ button {
 
   .reply-form .action-button {
     padding-inline: 12px;
+  }
+}
+
+.sharing-modal {
+  width: min(1360px, calc(100vw - 32px));
+  margin: auto;
+  font-size: 18px;
+}
+
+.sharing-modal::backdrop,
+.sharing-confirm::backdrop {
+  background: rgba(18, 63, 59, 0.45);
+}
+
+.sharing-modal:not([open]),
+.sharing-confirm:not([open]) {
+  display: none;
+}
+
+.sharing-confirm {
+  width: min(520px, calc(100vw - 32px));
+  margin: auto;
+  padding: 24px;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background: var(--paper);
+}
+
+.sharing-corner button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sharing-corner .action-button,
+.sharing-corner .filter-button,
+.sharing-corner .reply-form input {
+  font-size: 16px;
+}
+
+.sharing-corner h3 {
+  font-size: 24px;
+}
+
+.sharing-corner h4 {
+  font-size: 22px;
+}
+
+.pickup-time-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: 9px;
+  background: var(--paper-bright);
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.time-change-note {
+  padding: 12px;
+  border: 1px dashed var(--ink);
+  border-radius: 10px;
+  background: var(--paper-bright);
+}
+
+.refresh-note,
+.pickup-time-form p {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+@media (max-width: 575px) {
+  .sharing-modal {
+    width: calc(100vw - 24px);
+    padding: 16px;
+  }
+
+  .conversation-content,
+  .conversation-sidebar {
+    padding: 14px;
+  }
+
+  .message-bubble {
+    padding: 12px;
+  }
+
+  .reply-form {
+    gap: 8px;
   }
 }
 </style>
