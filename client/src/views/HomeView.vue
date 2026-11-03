@@ -1,4 +1,5 @@
 <script setup>
+import CartoonEgg from '../components/CartoonEgg.vue'
 import { usePageLoading } from '../utils/pageLoading.js'
 import { ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -36,9 +37,21 @@ function pickFact(current) {
 }
 
 const fact = ref(pickFact())
+const factBubble = ref(null)
+let factPop
 
 function showAnotherFact() {
   fact.value = pickFact(fact.value)
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  factPop?.cancel()
+  factPop = factBubble.value?.animate?.(
+    [
+      { transform: 'scale(.97) rotate(-1deg)' },
+      { transform: 'scale(1.025) rotate(.7deg)', offset: .48 },
+      { transform: 'none' },
+    ],
+    { duration: 420, easing: 'ease-out' },
+  )
 }
 
 async function handleLogin() {
@@ -105,13 +118,17 @@ async function handleLogin() {
         <div class="hero-illustration"><HomeFridge /></div>
       </div>
 
-      <aside class="fun-fact" aria-live="polite">
-        <span class="fun-fact-icon" aria-hidden="true">💡</span>
-        <div>
-          <p class="fun-fact-label">Fun food fact</p>
-          <p class="fun-fact-text">{{ fact }}</p>
-        </div>
-        <button type="button" class="fun-fact-next" @click="showAnotherFact">Another fact</button>
+      <aside class="fun-fact" aria-label="Fun food fact">
+        <button type="button" class="fact-egg-button" aria-label="Show another food fact" @click="showAnotherFact">
+          <CartoonEgg class="fact-egg" />
+          <span class="fact-egg-hint" aria-hidden="true">Click me</span>
+        </button>
+        <button ref="factBubble" type="button" class="fact-bubble" @click="showAnotherFact">
+          <span class="fact-copy" aria-live="polite">
+            <span class="fun-fact-label"><span aria-hidden="true">✦</span> Fun food fact</span>
+            <span :key="fact" class="fun-fact-text">{{ fact }}</span>
+          </span>
+        </button>
       </aside>
     </div>
   </section>
@@ -265,25 +282,82 @@ h1 {
 .fun-fact {
   display: flex;
   align-items: center;
-  gap: 22px;
-  margin-top: clamp(56px, 5vw, 88px);
-  padding: 24px 28px;
+  gap: clamp(12px, 3vw, 30px);
+}
+.fact-egg-button {
+  position: relative;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.fact-egg-hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--ink);
+  font-size: .8rem;
+  opacity: .72;
+}
+.fact-bubble:focus-visible, .fact-egg-button:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 5px;
+}
+.fact-copy, .fun-fact-label, .fun-fact-text { display: block; }
+.fact-egg {
+  width: clamp(76px, 18vw, 180px);
+  flex-shrink: 0;
+}
+.fact-bubble {
+  animation: fact-bob 3s ease-in-out infinite;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: clamp(14px, 3vw, 28px);
   border: 3px solid var(--ink);
   border-radius: 26px;
-  background: #e7f5ac;
+  background: radial-gradient(ellipse at top right, #fff8cd, transparent 65%), #e7f5ac;
+  transform-origin: left center;
   box-shadow: 6px 8px 0 var(--ink);
-  transform: rotate(-0.5deg);
 }
-.fun-fact-icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 56px;
-  height: 56px;
-  border: 2px solid var(--ink);
-  border-radius: 50%;
-  background: #fff;
-  font-size: 1.8rem;
+.fact-bubble::before {
+  content: '';
+  position: absolute;
+  top: 42%;
+  left: -10px;
+  width: 16px;
+  height: 16px;
+  border-left: 3px solid var(--ink);
+  border-bottom: 3px solid var(--ink);
+  background: #e7f5ac;
+  transform: rotate(45deg);
+}
+.fact-bubble::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 12px;
+  height: 12px;
+  background: #efad43;
+  clip-path: polygon(50% 0, 65% 35%, 100% 50%, 65% 65%, 50% 100%, 35% 65%, 0 50%, 35% 35%);
+  pointer-events: none;
+}
+.fun-fact-text {
+  animation: fact-appear 320ms ease-out both;
+}
+@keyframes fact-bob {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -4px; }
+}
+@keyframes fact-appear {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .fun-fact-label {
   margin: 0 0 6px;
@@ -297,30 +371,9 @@ h1 {
   font-size: clamp(1.1rem, 1.3vw, 1.35rem);
   line-height: 1.5;
 }
-.fun-fact-next {
-  flex-shrink: 0;
-  margin-left: auto;
-  padding: 10px 18px;
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 2px 3px 0 var(--ink);
-  color: var(--ink);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    transform 160ms ease,
-    box-shadow 160ms ease;
-}
-.fun-fact-next:hover {
-  transform: translate(1px, 1px);
-  box-shadow: 1px 2px 0 var(--ink);
-}
-.home-button:focus-visible,
-.fun-fact-next:focus-visible {
-  outline: 3px solid #1f7d74;
-  outline-offset: 7px;
+.home-button:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 5px;
 }
 @media (max-width: 1100px) {
   .home-hero {
@@ -344,10 +397,6 @@ h1 {
     width: 100%;
     margin: 10px auto 0;
   }
-  .fun-fact {
-    flex-wrap: wrap;
-    margin-top: 38px;
-  }
 }
 @media (max-width: 480px) {
   .home-page {
@@ -356,18 +405,14 @@ h1 {
   .login-card {
     padding: 24px 20px;
   }
-  .fun-fact {
-    padding: 20px;
-    gap: 16px;
-  }
-  .fun-fact-next {
-    width: 100%;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .home-button,
-  .fun-fact-next {
-    transition: none;
+  .fact-bubble {
+    animation: none;
   }
+  .fun-fact-text {
+    animation: none;
+  }
+  .home-button { transition: none; }
 }
 </style>
