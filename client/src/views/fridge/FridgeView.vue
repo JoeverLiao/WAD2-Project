@@ -1282,10 +1282,22 @@ function endDoorGesture(event, cancelled = false) {
     ignoreDoorClick = gesture.moved
     if (gesture.moved) doorAngle.value = cancelled ? gesture.angle : doorAngle.value >= 60 ? 170 : 0
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (!cancelled && gesture.moved && gesture.angle <= 85 && fridgeDoorOpen.value) centerFridge()
 }
 function toggleDoor() {
     if (ignoreDoorClick) { ignoreDoorClick = false; return }
     fridgeDoorOpen.value = !fridgeDoorOpen.value
+    if (fridgeDoorOpen.value) centerFridge()
+}
+
+async function centerFridge() {
+    await nextTick()
+    const cabinet = kitchenStage.value?.querySelector('.fridge-cabinet')
+    cabinet?.scrollIntoView?.({
+        block: 'center',
+        inline: 'nearest',
+        behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    })
 }
 
 function openCompartment(compartment) {
@@ -1651,7 +1663,7 @@ onBeforeUnmount(cancelActionReaction)
                                         </div>
                                     </div>
                                 </div>
-                                <div class="fridge-door" :class="{ 'door-open': fridgeDoorOpen }" role="button" tabindex="0" :aria-expanded="fridgeDoorOpen" :aria-label="fridgeDoorOpen ? 'Close refrigerator door' : 'Open refrigerator door'" @click="toggleDoor" @pointerdown="startDoorGesture" @pointermove="moveDoorGesture" @pointerup="endDoorGesture" @pointercancel="endDoorGesture($event, true)" @lostpointercapture="endDoorGesture($event, true)" @keydown.enter.prevent="fridgeDoorOpen = !fridgeDoorOpen" @keydown.space.prevent="fridgeDoorOpen = !fridgeDoorOpen">
+                                <div class="fridge-door" :class="{ 'door-open': fridgeDoorOpen }" role="button" tabindex="0" :aria-expanded="fridgeDoorOpen" :aria-label="fridgeDoorOpen ? 'Close refrigerator door' : 'Open refrigerator door'" @click="toggleDoor" @pointerdown="startDoorGesture" @pointermove="moveDoorGesture" @pointerup="endDoorGesture" @pointercancel="endDoorGesture($event, true)" @lostpointercapture="endDoorGesture($event, true)" @keydown.enter.self.prevent="toggleDoor" @keydown.space.self.prevent="toggleDoor">
                                     <span class="door-brand" :title="fridgeDoorTitle">{{ fridgeDoorTitle }}</span>
                                     <span v-if="!fridgeDoorOpen" class="closed-fridge-dashboard" aria-label="Fridge inventory summary">
                                         <span class="dashboard-title">FRIDGE STATUS</span>

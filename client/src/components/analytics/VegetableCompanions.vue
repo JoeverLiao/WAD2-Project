@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { vegetableMessages, vegetableMood } from '../../utils/analyticsMascots.js'
 
-const props = defineProps({ events: { type: Array, default: () => [] }, alwaysHappy: Boolean })
+const props = defineProps({ events: { type: Array, default: () => [] }, alwaysHappy: Boolean, messages: Array })
 const mood = computed(() => props.alwaysHappy ? { expression: 'happy' } : vegetableMood(props.events))
 const receiptMessages = [
   'Ready when you are! Let’s scan that receipt.',
@@ -30,7 +30,7 @@ watch(() => mood.value.expression, () => {
 onBeforeUnmount(dismissSpeech)
 async function interact(index) {
   dismissSpeech()
-  const messages = props.alwaysHappy ? receiptMessages : vegetableMessages[mood.value.expression]
+  const messages = props.messages || (props.alwaysHappy ? receiptMessages : vegetableMessages[mood.value.expression])
   const choices = messages.filter(text => text !== lastMessages.get(index))
   message.value = choices[Math.floor(Math.random() * choices.length)]
   lastMessages.set(index, message.value)

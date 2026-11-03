@@ -1,4 +1,11 @@
 <script setup>
+import EggCompanion from '../../components/analytics/VegetableCompanions.vue'
+
+const eggTips = [
+  'Quick Bites shows you what to use up first!',
+  'Tap a food in the expiry list and I’ll help you spot it.',
+  'Need dinner ideas? See what you can cook with what you have!',
+]
 import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
 import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
 import { summarizeFoodEvents } from '../../utils/analyticsUtils.js'
@@ -296,6 +303,7 @@ const vReveal = {
     <RouterLink class="impact-link d-block mt-4 mb-3" :to="{ name: 'analytics', hash: '#daily-food-impact' }">
       <ImpactOverview :totals="impactTotals" demo />
     </RouterLink>
+    <EggCompanion always-happy :messages="eggTips" />
   </section>
   </div>
 </template>
