@@ -16,7 +16,7 @@ const pantry = ref(null)
 const hovered = ref('')
 // Keep a vertical dock outside the source side, stable throughout the drag.
 const dockPosition = computed(() => {
-  if (!props.anchor) return {}
+  if (!props.anchor || props.anchor.touch) return {}
   const width = window.innerWidth <= 480 ? 100 : 130
   const height = Math.min(window.innerHeight - 16, window.innerWidth <= 480 ? 400 : 480)
   const edge = props.anchor.edge ?? props.anchor.x
@@ -49,7 +49,7 @@ function leave(event) {
 <template>
   <Teleport to="body">
     <Transition name="dock">
-      <div v-if="visible" class="food-action-dock" :style="dockPosition" :aria-label="`Drop food to consume, discard or put in ${storageAction}`">
+      <div v-if="visible" class="food-action-dock" :class="{ 'touch-action-dock': anchor?.touch }" :style="dockPosition" :aria-label="`Drop food to consume, discard or put in ${storageAction}`">
         <p class="dock-instruction" role="status">{{ pending ? 'Updating your inventory…' : reaction ? 'Inventory updated!' : 'Drop your food here' }}</p>
         <div class="dock-targets">
           <div ref="face" class="food-drop-target consume-target" :class="{ approaching: hungry, celebrating: reaction === 'consume', waiting: pending }"
@@ -134,4 +134,8 @@ function leave(event) {
 @keyframes pantry-close { 0% { transform:perspective(160px) rotateY(-65deg); } 70% { transform:perspective(160px) rotateY(8deg); } 100% { transform:perspective(160px) rotateY(0); } }
 @media(max-width:480px) { .target-art { width:56px; height:56px; } .dock-targets { gap:10px; } .dock-instruction { font-size:13px; } .food-drop-target strong { font-size:14px; } .food-drop-target small { font-size:12px; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+.touch-action-dock .dock-targets { flex-direction:row; align-items:stretch; gap:4px; }
+.touch-action-dock .food-drop-target { flex:1; min-width:0; }
+.touch-action-dock .target-art { width:44px; height:44px; }
+.touch-action-dock .food-drop-target small { display:none; }
 </style>

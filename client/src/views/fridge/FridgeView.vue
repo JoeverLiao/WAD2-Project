@@ -1028,6 +1028,69 @@ function startDrag(item, event) {
     draggingOutsideModal.value = false
 }
 
+let touchDrag
+let holdTimer
+
+function clearTouchDrag() {
+    clearTimeout(holdTimer)
+    touchDrag = null
+}
+onBeforeUnmount(clearTouchDrag)
+
+function holdFood(event) {
+    if (event.touches.length !== 1) {
+        if (touchDrag?.active) finishDrag()
+        clearTouchDrag()
+        return
+    }
+    const icon = event.target.closest('[data-food-id]')
+    const item = items.value.find(food => food.id === icon?.dataset.foodId)
+    if (!item || draggedItemId.value || shiftingFood.value || actionPending.value) return
+    const { identifier, clientX, clientY } = event.touches[0]
+    touchDrag = { identifier, clientX, clientY, active: false }
+    holdTimer = setTimeout(() => {
+        touchDrag.active = true
+        startDrag(item, { currentTarget: icon, clientX, clientY })
+        dragAnchor.value = { ...dragAnchor.value, touch: true }
+    }, 350)
+}
+
+function moveHeldFood(event) {
+    if (!touchDrag) return
+    const touch = Array.from(event.touches).find(point => point.identifier === touchDrag.identifier)
+    if (!touch) return
+    const { clientX, clientY } = touch
+    if (!touchDrag.active) {
+        if (Math.hypot(clientX - touchDrag.clientX, clientY - touchDrag.clientY) > 9) clearTouchDrag()
+        return
+    }
+    event.preventDefault()
+    trackFoodDrag({ clientX, clientY, target: document.elementFromPoint(clientX, clientY) ?? event.target })
+}
+
+function releaseHeldFood(event) {
+    if (!touchDrag) return
+    const touch = Array.from(event.changedTouches).find(point => point.identifier === touchDrag.identifier)
+    if (!touch && event.type !== 'touchcancel') return
+    const active = touchDrag.active
+    clearTouchDrag()
+    if (!active) return
+    if (event.type === 'touchcancel') {
+        finishDrag()
+        return
+    }
+    event.preventDefault()
+    const { clientX, clientY } = touch
+    const hit = document.elementFromPoint(clientX, clientY)
+    const action = hit?.closest('[data-food-action]')
+    const compartment = hit?.closest('[data-drop-zone]')
+    const drop = { clientX, clientY, preventDefault() {}, currentTarget: action ?? compartment }
+    if (action) dropOnAction(action.dataset.foodAction, drop)
+    else if (compartment && kitchenStage.value?.contains(compartment)) {
+        dropOnArea({ storage: compartment.dataset.dropStorage, storageZone: compartment.dataset.dropZone }, drop)
+    } else finishDrag()
+}
+
 function startModalDrag(item, event) {
     storageAction.value = item.storage === 'pantry' ? 'fridge' : 'pantry'
     if (!selectedFoodIds.value.has(item.id)) selectedFoodIds.value = new Set([item.id])
@@ -1606,7 +1669,9 @@ onBeforeUnmount(cancelActionReaction)
             </div>
             <button type="button" class="storage-slide-arrow" aria-label="Next storage" :disabled="shiftingFood || saving" @click="stepStorage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6l6 6-6 6" /></svg></button>
         </nav>
-        <section ref="kitchenStage" class="kitchen-stage storage-slideshow" :class="{ 'instant-storage-slide': !animateStorageSlide }" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dblclick.capture="openFoodCompartment" @keydown.capture="selectFoodWithKeyboard" @dragstart.capture="setStageEmojiDragImage($event)">
+        <section ref="kitchenStage" class="kitchen-stage storage-slideshow" :class="{ 'instant-storage-slide': !animateStorageSlide }" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dblclick.capture="openFoodCompartment" @keydown.capture="selectFoodWithKeyboard" @dragstart.capture="setStageEmojiDragImage($event)"
+            @touchstart.passive="holdFood" @touchmove="moveHeldFood" @touchend="releaseHeldFood" @touchcancel="releaseHeldFood"
+            @contextmenu="touchDrag && $event.target.closest('[data-food-id]') && $event.preventDefault()">
 
 
             <div class="carousel-window">
@@ -2675,6 +2740,12 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .food-selection-box { position:fixed; z-index:10003; pointer-events:none; border:1px solid #168dc7; background:#49b9f333; box-shadow:inset 0 0 0 1px #ffffff55; }
 .kitchen-stage .mini-food.food-selected,.kitchen-stage .door-food.food-selected { background:#9cdeffbb; outline:2px solid #168dc7; outline-offset:1px; border-radius:7px; box-shadow:0 0 0 4px #49b9f32b; }
 .food-selection-count { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); z-index:10001; pointer-events:none; width:max-content; max-width:calc(100vw - 24px); padding:8px 14px; border-radius:20px; background:#173d39; color:#fff; font-size:15px; text-align:center; box-shadow:0 3px 12px #173d3933; }
+@media (max-width: 767.98px) {
+    .food-selection-box,.food-selection-count { display:none; }
+    .kitchen-stage .mini-food.food-selected,.kitchen-stage .door-food.food-selected {
+        background:transparent; outline:none; box-shadow:none;
+    }
+}
 .food-transfer-arrival { outline:3px solid #73b999; outline-offset:3px; animation:food-transfer-arrival 1.1s ease-out; }
 @keyframes food-transfer-arrival { 0%,100% { box-shadow:0 0 0 0 #73b99900; } 55% { box-shadow:0 0 0 8px #73b99945; } }
 @media(prefers-reduced-motion:reduce) { .food-transfer-arrival { animation:none; } }
@@ -2745,6 +2816,9 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     text-align:center; font-weight:700;
 }
 .mobile-fridge-close { display:none; }
+@media (pointer: coarse) {
+    .kitchen-stage [data-food-id] { -webkit-touch-callout:none; }
+}
 @media (max-width: 767.98px) {
     .smart-fridge-page .kitchen-stage .fridge-body,
     .smart-fridge-page .kitchen-stage .fridge-body.fridge-is-open {
