@@ -215,6 +215,11 @@ function openLinkedCompartment() {
     const zone = route?.query?.location
     const location = locations[zone]
     if (!location) return
+    const storageName = route?.query?.storageName
+    const type = location.storage === 'pantry' ? 'pantry' : 'fridge'
+    if (typeof storageName === 'string' && storageOptions.value.some(option => option.type === type && option.name === storageName)) {
+        activeNames[type].value = storageName
+    }
     fridgeDoorOpen.value = true
     openCompartment({ id: zone, zone, ...location })
 }
@@ -452,14 +457,6 @@ watch(activeFridge, name => {
     rememberedFridge = null
     storeNames(lastFridgeKey, [name])
 })
-
-function stepDashboardFridge(direction) {
-    const options = dashboardFridges.value
-    const current = activeStorage.value === 'fridge'
-        ? options.findIndex(option => option.name === activeFridge.value)
-        : direction < 0 ? 0 : -1
-    selectStorage(options[(current + direction + options.length) % options.length])
-}
 
 function stepStorage(direction) {
     const count = storageOptions.value.length
@@ -1304,7 +1301,10 @@ async function centerFridge() {
 function openCompartment(compartment) {
     if (props.embedded && router) {
         finishDrag()
-        router.push({ name: 'fridge', query: { location: compartment.zone } })
+        const type = compartment.storage === 'pantry' ? 'pantry' : 'fridge'
+        const query = { location: compartment.zone }
+        if (activeNames[type].value !== mainNames[type]) query.storageName = activeNames[type].value
+        router.push({ name: 'fridge', query })
         return
     }
     // Clear any drag that ended while its source card was being unmounted.
@@ -1580,17 +1580,17 @@ onBeforeUnmount(cancelActionReaction)
             </div>
         </header>
 
-        <nav v-if="embedded && (dashboardFridges.length > 1 || activeStorage === 'pantry')"
-            class="dashboard-fridge-switch" aria-label="Switch dashboard fridge">
-            <button type="button" class="storage-slide-arrow" aria-label="Previous fridge"
-                :disabled="shiftingFood || actionPending" @click="stepDashboardFridge(-1)">‹</button>
+        <nav v-if="embedded && storageOptions.length > 1"
+            class="dashboard-fridge-switch" aria-label="Switch dashboard storage">
+            <button type="button" class="storage-slide-arrow" aria-label="Previous storage"
+                :disabled="shiftingFood || actionPending" @click="stepStorage(-1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6" /></svg></button>
             <span :key="currentStorage.label" class="dashboard-fridge-name storage-switch-pulse"
                 role="status" :title="currentStorage.label">{{ currentStorage.label }}</span>
-            <button type="button" class="storage-slide-arrow" aria-label="Next fridge"
-                :disabled="shiftingFood || actionPending" @click="stepDashboardFridge(1)">›</button>
+            <button type="button" class="storage-slide-arrow" aria-label="Next storage"
+                :disabled="shiftingFood || actionPending" @click="stepStorage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6l6 6-6 6" /></svg></button>
         </nav>
         <nav v-if="!embedded" class="storage-switcher" aria-label="Storage slideshow">
-            <button type="button" class="storage-slide-arrow" aria-label="Previous storage" :disabled="shiftingFood || saving" @click="stepStorage(-1)">‹</button>
+            <button type="button" class="storage-slide-arrow" aria-label="Previous storage" :disabled="shiftingFood || saving" @click="stepStorage(-1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6" /></svg></button>
             <div class="storage-slide-options fridge-switcher-options">
                 <button v-for="(option, index) in storageOptions" :key="option.type + ':' + option.name" type="button"
                     :disabled="shiftingFood || saving" :aria-pressed="storageIndex === index"
@@ -1604,7 +1604,7 @@ onBeforeUnmount(cancelActionReaction)
                         :disabled="shiftingFood || saving" @click="deleteStorage">Delete {{ activeStorage }}</button>
                 </div>
             </div>
-            <button type="button" class="storage-slide-arrow" aria-label="Next storage" :disabled="shiftingFood || saving" @click="stepStorage(1)">›</button>
+            <button type="button" class="storage-slide-arrow" aria-label="Next storage" :disabled="shiftingFood || saving" @click="stepStorage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6l6 6-6 6" /></svg></button>
         </nav>
         <section ref="kitchenStage" class="kitchen-stage storage-slideshow" :class="{ 'instant-storage-slide': !animateStorageSlide }" aria-label="Food storage" @pointerdown.capture="beginFoodSelection" @click.capture="stopSelectionClick" @dblclick.capture="openFoodCompartment" @keydown.capture="selectFoodWithKeyboard" @dragstart.capture="setStageEmojiDragImage($event)">
 
@@ -1615,6 +1615,7 @@ onBeforeUnmount(cancelActionReaction)
                     <section class="storage-unit fridge-unit" :class="{ 'slide-active': activeStorage === 'fridge' }" :inert="activeStorage !== 'fridge' ? true : undefined" :aria-hidden="activeStorage !== 'fridge'" aria-label="Refrigerator">
                         <div class="storage-unit-content" :key="activeFridge" :class="{ 'storage-switch-pulse': animateStorageSlide }">
                         <div v-if="!embedded" class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
+                        <button v-if="fridgeDoorOpen" type="button" class="mobile-fridge-close" @click="toggleDoor">Close fridge</button>
                         <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn, 'fridge-is-idle': embedded && doorAngle === 0 && !doorGesture }" :style="{ '--door-angle': `${doorAngle}deg`, '--open-progress': doorAngle / 170 }">
                             <div class="fridge-cabinet">
                                 <div v-for="side in (fridgeLightOn ? ['left', 'right'] : [])" :key="side" class="cold-air" :class="`cold-air-${side}`" aria-hidden="true">
@@ -2655,6 +2656,8 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 }
 .storage-switcher { display:flex; align-items:center; justify-content:center; gap:16px; margin:12px auto 24px; }
 .storage-slide-arrow { display:grid; place-items:center; width:48px; height:48px; border:2px solid var(--ink); border-radius:50%; background:var(--paper); color:var(--ink); font-size:38px; line-height:1; box-shadow:2px 3px 0 #173d3920; cursor:pointer; }
+.storage-slide-arrow { padding:0; }
+.storage-slide-arrow svg { display:block; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
 .storage-slide-arrow:hover { background:#def2e9; }
 .storage-slide-options { display:flex; align-items:center; flex-wrap:wrap; justify-content:center; gap:8px; }
 .storage-slide-options button { padding:8px 18px; border:2px solid transparent; border-radius:24px; background:transparent; color:var(--ink); font:inherit; font-size:19px; cursor:pointer; }
@@ -2741,5 +2744,44 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .dashboard-fridge-name {
     min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     text-align:center; font-weight:700;
+}
+.mobile-fridge-close { display:none; }
+@media (max-width: 767.98px) {
+    .smart-fridge-page .kitchen-stage .fridge-body,
+    .smart-fridge-page .kitchen-stage .fridge-body.fridge-is-open {
+        width:min(100%, 440px);
+        transform:none;
+        padding:8px;
+    }
+    .smart-fridge-page .fridge-body::after { display:none; }
+    .smart-fridge-page .kitchen-stage .fridge-cabinet {
+        height:auto;
+        min-height:0;
+        perspective:none;
+    }
+    .smart-fridge-page .kitchen-stage .fridge-interior { height:680px; padding:10px 8px; }
+    .smart-fridge-page .kitchen-stage .fridge-door { transform:none; }
+    .smart-fridge-page .kitchen-stage .fridge-door.door-open {
+        position:relative; inset:auto; width:100%; height:auto; margin-top:10px; padding:0;
+        transform:none; box-shadow:none; background:none; border:0;
+    }
+    .fridge-door.door-open > :is(.door-brand,.door-handle,.door-hint) { display:none; }
+    .smart-fridge-page .kitchen-stage .fridge-door.door-open .door-inner {
+        position:relative; inset:auto; width:100%; transform:none; padding:10px;
+    }
+    .smart-fridge-page .fridge-door.door-open .door-bin { flex:none; min-height:80px; }
+    .mobile-fridge-close {
+        display:block; min-height:44px; margin:0 auto 8px; padding:6px 14px;
+        border:2px solid var(--ink); border-radius:12px; background:var(--paper); color:var(--ink);
+    }
+    .dashboard-fridge-switch { grid-template-columns:44px minmax(0,1fr) 44px; }
+    .dashboard-fridge-switch .storage-slide-arrow { width:44px; height:44px; }
+    .storage-switcher { padding-inline:50px; }
+    .storage-slide-options button { min-height:44px; overflow-wrap:anywhere; }
+    .expiry-dropdown-position { right:auto; left:0; }
+    .inventory-modal { max-width:calc(100vw - 24px); max-height:85dvh; }
+    .inventory-modal :deep(.food-quantity-actions button),
+    .inventory-modal :deep(.icon-button) { min-height:44px; min-width:44px; }
+    .expiry-dropdown-panel { max-height:55dvh; }
 }
 </style>
