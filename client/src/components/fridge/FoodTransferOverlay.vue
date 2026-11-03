@@ -32,7 +32,7 @@ function flightStyle(flight) {
         :style="flightStyle(flight)"
         @animationend.self="emit('complete', flight.id)"
       >
-        <FoodIcon :food="flight.name" />
+        <FoodIcon :item="flight" />
       </div>
     </div>
   </Teleport>

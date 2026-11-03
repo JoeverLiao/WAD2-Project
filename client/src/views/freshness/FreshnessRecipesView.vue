@@ -349,7 +349,7 @@ onMounted(loadApi)
         </p>
       </div>
 
-      <span class="hero-doodle" aria-hidden="true"><FoodIcon kind="leaf" /></span>
+      <span class="hero-doodle" aria-hidden="true"><FoodIcon kind="leafy" /></span>
     </header>
 
     <div v-if="!USE_API" class="demo-note mb-4">

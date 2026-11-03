@@ -1,25 +1,35 @@
 <script setup>
 import { computed } from 'vue'
-import { foodIconFor, foodIcons } from '../utils/foodIcons.js'
+import { DEFAULT_FOOD_ICON, FOOD_ICONS } from '../utils/foodIcons.js'
+import { isFoodIcon, resolveFoodIcon } from '../utils/foodIconMap.js'
 
-// Pass a food's name to pick its icon, or kind to choose one directly.
+// The one way to draw a food icon. Give it either:
+//   item - a food with name, icon and category (inventory item, receipt row, listing)
+//   food - just a name
+//   kind - a library icon id, to choose the icon directly
+// color replaces the icon's own colour without changing its shape.
 const props = defineProps({
+  item: { type: Object, default: null },
   food: { type: String, default: '' },
   kind: { type: String, default: '' },
+  color: { type: String, default: '' },
 })
 
-const icon = computed(() => foodIcons[props.kind || foodIconFor(props.food)])
+const id = computed(() => {
+  if (isFoodIcon(props.kind)) return props.kind
+  return resolveFoodIcon(props.item ?? { name: props.food })
+})
+const icon = computed(() => FOOD_ICONS[id.value] ?? FOOD_ICONS[DEFAULT_FOOD_ICON])
 </script>
 
 <template>
-  <svg class="food-icon" viewBox="0 0 70 70" aria-hidden="true">
-    <path class="food-shape" :d="icon.shape" :fill="icon.color" />
+  <svg class="food-icon" :data-food-icon="id" viewBox="0 0 70 70" aria-hidden="true">
+    <path class="food-shape" :d="icon.shape" :fill="color || icon.color" />
     <path class="food-line" :d="icon.detail" />
   </svg>
 </template>
 
 <style scoped>
-/* Sized in em so an icon fills the same space as the emoji font sizes around it. */
 .food-icon {
   display: inline-block;
   flex: none;

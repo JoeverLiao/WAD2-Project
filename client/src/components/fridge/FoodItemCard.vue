@@ -102,7 +102,7 @@ function handleDragEnd() {
         @dragend="handleDragEnd"
     >
         <div class="card-top">
-            <span class="food-emoji"><FoodIcon :food="item.name" /></span>
+            <span class="food-emoji"><FoodIcon :item="item" /></span>
 
             <div class="card-tools" role="group" aria-label="Food item controls">
                 <button type="button" class="icon-button" title="Edit food" :aria-label="`Edit ${item.name}`" @click.stop="emit('edit', item)">

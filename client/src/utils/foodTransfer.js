@@ -136,6 +136,9 @@ export function useFoodTransfer(stage) {
       pending.push({
         id,
         name: origin.item.name,
+        // FoodIcon also needs these so the flying icon matches the one on the shelf.
+        icon: origin.item.icon,
+        category: origin.item.category,
         from,
         to: inViewport(to),
         delay: pending.length * 35,
