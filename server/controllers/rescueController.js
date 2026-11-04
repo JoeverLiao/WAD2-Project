@@ -344,6 +344,10 @@ const uploadPhoto = wrap(async (req,res) => {
   if (!permitted) fail(404,'Editable listing not found or not owned by you.')
   if (!req.file) fail(400,'Upload a photo file.')
   const data=await compressRescueImage(req.file.buffer)
+  console.log('Compressed photo size:', {
+    bytes: data.length,
+    kib: (data.length / 1024).toFixed(1),
+  })
   await tx(async session => {
     const listing = await ownedListing(req.params.id,req.userId,session)
     if (listing.status!=='available') fail(409,'Only available listing photos can be changed.')

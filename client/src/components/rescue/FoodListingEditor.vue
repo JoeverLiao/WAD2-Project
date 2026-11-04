@@ -537,6 +537,8 @@ function close() {
 }
 
 function onCancel(event) {
+  if (event.target !== dialog.value) return
+
   event.preventDefault()
   close()
 }
@@ -646,11 +648,16 @@ async function save() {
       await persistPhoto(data.listing)
     } catch (err) {
       photoPending.value = true
+
+      const details =
+        err.response?.data?.details ||
+        apiError(err)
+
       error.value =
-        `Your listing was saved, but the photo change failed: ${apiError(err)} Retry the photo or continue without that change.`
+        `Your listing was saved, but the photo change failed: ${details}`
+
       return
     }
-
     emit('saved', data.listing)
   } catch (err) {
     error.value = apiError(err)
@@ -1374,7 +1381,9 @@ async function useMyLocation() {
                   class="form-control mt-3"
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
+                  capture="environment"
                   @change="choosePhoto"
+                  @cancel.stop
                 />
 
                 <p class="field-hint mt-2">
