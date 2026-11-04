@@ -1,6 +1,7 @@
 <script setup>
 // Shows what the parser found on the receipt and lets the user fix it before it is saved.
 // Nothing is saved until the user presses "Save to inventory", and every row is checked first.
+import { RouterLink } from 'vue-router'
 import { computed, nextTick, reactive, ref } from 'vue'
 import { confirmReceiptItems, suggestItemDetails } from '../services/scanningApi.js'
 import DietBadge from './common/DietBadge.vue'
@@ -91,6 +92,15 @@ const serverErrors = reactive({}) // { [rowKey]: { [field]: message } }
 const saving = ref(false)
 const saveError = ref('')
 const savedCount = ref(0)
+const savedItems = ref([])
+const savedLocations = computed(() => savedItems.value.map(item => {
+  const storage = item.storage === 'pantry' ? item.pantryName || 'Pantry' : item.fridgeName || 'Main fridge'
+  const zone = zoneByValue(item.storageZone)?.label || item.storageZone || item.storage
+  return { id: item._id, name: item.name, location: storage + ' · ' + zone }
+}))
+const viewItemsRoute = computed(() => ({
+  name: 'fridge', query: { highlight: savedItems.value.map(item => String(item._id)) },
+}))
 const addedCount = ref(0)
 const mergedCount = ref(0)
 
@@ -107,6 +117,14 @@ const allRowErrors = computed(() =>
 const purchaseDateError = computed(() => validatePurchaseDate(purchasedAt.value, new Date(), { required: true }))
 const tooMany = computed(() => includedRows.value.length > MAX_ITEMS)
 const canSave = computed(() => includedRows.value.length > 0 && !saving.value && !tooMany.value)
+const submissionStatus = computed(() => {
+  if (saving.value) return 'Saving your items…'
+  if (saveError.value) return 'Some details need checking before saving.'
+  if (!includedRows.value.length) return 'Select at least one item to save.'
+  if (tooMany.value) return `Select no more than ${MAX_ITEMS} items.`
+  if (problemCount.value) return `${problemCount.value} missing or invalid detail${problemCount.value === 1 ? '' : 's'} — tap Save to find the first one.`
+  return 'All required details look good. Ready to save.'
+})
 
 function errorFor(row, field) {
   const fromServer = serverErrors[row.key]?.[field]
@@ -305,6 +323,7 @@ async function save() {
   saving.value = true
   try {
     const result = await confirmReceiptItems(sent.map((row) => toPayload(row, purchasedAt.value)), props.manual ? 'manual' : 'receipt')
+    savedItems.value = result.items || []
     savedCount.value = result.saved
     addedCount.value = result.added ?? result.saved
     mergedCount.value = result.merged ?? 0
@@ -343,13 +362,19 @@ const totalWarning = computed(() => {
             ({{ addedCount }} new).
           </span>
         </div>
+        <ul v-if="savedLocations.length" class="list-unstyled mb-3">
+          <li v-for="item in savedLocations" :key="item.id"><strong>{{ item.name }}</strong> → {{ item.location }}</li>
+        </ul>
+        <div class="d-flex flex-wrap justify-content-center gap-2">
         <button type="button" class="btn fc-btn" @click="emit('reset')">
-          {{ manual ? 'Add more items' : 'Scan another receipt' }}
+          Add more items
         </button>
+        <RouterLink v-if="savedItems.length" class="btn fc-btn-outline" :to="viewItemsRoute">View Items</RouterLink>
+        </div>
       </div>
 
       <!-- Review -->
-      <form v-else id="review-form" novalidate @submit.prevent="save">
+      <form v-else id="review-form" class="receipt-review-fields" novalidate @submit.prevent="save">
         <h2 class="h5">{{ manual ? 'Add items yourself' : 'Check your items' }}</h2>
         <p v-if="manual" class="text-body-secondary small mb-3" data-testid="manual-intro">
           Type in what you bought. Only the name, quantity and where it is kept are needed: the price and the
@@ -690,14 +715,19 @@ const totalWarning = computed(() => {
           {{ saveError }}
         </div>
 
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <button type="submit" class="btn fc-btn" :disabled="!canSave" data-testid="save">
+        <div class="receipt-submit-bar">
+          <div class="receipt-submit-inner">
+          <button type="submit" class="btn fc-btn" :disabled="!canSave" data-testid="save" aria-describedby="receipt-submit-status">
             <span v-if="saving" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
             {{ saving ? 'Saving…' : 'Save to inventory' }}
           </button>
+          <div>
+          <p id="receipt-submit-status" class="receipt-submit-status" role="status">{{ submissionStatus }}</p>
           <span class="small text-body-secondary" data-testid="count">
             {{ includedRows.length }} of {{ rows.length }} {{ rows.length === 1 ? 'item' : 'items' }} will be saved
           </span>
+          </div>
+          </div>
         </div>
       </form>
     </div>
@@ -705,6 +735,22 @@ const totalWarning = computed(() => {
 </template>
 
 <style scoped>
+.receipt-review-fields { padding-bottom:150px; }
+.receipt-submit-bar {
+  position:fixed; left:0; right:0; bottom:0; z-index:1050;
+  padding:12px 16px max(12px, env(safe-area-inset-bottom));
+  border-top:1px solid var(--line, #9bcac5); background:#fbfffdf5;
+  box-shadow:0 -5px 18px #123f3b15; backdrop-filter:blur(8px);
+}
+.receipt-submit-inner {
+  display:flex; align-items:center; gap:16px; max-width:1100px; margin:auto;
+}
+.receipt-submit-status { margin:0 0 3px; font-size:.95rem; color:var(--muted, #557b77); }
+@media(max-width:575.98px) {
+  .receipt-submit-inner { flex-direction:column-reverse; align-items:stretch; gap:8px; }
+  .receipt-submit-inner > .btn { min-height:44px; }
+  .receipt-review-fields { padding-bottom:210px; }
+}
 /* A thick coloured edge on each item repeats the diet label (the badge and the word say it too). */
 .item-row {
   border-left-width: 8px !important;

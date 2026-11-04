@@ -62,6 +62,18 @@ onBeforeUnmount(() => {
   unreadRequest?.abort()
 })
 
+const fridgeSection = ref(null)
+const fridgeSectionHeight = ref(800)
+let fridgeSizeObserver
+onMounted(() => {
+  if (!fridgeSection.value || typeof ResizeObserver === 'undefined') return
+  fridgeSizeObserver = new ResizeObserver(() => {
+    fridgeSectionHeight.value = fridgeSection.value.offsetHeight
+  })
+  fridgeSizeObserver.observe(fridgeSection.value)
+})
+onBeforeUnmount(() => fridgeSizeObserver?.disconnect())
+
 const dashboardFridge = ref(null)
 import FoodIcon from '../../components/FoodIcon.vue'
 
@@ -104,7 +116,7 @@ const recipeInventory = computed(() => items.value
 const usableIngredients = computed(() => [...new Set(recipeInventory.value
   .map(item => canonicalName(item.name)).filter(Boolean))].slice(0, 8))
 const suggestedRecipes = computed(() => analyseRecipes(recipes.value, recipeInventory.value)
-  .sort((a, b) => b.rescueScore - a.rescueScore).slice(0, 3))
+  .sort((a, b) => b.rescueScore - a.rescueScore).slice(0, 5))
 let recipeRequestId = 0
 
 async function loadRecipes(ingredients) {
@@ -254,44 +266,20 @@ const vReveal = {
         <button type="button" class="chip ms-2" @click="inventoryStore.loadInventory()">Retry</button>
       </div>
 
-      <div class="row g-3 dashboard-workspace">
+      <div class="row g-3 dashboard-workspace" :style="{ '--fridge-section-height': fridgeSectionHeight + 'px' }">
         <!-- ================= LEFT COLUMN ================= -->
         <div class="col-lg-7 d-flex flex-column gap-3">
-          <section aria-labelledby="dashboard-fridge-heading">
+          <section ref="fridgeSection" aria-labelledby="dashboard-fridge-heading">
             <h2 id="dashboard-fridge-heading" class="section-title">Your Smart Fridge</h2>
             <SmartKitchen ref="dashboardFridge" embedded :inventory-items="items"
               @inventory-change="items = $event" @reload="inventoryStore.loadInventory()" />
           </section>
 
-          <!-- Recipe suggestions from the user's ingredients -->
-          <section v-reveal class="panel" aria-labelledby="recipes-heading">
-            <h2 id="recipes-heading" class="panel-title mb-2">Try these recipes!</h2>
-            <p v-if="recipesLoading" class="empty m-0" role="status">Finding recipes for your ingredients…</p>
-            <p v-else-if="recipesError" class="empty m-0" role="alert">{{ recipesError }}</p>
-            <p v-else-if="!recipes.length" class="empty m-0">
-              {{ usableIngredients.length ? 'No recipes found for your ingredients yet.' : 'Add some food to get recipe ideas.' }}
-            </p>
-            <ul v-else class="dashboard-recipe-grid">
-              <li v-for="recipe in suggestedRecipes" :key="recipe.id">
-                <RouterLink :to="{ name: 'recipe-detail', params: { id: String(recipe.id) } }" class="dashboard-recipe-card">
-                  <div class="dashboard-recipe-photo">
-                    <img v-if="recipe.image" :src="recipe.image" alt="" loading="lazy">
-                    <FoodIcon v-else kind="bowl" />
-                  </div>
-                  <div class="dashboard-recipe-copy">
-                    <strong class="recipe-name">{{ recipe.name }}</strong>
-                    <span v-if="recipe.ingredients?.length" class="recipe-meta">
-                      {{ recipe.matched.length }}/{{ recipe.ingredients.length }} ingredients
-                    </span>
-                  </div>
-                </RouterLink>
-              </li>
-            </ul>
-          </section>
+
         </div>
 
         <!-- ================= RIGHT COLUMN ================= -->
-        <div class="col-lg-5 d-flex flex-column gap-3">
+        <div class="col-lg-5 d-flex flex-column gap-3 dashboard-expiry-column">
           <h2 class="section-title">Expiry list</h2>
 
           <div v-reveal class="filter-chips" role="group" aria-label="Filter expiry list">
@@ -354,6 +342,31 @@ const vReveal = {
           </section>
         </div>
       </div>
+          <!-- Recipe suggestions from the user's ingredients -->
+          <section v-reveal class="panel dashboard-recipes mt-3" aria-labelledby="recipes-heading">
+            <h2 id="recipes-heading" class="panel-title mb-2">Try these recipes!</h2>
+            <p v-if="recipesLoading" class="empty m-0" role="status">Finding recipes for your ingredients…</p>
+            <p v-else-if="recipesError" class="empty m-0" role="alert">{{ recipesError }}</p>
+            <p v-else-if="!recipes.length" class="empty m-0">
+              {{ usableIngredients.length ? 'No recipes found for your ingredients yet.' : 'Add some food to get recipe ideas.' }}
+            </p>
+            <ul v-else class="dashboard-recipe-grid">
+              <li v-for="recipe in suggestedRecipes" :key="recipe.id">
+                <RouterLink :to="{ name: 'recipe-detail', params: { id: String(recipe.id) } }" class="dashboard-recipe-card">
+                  <div class="dashboard-recipe-photo">
+                    <img v-if="recipe.image" :src="recipe.image" alt="" loading="lazy">
+                    <FoodIcon v-else kind="bowl" />
+                  </div>
+                  <div class="dashboard-recipe-copy">
+                    <strong class="recipe-name">{{ recipe.name }}</strong>
+                    <span v-if="recipe.ingredients?.length" class="recipe-meta">
+                      {{ recipe.matched.length }}/{{ recipe.ingredients.length }} ingredients
+                    </span>
+                  </div>
+                </RouterLink>
+              </li>
+            </ul>
+          </section>
     <p v-if="impactError" role="alert">{{ impactError }}</p>
     <RouterLink class="impact-link d-block mt-4 mb-3" :to="{ name: 'analytics', hash: '#daily-food-impact' }">
       <ImpactOverview :totals="impactTotals" />
@@ -1114,5 +1127,20 @@ svg {
 @media(max-width:991px) {
   .dashboard-header { grid-template-columns:1fr; gap:12px; }
   .quick-bites { max-width:100%; }
+}
+@media (min-width: 992px) {
+  .dashboard-workspace .dashboard-expiry-column {
+    height:var(--fridge-section-height);
+    min-height:0;
+  }
+  .dashboard-expiry-column > :is(.section-title,.filter-chips,.donate) { flex-shrink:0; }
+  .dashboard-expiry-column .expiry-wrap {
+    flex:1 1 0; min-height:0; max-height:none; overflow:auto;
+  }
+  .dashboard-expiry-column .donate {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    flex:0 0 auto; padding:24px 16px;
+  }
+  .dashboard-recipe-grid { grid-template-columns:repeat(5,minmax(0,1fr)); }
 }
 </style>

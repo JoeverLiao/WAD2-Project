@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { RouterLinkStub } from '@vue/test-utils'
 import { flushPromises, mount } from '@vue/test-utils'
 import ReceiptReviewForm from '../components/ReceiptReviewForm.vue'
 
@@ -352,4 +353,25 @@ describe('ReceiptReviewForm', () => {
       wrapper.unmount()
     })
   })
+})
+
+
+it('shows actual saved destinations and links to the saved inventory IDs', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(201, {
+    saved: 2, added: 1, merged: 1, items: [
+      { _id: 'milk-id', name: 'Milk', storage: 'fridge', storageZone: 'middle-shelf', fridgeName: 'Fridge 2' },
+      { _id: 'egg-id', name: 'Eggs', storage: 'fridge', storageZone: 'middle-shelf' },
+    ],
+  })))
+  const wrapper = mount(ReceiptReviewForm, {
+    props: { parsed: parsed() }, global: { stubs: { RouterLink: RouterLinkStub } },
+  })
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(wrapper.get('[data-testid="saved-message"]').text()).toContain('Fridge 2 · Middle shelf')
+  expect(wrapper.findComponent(RouterLinkStub).props('to')).toEqual({
+    name: 'fridge', query: { highlight: ['milk-id', 'egg-id'] },
+  })
+  wrapper.unmount()
+  vi.unstubAllGlobals()
 })

@@ -224,10 +224,17 @@ onMounted(async () => {
         openLinkedCompartment()
     }
 })
-watch(() => route?.query?.location, () => {
+watch(() => [route?.query?.location, route?.query?.highlight], () => {
     if (!props.embedded) openLinkedCompartment()
 })
 function openLinkedCompartment() {
+    const queryIds = route?.query?.highlight
+    const ids = new Set(Array.isArray(queryIds) ? queryIds : queryIds ? [queryIds] : [])
+    const highlighted = items.value.filter(item => ids.has(item.id))
+    if (highlighted.length) {
+        showSavedItems(highlighted)
+        return
+    }
     const locations = {
         'middle-shelf': { title: 'Shelves', storage: 'fridge' },
         'freezer-main': { title: 'Freezer', storage: 'freezer' },
@@ -1506,6 +1513,19 @@ function locationLabel(item) {
         crisper: 'Crisper drawer'
     }
     return names[item.storageZone] || 'Main fridge'
+}
+
+async function showSavedItems(foods) {
+    await jumpToItem(foods[0])
+    selectedFoodIds.value = new Set(foods.map(item => item.id))
+    if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        for (const icon of kitchenStage.value?.querySelectorAll('[data-food-id]') || []) {
+            if (selectedFoodIds.value.has(icon.dataset.foodId)) {
+                icon.animate?.([{ rotate: '-7deg' }, { rotate: '7deg' }, { rotate: '0deg' }],
+                    { duration: 500, delay: 450, easing: 'ease-in-out' })
+            }
+        }
+    }
 }
 
 function highlightFood(id) {

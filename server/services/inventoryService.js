@@ -115,5 +115,11 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
     }
   })
   const result = await InventoryItem.bulkWrite(operations, { ordered: true })
-  return { saved: operations.length, added: result.upsertedCount ?? 0, merged: result.matchedCount ?? 0 }
+  const savedItems = await Promise.all(operations.map(operation =>
+    InventoryItem.findOne(operation.updateOne.filter).collation({ locale: 'en', strength: 2 }).lean(),
+  ))
+  return {
+    saved: operations.length, added: result.upsertedCount ?? 0, merged: result.matchedCount ?? 0,
+    items: savedItems.filter(Boolean),
+  }
 }

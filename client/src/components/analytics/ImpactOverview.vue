@@ -139,8 +139,8 @@ const currency = new Intl.NumberFormat('en-SG', { style: 'currency', currency: '
   box-shadow: var(--shadow-paper);
   padding: 1.5rem;
 }
-.panel-tint {
-  background: #e3f3ee;
+.impact-overview.panel-tint {
+  background: #fff;
 }
 .panel-title {
   margin: 0;
