@@ -66,6 +66,7 @@ const editableFields = [
   'storageZone',
   'fridgeName',
   'pantryName',
+  'storageGuidanceIgnored',
   'purchasedAt',
   'expiresAt',
   'purchasePrice',
@@ -93,6 +94,10 @@ function hasTrackedAmount(item = {}) {
 // Validate fields shared by create and update requests.
 // Returning a message lets each endpoint send a clear HTTP 400 response.
 function validateItemFields(fields, { creating = false } = {}) {
+  if (Object.prototype.hasOwnProperty.call(fields, 'storageGuidanceIgnored') &&
+      typeof fields.storageGuidanceIgnored !== 'boolean') {
+    return 'Storage guidance preference must be true or false.'
+  }
   for (const key of ['fridgeName', 'pantryName']) {
     if (!Object.prototype.hasOwnProperty.call(fields, key)) continue
     if (fields[key] === null || fields[key] === '') {
@@ -301,6 +306,8 @@ async function updateItem(req, res, next) {
     if (Object.keys(fields).length === 0) {
       return res.status(400).json({ error: 'No editable fields were provided.' })
     }
+    const preferenceOnly = Object.keys(fields).length === 1 &&
+      Object.prototype.hasOwnProperty.call(fields, 'storageGuidanceIgnored')
 
     // Read the current item first so validation can consider unchanged fields.
     const existingItem = await InventoryItem.findOne({
@@ -337,7 +344,7 @@ async function updateItem(req, res, next) {
     }
 
     // Repair the legacy fridge-only default when no explicit zone was requested.
-    if (!Object.prototype.hasOwnProperty.call(fields, 'storageZone')) {
+    if (!preferenceOnly && !Object.prototype.hasOwnProperty.call(fields, 'storageZone')) {
       const validZones = combined.storage === 'pantry' ? ['dry-storage'] : combined.storage === 'freezer'
         ? ['freezer-main'] : ['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'door-lower', 'crisper']
       if (!validZones.includes(combined.storageZone)) {
@@ -345,7 +352,8 @@ async function updateItem(req, res, next) {
         fields.storageZone = combined.storageZone
       }
     }
-    const validationError = validateItemFields(combined)
+    // Ignoring advice must not repair or require unrelated legacy item details.
+    const validationError = validateItemFields(preferenceOnly ? fields : combined)
     if (validationError) {
       return res.status(400).json({ error: validationError })
     }

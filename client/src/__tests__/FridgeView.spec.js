@@ -802,3 +802,275 @@ describe('Lower door drops and compartment food reveal', () => {
     expect(request.mock.calls.filter(([, options]) => options?.method !== 'GET')).toHaveLength(0)
   })
 })
+
+
+describe('Storage guidance arrangement', () => {
+  const misplaced = [
+    { ...food, _id: 'milk-guidance', name: 'Milk', storageZone: 'door', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf'] },
+    { ...food, _id: 'fruit-guidance', name: 'Apples', storageZone: 'middle-shelf', suggestedLocation: 'crisper', allowedLocations: ['crisper'] },
+  ]
+  const keys = ['full-circle-fridges', 'full-circle-last-fridge', 'full-circle-item-storage-assignments']
+  afterEach(() => keys.forEach(key => localStorage.removeItem(key)))
+  function inventoryRequest(foods, failId = '') {
+    request.mockImplementation(async (url, options) => {
+      if (options?.method === 'PATCH') {
+        if (url.endsWith(failId) && failId) return { ok: false, status: 503 }
+        const item = foods.find(item => url.split('/').at(-1) === item._id)
+        return { ok: true, json: async () => ({ item: { ...item, ...JSON.parse(options.body) } }) }
+      }
+      return { ok: true, json: async () => foods }
+    })
+  }
+
+  it('arranges an individual food in the same named fridge without moving other guidance items', async () => {
+    localStorage.setItem('full-circle-fridges', JSON.stringify(['Fridge 2']))
+    inventoryRequest(misplaced.map(item => ({ ...item, fridgeName: 'Fridge 2' })))
+    await openFridge()
+    await wrapper.findAll('.storage-slide-options > button').find(button => button.text() === 'Fridge 2').trigger('click')
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(2)
+    await wrapper.get('[aria-label="Arrange Apples"]').trigger('click')
+    await flushPromises()
+    const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(patches[0][0]).toBe('/api/inventory/fruit-guidance')
+    expect(JSON.parse(patches[0][1].body)).toEqual({ storage: 'fridge', storageZone: 'crisper', fridgeName: 'Fridge 2', pantryName: null })
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
+    expect(wrapper.get('.recommendation-card').text()).toContain('Milk')
+    expect(wrapper.get('[data-drop-zone="crisper"] [data-food-id="fruit-guidance"]').exists()).toBe(true)
+  })
+
+  it('arranges every displayed warning to its own destination and skips correctly stored foods', async () => {
+    inventoryRequest([
+      ...misplaced,
+      { ...food, _id: 'ice-guidance', name: 'Ice cream', allowedLocations: [] },
+      { ...food, _id: 'rice-guidance', name: 'Rice', allowedLocations: [] },
+      { ...food, _id: 'correct-guidance', name: 'Milk', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf'] },
+    ])
+    await openFridge()
+    await wrapper.get('.guidance-arrange-all').trigger('click')
+    await flushPromises()
+    const payloads = Object.fromEntries(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+      .map(([url, options]) => [url.split('/').at(-1), JSON.parse(options.body)]))
+    expect(Object.keys(payloads)).toHaveLength(4)
+    expect(payloads['milk-guidance'].storageZone).toBe('middle-shelf')
+    expect(payloads['fruit-guidance'].storageZone).toBe('crisper')
+    expect(payloads['ice-guidance']).toMatchObject({ storage: 'freezer', storageZone: 'freezer-main', fridgeName: 'Main fridge' })
+    expect(payloads['rice-guidance']).toMatchObject({ storage: 'pantry', storageZone: 'dry-storage', pantryName: 'Pantry', fridgeName: null })
+    expect(wrapper.findAll('.recommendation-card').map(card => card.text())).toEqual([])
+    expect(wrapper.get('.guidance-arrange-all').attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps a failed item and its Arrange button available for retry after partial success', async () => {
+    inventoryRequest(misplaced, 'fruit-guidance')
+    await openFridge()
+    await wrapper.get('.guidance-arrange-all').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
+    expect(wrapper.get('.recommendation-card').text()).toContain('Apples')
+    expect(wrapper.get('.guidance-error').text()).toContain('1 food item(s) could not be updated')
+    expect(wrapper.get('[aria-label="Arrange Apples"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-food-id="fruit-guidance"]').classes()).toContain('food-selected')
+    inventoryRequest(misplaced)
+    await wrapper.get('[aria-label="Arrange Apples"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(0)
+    expect(wrapper.find('.guidance-error').exists()).toBe(false)
+  })
+
+  it('cancels Arrange all without moving any food', async () => {
+    inventoryRequest(misplaced)
+    await openFridge()
+    showConfirm.mockClear()
+    showConfirm.mockResolvedValueOnce(false)
+    await wrapper.get('.guidance-arrange-all').trigger('click')
+    await flushPromises()
+    expect(showConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Arrange all displayed items?', confirmLabel: 'Arrange all',
+    }))
+    expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(0)
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(2)
+    expect(wrapper.get('.guidance-arrange-all').attributes('disabled')).toBeUndefined()
+  })
+
+  it('arranges only warnings matching the current search', async () => {
+    inventoryRequest(misplaced)
+    await openFridge()
+    await wrapper.get('[aria-label="Search fridge food"]').setValue('Milk')
+    await wrapper.get('.guidance-arrange-all').trigger('click')
+    await flushPromises()
+    const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(patches[0][0]).toBe('/api/inventory/milk-guidance')
+    await wrapper.get('[aria-label="Search fridge food"]').setValue('')
+    expect(wrapper.get('.recommendation-card').text()).toContain('Apples')
+  })
+})
+
+
+describe('Food storage warning badges', () => {
+  const foods = [
+    { ...food, _id: 'misplaced-fresh', name: 'Fresh apples', storageZone: 'middle-shelf', expiresAt: '2099-01-01', suggestedLocation: 'crisper', allowedLocations: ['crisper'] },
+    { ...food, _id: 'misplaced-expired', name: 'Old apples', storageZone: 'door-lower', expiresAt: '2000-01-01', suggestedLocation: 'crisper', allowedLocations: ['crisper'] },
+    { ...food, _id: 'correct-place', name: 'Correct apples', storageZone: 'crisper', expiresAt: '2099-01-01', suggestedLocation: 'crisper', allowedLocations: ['crisper'] },
+  ]
+  it.each([false, true])('shows only one warning badge with red expiry taking priority (embedded: %s)', async embedded => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    await openFridge(embedded ? { embedded: true, inventoryItems: foods } : {})
+    const fresh = wrapper.get('[data-food-id="misplaced-fresh"]')
+    expect(fresh.get('.food-storage-badge').isVisible()).toBe(true)
+    expect(fresh.find('.food-expiry-badge').exists()).toBe(false)
+    expect(fresh.findAll('.food-storage-badge,.food-expiry-badge')).toHaveLength(1)
+    expect(fresh.attributes('aria-description')).toContain('Storage warning')
+    const expired = wrapper.get('[data-food-id="misplaced-expired"]')
+    expect(expired.get('.food-expiry-badge.expired').isVisible()).toBe(true)
+    expect(expired.findAll('.food-storage-badge,.food-expiry-badge')).toHaveLength(1)
+    expect(expired.find('.food-storage-badge').exists()).toBe(false)
+    expect(expired.attributes('aria-description')).toContain('Storage warning')
+    expect(wrapper.get('[data-food-id="correct-place"]').find('.food-storage-badge').exists()).toBe(false)
+    await fresh.trigger('pointerenter', { pointerType: 'mouse' })
+    expect(document.querySelector('.food-tooltip-storage').textContent).toContain('Crisper drawer')
+    await fresh.trigger('pointerleave')
+    expect(document.querySelector('.food-tooltip-storage')).toBeNull()
+  })
+
+  it('shows only one yellow badge when a food is both expiring soon and misplaced', async () => {
+    const soon = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10)
+    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...foods[0], expiresAt: soon }] })
+    await openFridge()
+    const icon = wrapper.get('[data-food-id="misplaced-fresh"]')
+    expect(icon.findAll('.food-expiry-badge,.food-storage-badge')).toHaveLength(1)
+    expect(icon.get('.food-expiry-badge').classes()).not.toContain('expired')
+    expect(icon.find('.food-storage-badge').exists()).toBe(false)
+    expect(icon.attributes('aria-description')).toContain('Storage warning')
+  })
+
+  it('removes the yellow placement badge after arranging a food into an allowed compartment', async () => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [foods[0]] })
+    await openFridge()
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...foods[0], storageZone: 'crisper' } }) })
+    await wrapper.get('[aria-label="Arrange Fresh apples"]').trigger('click')
+    await flushPromises()
+    const icon = wrapper.get('[data-drop-zone="crisper"] [data-food-id="misplaced-fresh"]')
+    expect(icon.find('.food-storage-badge').exists()).toBe(false)
+    expect(icon.attributes('aria-description')).not.toContain('Storage warning')
+  })
+})
+
+
+describe('Ignoring storage guidance', () => {
+  const misplaced = [
+    { ...food, _id: 'ignore-apple', name: 'Apples', expiresAt: '2000-01-01', storageZone: 'middle-shelf', suggestedLocation: 'crisper', allowedLocations: ['crisper'] },
+    { ...food, _id: 'ignore-milk', name: 'Milk', storageZone: 'door', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf'] },
+  ]
+  let saved
+  beforeEach(() => {
+    saved = misplaced.map(item => ({ ...item }))
+    request.mockImplementation(async (url, options) => {
+      if (options?.method === 'PATCH') {
+        const index = saved.findIndex(item => url.split('/').at(-1) === item._id)
+        saved[index] = { ...saved[index], ...JSON.parse(options.body) }
+        return { ok: true, json: async () => ({ item: saved[index] }) }
+      }
+      return { ok: true, json: async () => saved }
+    })
+  })
+
+  it('ignores only the chosen item, persists after reload, and preserves expiry warnings', async () => {
+    await openFridge()
+    await wrapper.get('[aria-label="Ignore storage guidance for Apples"]').trigger('click')
+    await flushPromises()
+    expect(request).toHaveBeenCalledWith('/api/inventory/ignore-apple', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ storageGuidanceIgnored: true }),
+    }))
+    expect(saved[0].storageZone).toBe('middle-shelf')
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
+    expect(wrapper.get('.recommendation-card').text()).toContain('Milk')
+    expect(wrapper.get('[data-food-id="ignore-apple"]').find('.food-storage-badge').exists()).toBe(false)
+    expect(wrapper.get('[data-food-id="ignore-apple"] .food-expiry-badge.expired').isVisible()).toBe(true)
+    expect(wrapper.get('.ignored-guidance').text()).toContain('Apples')
+    wrapper.unmount()
+    await openFridge()
+    expect(wrapper.find('[aria-label="Ignore storage guidance for Apples"]').exists()).toBe(false)
+    expect(wrapper.get('[data-food-id="ignore-apple"]').find('.food-storage-badge').exists()).toBe(false)
+    await wrapper.get('.guidance-arrange-all').trigger('click')
+    await flushPromises()
+    const moves = request.mock.calls.filter(([, options]) => options?.method === 'PATCH' && JSON.parse(options.body).storageZone)
+    expect(moves).toHaveLength(1)
+    expect(moves[0][0]).toBe('/api/inventory/ignore-milk')
+    expect(saved[0].storageZone).toBe('middle-shelf')
+  })
+
+  it('allows ignored guidance to be restored without moving the food', async () => {
+    saved[0].storageGuidanceIgnored = true
+    await openFridge()
+    wrapper.get('.ignored-guidance').element.open = true
+    await wrapper.get('[aria-label="Restore storage guidance for Apples"]').trigger('click')
+    await flushPromises()
+    expect(saved[0].storageGuidanceIgnored).toBe(false)
+    expect(wrapper.get('[aria-label="Ignore storage guidance for Apples"]').exists()).toBe(true)
+    expect(wrapper.get('[data-food-id="ignore-apple"]').attributes('aria-description')).toContain('Storage warning')
+    expect(wrapper.find('.ignored-guidance').exists()).toBe(false)
+    expect(saved[0].storageZone).toBe('middle-shelf')
+  })
+
+  it('confirms Ignore all and saves the preference for every displayed warning', async () => {
+    await openFridge()
+    showConfirm.mockClear()
+    await wrapper.get('.guidance-ignore-all').trigger('click')
+    await flushPromises()
+    expect(showConfirm).toHaveBeenCalledTimes(1)
+    expect(showConfirm).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: 'Ignore all' }))
+    const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+    expect(patches).toHaveLength(2)
+    expect(patches.every(([, options]) => JSON.parse(options.body).storageGuidanceIgnored === true)).toBe(true)
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(0)
+    expect(wrapper.get('.ignored-guidance').text()).toContain('Ignored guidance (2)')
+    expect(wrapper.get('[data-food-id="ignore-apple"] .food-expiry-badge.expired').isVisible()).toBe(true)
+    expect(wrapper.get('.guidance-ignore-all').attributes('disabled')).toBeDefined()
+  })
+
+  it('does not ignore any items if the confirmation is cancelled', async () => {
+    await openFridge()
+    showConfirm.mockResolvedValueOnce(false)
+    await wrapper.get('.guidance-ignore-all').trigger('click')
+    await flushPromises()
+    expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(0)
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(2)
+    expect(wrapper.get('.guidance-ignore-all').attributes('disabled')).toBeUndefined()
+  })
+
+  it('ignores only guidance matching the current search', async () => {
+    await openFridge()
+    await wrapper.get('[aria-label="Search fridge food"]').setValue('Milk')
+    await wrapper.get('.guidance-ignore-all').trigger('click')
+    await flushPromises()
+    const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(patches[0][0]).toBe('/api/inventory/ignore-milk')
+    await wrapper.get('[aria-label="Search fridge food"]').setValue('')
+    expect(wrapper.get('.recommendation-card').text()).toContain('Apples')
+  })
+
+  it('retains failed warnings for retry when Ignore all only partly succeeds', async () => {
+    await openFridge()
+    request.mockResolvedValueOnce({ ok: false, status: 503 })
+    await wrapper.get('.guidance-ignore-all').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
+    expect(wrapper.get('.recommendation-card').text()).toContain('Apples')
+    expect(wrapper.get('.ignored-guidance').text()).toContain('Milk')
+    expect(wrapper.get('.guidance-error').text()).toContain('could not be updated')
+    expect(wrapper.get('.guidance-ignore-all').attributes('disabled')).toBeUndefined()
+  })
+
+  it('keeps the warning and Ignore button if saving the preference fails', async () => {
+    await openFridge()
+    request.mockResolvedValueOnce({ ok: false, status: 503 })
+    await wrapper.get('[aria-label="Ignore storage guidance for Apples"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[aria-label="Ignore storage guidance for Apples"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-food-id="ignore-apple"]').attributes('aria-description')).toContain('Storage warning')
+    expect(wrapper.find('.ignored-guidance').exists()).toBe(false)
+    expect(wrapper.get('.guidance-error').text()).toContain('could not be updated')
+  })
+})

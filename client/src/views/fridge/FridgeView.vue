@@ -426,6 +426,7 @@ function showFoodName(item, event) {
         name: item.name,
         expiry: badge === 'Expired' ? badge : badge ? expiryLabel(item) : null,
         expired: badge === 'Expired',
+        storageWarning: getRecommendation(item) ? (guidanceDestinationLabel(item) ? `Move to ${guidanceDestinationLabel(item)}` : 'Check storage guidance') : '',
         x: Math.max(100, Math.min(window.innerWidth - 100, rect.left + rect.width / 2)),
         y: rect.top,
     }
@@ -1317,24 +1318,21 @@ function selectedFoodsFor(item) {
 
 async function saveFoodGroup(group, method, payload) {
     const results = await Promise.allSettled(group.map(async item => {
+        const itemPayload = typeof payload === 'function' ? payload(item) : payload
         const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
             method, credentials: 'include',
-            ...(payload ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) } : {}),
+            ...(itemPayload ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(itemPayload) } : {}),
         })
         if (!response.ok) throw new Error(`Could not update ${item.name}.`)
         if (method === 'DELETE') return item
         const data = await response.json()
         const savedApiItem = data.item || data
-        const storageType = Object.prototype.hasOwnProperty.call(payload || {}, 'pantryName')
-            ? 'pantry'
-            : Object.prototype.hasOwnProperty.call(payload || {}, 'fridgeName')
-                ? 'fridge'
-                : (payload?.storage || savedApiItem.storage || item.storage) === 'pantry' ? 'pantry' : 'fridge'
+        const storageType = (itemPayload?.storage || savedApiItem.storage || item.storage) === 'pantry' ? 'pantry' : 'fridge'
         const field = assignmentFields[storageType]
-        const hasExplicitName = Object.prototype.hasOwnProperty.call(payload || {}, field)
+        const hasExplicitName = Object.prototype.hasOwnProperty.call(itemPayload || {}, field)
         const wasInSameStorage = (item.storage === 'pantry') === (storageType === 'pantry')
         const storageName = hasExplicitName
-            ? payload[field]
+            ? itemPayload[field]
             : wasInSameStorage
                 ? item[field] || mainNames[storageType]
                 : activeNames[storageType].value || mainNames[storageType]
@@ -1445,7 +1443,12 @@ async function dropOnArea(area, event, onSuccess) {
 // Prefer the per-item guidance stored with inventory; retain lightweight
 // keyword hints for older or manually entered records without that guidance.
 function getRecommendation(item) {
+    return item.storageGuidanceIgnored ? '' : storageAdvice(item)
+}
+
+function storageAdvice(item) {
     const allowedLocations = Array.isArray(item.allowedLocations) ? item.allowedLocations : []
+    if (allowedLocations.includes(item.storageZone)) return ''
     if (allowedLocations.length > 0 && !allowedLocations.includes(item.storageZone)) {
         const zoneLabels = {
             'upper-shelf': 'Shelves', 'middle-shelf': 'Shelves',
@@ -1487,6 +1490,112 @@ const storageRecommendations = computed(() =>
         (!props.embedded || item.storage !== 'pantry') && getRecommendation(item)
     )
 )
+const ignoredStorageRecommendations = computed(() =>
+    filteredItems.value.filter(item => item.storageGuidanceIgnored && storageAdvice(item))
+)
+const arrangingFoodIds = ref(new Set())
+const arrangementError = ref('')
+const confirmingGuidanceAction = ref(false)
+const guidanceBusy = computed(() => shiftingFood.value || saving.value || actionPending.value || confirmingGuidanceAction.value)
+
+function guidanceDestination(item) {
+    if (!getRecommendation(item)) return null
+    const allowed = item.allowedLocations.filter(zone => storageForZone(zone))
+    let zone = allowed.length
+        ? allowed.includes(item.suggestedLocation) ? item.suggestedLocation : allowed[0]
+        : null
+    if (!zone) {
+        const name = item.name.toLowerCase()
+        if (name.includes('frozen') || name.includes('ice cream')) zone = 'freezer-main'
+        else if (['rice', 'pasta', 'cereal', 'flour'].some(word => name.includes(word))) zone = 'dry-storage'
+    }
+    const storage = storageForZone(zone)
+    if (!storage || (storage === item.storage && zone === item.storageZone)) return null
+    const type = storage === 'pantry' ? 'pantry' : 'fridge'
+    const sourceType = item.storage === 'pantry' ? 'pantry' : 'fridge'
+    // Keep food in its current named fridge when changing compartments.
+    const name = type === sourceType ? item[assignmentFields[type]] || mainNames[type] : activeNames[type].value
+    return {
+        storage, storageZone: zone,
+        fridgeName: type === 'fridge' ? name : null,
+        pantryName: type === 'pantry' ? name : null,
+    }
+}
+
+function guidanceDestinationLabel(item) {
+    const destination = guidanceDestination(item)
+    if (!destination) return ''
+    return `${itemStorageName(destination)} · ${locationLabel(destination)}`
+}
+
+const arrangeableFoods = computed(() => storageRecommendations.value.filter(item => guidanceDestination(item)))
+
+async function confirmArrangeAll() {
+    if (guidanceBusy.value || !arrangeableFoods.value.length) return
+    const foods = [...arrangeableFoods.value]
+    confirmingGuidanceAction.value = true
+    let confirmed
+    try {
+        confirmed = await showConfirm({
+            title: 'Arrange all displayed items?',
+            message: `Move ${foods.length} displayed item(s) to their recommended storage locations?`,
+            confirmLabel: 'Arrange all',
+        })
+    } finally { confirmingGuidanceAction.value = false }
+    if (confirmed) await arrangeGuidance(foods)
+}
+
+async function arrangeGuidance(group = arrangeableFoods.value) {
+    if (guidanceBusy.value) return
+    const destinations = new Map(group.map(item => [item.id, guidanceDestination(item)]))
+    const foods = group.filter(item => destinations.get(item.id))
+    if (!foods.length) return
+    errorMessage.value = ''
+    arrangementError.value = ''
+    arrangingFoodIds.value = new Set(foods.map(item => item.id))
+    selectedFoodIds.value = new Set([...selectedFoodIds.value, ...arrangingFoodIds.value])
+    shiftingFood.value = true
+    try {
+        await saveFoodGroup(foods, 'PATCH', item => destinations.get(item.id))
+        arrangementError.value = errorMessage.value
+    } finally {
+        shiftingFood.value = false
+        arrangingFoodIds.value = new Set()
+    }
+}
+
+async function setGuidanceIgnored(item, ignored) {
+    return saveGuidancePreferences([item], ignored)
+}
+
+async function saveGuidancePreferences(group, ignored) {
+    if (guidanceBusy.value) return
+    saving.value = true
+    errorMessage.value = ''
+    arrangementError.value = ''
+    const previousSelection = new Set(selectedFoodIds.value)
+    try {
+        await saveFoodGroup(group, 'PATCH', { storageGuidanceIgnored: ignored })
+        selectedFoodIds.value = new Set([...selectedFoodIds.value, ...previousSelection])
+        arrangementError.value = errorMessage.value
+        foodTooltip.value = null
+    } finally { saving.value = false }
+}
+
+async function ignoreAllGuidance() {
+    if (guidanceBusy.value || !storageRecommendations.value.length) return
+    const foods = [...storageRecommendations.value]
+    confirmingGuidanceAction.value = true
+    let confirmed
+    try {
+        confirmed = await showConfirm({
+            title: 'Ignore all displayed storage guidance?',
+            message: `Hide storage guidance for ${foods.length} displayed item(s)? Expiry warnings will stay visible. You can restore guidance under Ignored guidance.`,
+            confirmLabel: 'Ignore all',
+        })
+    } finally { confirmingGuidanceAction.value = false }
+    if (confirmed) await saveGuidancePreferences(foods, true)
+}
 
 // Display a count when recorded, otherwise show the item's optional total weight.
 function amountLabel(item) {
@@ -1934,7 +2043,7 @@ onBeforeUnmount(cancelActionReaction)
                                         <button type="button" class="compartment freezer-compartment" @wheel="scrollCompartment" data-drop-storage="freezer" data-drop-zone="freezer-main" @click="openCompartment({ id: 'freezer', title: 'Freezer', storage: 'freezer', zone: 'freezer-main' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'freezer', storageZone: 'freezer-main' }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon kind="ice" /> Freezer</span><small>{{ countItems('freezer') }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone('freezer', 'freezer-main')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-else-if="getRecommendation(item)" class="food-storage-badge" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone('freezer', 'freezer-main').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
@@ -1944,7 +2053,7 @@ onBeforeUnmount(cancelActionReaction)
                                         ]" :key="compartment.id" type="button" class="compartment shelf-compartment" @wheel="scrollCompartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon :kind="compartment.icon" /> {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-else-if="getRecommendation(item)" class="food-storage-badge" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
@@ -1953,7 +2062,7 @@ onBeforeUnmount(cancelActionReaction)
                                             <button type="button" class="compartment crisper-compartment" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="crisper" @click="openCompartment({ id: 'crisper', title: 'Crisper drawer', storage: 'fridge', zone: 'crisper', icon: 'leafy' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'crisper' }, $event)">
                                                 <span class="compartment-heading"><span><FoodIcon kind="leafy" /> Crisper drawer</span> <small>{{ itemsInZone('fridge', 'crisper').length }} items</small></span>
                                                 <span class="food-preview">
-                                                <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone('fridge', 'crisper')" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-else-if="getRecommendation(item)" class="food-storage-badge" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                     <span v-if="itemsInZone('fridge', 'crisper').length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                                 </span>
                                             </button>
@@ -1974,11 +2083,11 @@ onBeforeUnmount(cancelActionReaction)
                                     <span class="door-inner" :inert="!fridgeDoorOpen">
                                         <span class="door-inner-title">DOOR SHELVES</span>
                                         <span class="door-bin" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door" role="button" tabindex="0" aria-label="Upper door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door' }, $event)" @click.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.enter.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })" @keydown.space.prevent.stop="openCompartment({ id: 'door', title: 'Upper door shelf', storage: 'fridge', zone: 'door' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                            <span v-for="item in itemsInZone('fridge', 'door')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-else-if="getRecommendation(item)" class="food-storage-badge" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                             <span v-if="itemsInZone('fridge', 'door').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span class="door-bin door-bin-small" @wheel="scrollCompartment" data-drop-storage="fridge" data-drop-zone="door-lower" role="button" tabindex="0" aria-label="Lower door shelf" @dragover.prevent @drop.stop="dropOnArea({ storage: 'fridge', storageZone: 'door-lower' }, $event)" @click.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.enter.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })" @keydown.space.prevent.stop="openCompartment({ id: 'door-lower', title: 'Lower door shelf', storage: 'fridge', zone: 'door-lower' })">
-                                            <span v-for="item in itemsInZone('fridge', 'door-lower')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                            <span v-for="item in itemsInZone('fridge', 'door-lower')" :key="item.id" class="door-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-else-if="getRecommendation(item)" class="food-storage-badge" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                             <span v-if="itemsInZone('fridge', 'door-lower').length === 0" class="door-empty">{{ searchQuery ? 'No matches' : 'Empty shelf' }}</span>
                                         </span>
                                         <span v-if="fridgeDoorOpen" class="fridge-close-button" role="button" tabindex="0" aria-label="Close refrigerator door" @click.stop="fridgeDoorOpen = false" @keydown.enter.stop="fridgeDoorOpen = false" @keydown.space.prevent.stop="fridgeDoorOpen = false">✕ Close door</span>
@@ -2000,7 +2109,7 @@ onBeforeUnmount(cancelActionReaction)
                             <div class="open-pantry-shelves">
                             <button v-for="(shelf, index) in pantryShelves" :key="index" type="button" class="pantry-shelf pantry-whole-storage" :aria-label="`Pantry shelf ${index + 1}, ${shelf.length} foods. View pantry items`" @wheel="scrollCompartment" data-drop-storage="pantry" data-drop-zone="dry-storage" @click="openCompartment({ id: 'pantry', title: 'Pantry', storage: 'pantry', zone: 'dry-storage' })" @dragover.prevent @drop.stop="dropOnArea({ storage: 'pantry', storageZone: 'dry-storage' }, $event)">
                                 <span class="pantry-foods pantry-all-foods">
-                                <span v-for="item in shelf" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                <span v-for="item in shelf" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id), 'food-location-highlight': revealedFoodId === item.id }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-else-if="getRecommendation(item)" class="food-storage-badge" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                 </span>
                             </button>
                             </div>
@@ -2023,14 +2132,42 @@ onBeforeUnmount(cancelActionReaction)
         </section>
 
         <section v-if="!embedded" class="recommendation-section">
-            <h2>Storage Guidance</h2>
-            <p>Some foods may need a different storage location. Check product packaging and food-specific guidance.</p>
-            <div class="recommendation-list">
-                <article v-for="item in storageRecommendations" :key="item.id" class="recommendation-card">
-                    <span><NoticeIcon name="sparkle" /></span><div><strong>{{ item.name }}</strong><p>{{ getRecommendation(item) }}</p></div>
-                </article>
-                <p v-if="storageRecommendations.length === 0" class="no-recommendations">No basic storage suggestions for the current search.</p>
+            <div class="recommendation-heading">
+                <h2>Storage Guidance</h2>
+                <div class="guidance-heading-actions">
+                <button type="button" class="guidance-arrange-all" title="Arrange the items shown below" :disabled="guidanceBusy || !arrangeableFoods.length"
+                    @click="confirmArrangeAll">{{ arrangingFoodIds.size ? 'Arranging…' : 'Arrange all' }}</button>
+                <button type="button" class="guidance-ignore guidance-ignore-all" :disabled="guidanceBusy || !storageRecommendations.length"
+                    @click="ignoreAllGuidance">Ignore all</button>
+                </div>
             </div>
+            <p>Some foods may need a different storage location. Check product packaging and food-specific guidance.</p>
+            <p v-if="arrangementError" class="guidance-error" role="alert">{{ arrangementError }}</p>
+            <TransitionGroup name="guidance-list" tag="div" class="recommendation-list" tabindex="0" role="region" aria-label="Storage guidance items">
+                <article v-for="item in storageRecommendations" :key="item.id" class="recommendation-card">
+                    <span><NoticeIcon name="sparkle" /></span>
+                    <div class="recommendation-copy"><strong>{{ item.name }}</strong><p>{{ getRecommendation(item) }}</p>
+                        <p v-if="guidanceDestination(item)" class="guidance-destination">Move to {{ guidanceDestinationLabel(item) }}</p>
+                    </div>
+                    <div class="guidance-item-actions">
+                    <button type="button" class="guidance-ignore" :aria-label="`Ignore storage guidance for ${item.name}`"
+                        :disabled="guidanceBusy" @click="setGuidanceIgnored(item, true)">Ignore</button>
+                    <button type="button" class="guidance-arrange" :aria-label="`Arrange ${item.name}`"
+                        :disabled="guidanceBusy || !guidanceDestination(item)" @click="arrangeGuidance([item])">
+                        {{ arrangingFoodIds.has(item.id) ? 'Arranging…' : 'Arrange' }}
+                    </button>
+                    </div>
+                </article>
+            </TransitionGroup>
+            <p v-if="storageRecommendations.length === 0" class="no-recommendations">No basic storage suggestions for the current search.</p>
+            <details v-if="ignoredStorageRecommendations.length" class="ignored-guidance">
+                <summary>Ignored guidance ({{ ignoredStorageRecommendations.length }})</summary>
+                <div v-for="item in ignoredStorageRecommendations" :key="item.id" class="ignored-guidance-row">
+                    <span>{{ item.name }}</span>
+                    <button type="button" class="guidance-ignore" :aria-label="`Restore storage guidance for ${item.name}`"
+                        :disabled="guidanceBusy" @click="setGuidanceIgnored(item, false)">Restore</button>
+                </div>
+            </details>
         </section>
 
         <!-- Full compartment inventory -->
@@ -2108,6 +2245,7 @@ onBeforeUnmount(cancelActionReaction)
     <Teleport to="body">
         <div v-if="foodTooltip" role="tooltip" class="fridge-food-tooltip" :style="{ left: foodTooltip.x + 'px', top: foodTooltip.y + 'px' }">
             <span class="food-tooltip-name">{{ foodTooltip.name }}</span>
+            <span v-if="foodTooltip.storageWarning" class="food-tooltip-storage">{{ foodTooltip.storageWarning }}</span>
             <span v-if="foodTooltip.expiry" class="food-tooltip-expiry" :class="{ expired: foodTooltip.expired }">{{ foodTooltip.expiry }}</span>
         </div>
     </Teleport>
@@ -2283,9 +2421,31 @@ onBeforeUnmount(cancelActionReaction)
 .storage-hint p { margin:0; }
 .recommendation-section { margin-top:28px; padding:22px; border:2px solid var(--ink); border-radius:13px; background:#fffefa; box-shadow:4px 5px 0 var(--ink); }
 .recommendation-section h2 { margin:0; font-family:var(--font-display, "Kalam", cursive, sans-serif); font-size:24px; }
+.recommendation-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.guidance-heading-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.recommendation-copy { flex:1; min-width:0; }
+.guidance-item-actions { display:flex; align-items:center; align-self:center; gap:8px; margin-left:auto; }
+.guidance-ignore { min-height:44px; padding:8px 12px; border:1px solid #9fada3; border-radius:12px; background:#fffefa; color:#52665f; font:16px var(--font-sans); cursor:pointer; transition:background .2s; }
+.guidance-ignore:hover:not(:disabled) { background:#edf4ed; }
+.guidance-ignore:disabled { opacity:.5; cursor:default; }
+.ignored-guidance { margin-top:18px; padding-top:12px; border-top:1px dashed var(--line); color:var(--muted); font-size:16px; }
+.ignored-guidance summary { cursor:pointer; }
+.ignored-guidance-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:10px; }
+.ignored-guidance-row > span { overflow-wrap:anywhere; min-width:0; }
+.guidance-arrange,.guidance-arrange-all { flex:none; align-self:center; min-height:44px; padding:8px 16px; border:2px solid var(--ink); border-radius:12px; background:#def2ba; color:var(--ink); font:700 17px var(--font-sans); box-shadow:2px 3px 0 #173d3926; cursor:pointer; transition:transform .2s,box-shadow .2s; }
+.guidance-arrange-all { background:var(--teal); color:white; }
+.guidance-arrange:hover:not(:disabled),.guidance-arrange-all:hover:not(:disabled) { transform:translateY(-2px); box-shadow:3px 5px 0 #173d3930; }
+.guidance-arrange:disabled,.guidance-arrange-all:disabled { opacity:.5; cursor:default; box-shadow:none; }
+.recommendation-card .guidance-destination { color:var(--teal-dark); font-weight:700; }
+.recommendation-section>p.guidance-error { color:#a43d32; }
+.guidance-list-enter-active,.guidance-list-leave-active { transition:opacity .2s,transform .2s; }
+.guidance-list-enter-from,.guidance-list-leave-to { opacity:0; transform:translateX(12px); }
+@media (max-width:600px) { .recommendation-card { flex-wrap:wrap; } .recommendation-copy { flex-basis:calc(100% - 40px); } .guidance-arrange { margin-left:auto; } }
 .recommendation-section>p { margin:7px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }
-.recommendation-list { display:flex; flex-direction:column; gap:10px; margin-top:16px; }
-.recommendation-card { display:flex; gap:12px; padding:13px; border:2px solid #d7b96c; border-radius:10px; background:#fff9df; }
+.recommendation-list { --guidance-row-height:156px; display:flex; flex-direction:column; gap:10px; margin-top:16px; max-height:min(calc(3 * var(--guidance-row-height) + 20px),65dvh); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.recommendation-list:focus-visible { outline:3px solid var(--teal); outline-offset:4px; border-radius:10px; }
+.recommendation-card { display:flex; flex-shrink:0; min-height:var(--guidance-row-height); box-sizing:border-box; gap:12px; padding:13px; border:2px solid #d7b96c; border-radius:10px; background:#fff9df; }
+@media (max-width:600px) { .recommendation-list { --guidance-row-height:210px; } }
 .recommendation-card>span { font-size:22px; }
 .recommendation-card strong { font-size:13px; }
 .recommendation-card p { margin:5px 0 0; color:#816d48; font-size:12px; line-height:1.5; }
@@ -2688,11 +2848,11 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     color:white; font-size:17px; line-height:1.3; text-align:center; pointer-events:none;
     overflow-wrap:anywhere;
 }
-.food-tooltip-name, .food-tooltip-expiry {
+.food-tooltip-name, .food-tooltip-expiry, .food-tooltip-storage {
     padding:8px 12px; border-radius:8px; background:#173d39;
     box-shadow:0 3px 12px #173d3933; overflow-wrap:anywhere;
 }
-.food-tooltip-expiry { background:#ffdc59; color:#4e371e; font-weight:700; }
+.food-tooltip-expiry,.food-tooltip-storage { background:#ffdc59; color:#4e371e; font-weight:700; }
 .food-tooltip-expiry.expired { background:#b53630; color:white; }
 
 
@@ -3032,14 +3192,24 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .food-transfer-arrival { outline:3px solid #73b999; outline-offset:3px; animation:food-transfer-arrival 1.1s ease-out; }
 @keyframes food-transfer-arrival { 0%,100% { box-shadow:0 0 0 0 #73b99900; } 55% { box-shadow:0 0 0 8px #73b99945; } }
 @media(prefers-reduced-motion:reduce) { .food-transfer-arrival { animation:none; } }
-.food-expiry-badge {
+.food-expiry-badge,.food-storage-badge {
     position:absolute; top:0; right:0; z-index:2; pointer-events:none;
     display:grid; place-items:center; width:21px; height:21px;
     border:2px solid #4e371e; border-radius:7px 7px 9px 9px;
     background:#ffdc59; color:#4e371e; font:900 16px/1 sans-serif;
     transform:rotate(9deg); box-shadow:1px 2px 0 #4e371e;
 }
-.food-expiry-badge.expired { background:#df4640; color:white; }
+.food-expiry-badge.expired { background:#df4640; color:white; animation-delay:.35s; }
+@media (prefers-reduced-motion:no-preference) {
+    .food-expiry-badge,.food-storage-badge { animation:food-warning-nudge 4.2s ease-in-out infinite; }
+    .food-storage-badge { animation-delay:1.1s; }
+    .food-expiry-badge.expired { animation-delay:.35s; }
+}
+@keyframes food-warning-nudge {
+    0%,18%,100% { rotate:0deg; }
+    3%,11% { rotate:-7deg; }
+    7%,15% { rotate:6deg; }
+}
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
     :is(.mini-food, .door-food):not(.food-being-dragged):hover :deep(.food-icon) {
         animation: fridge-icon-wiggle 420ms ease-in-out;

@@ -26,6 +26,7 @@ const inventoryItemSchema = new mongoose.Schema(
     suggestedLocation: { type: String, enum: ZONE_IDS },
     allowedLocations: { type: [String], enum: ZONE_IDS, default: undefined },
     locationReason: { type: String },
+    storageGuidanceIgnored: { type: Boolean, default: false },
     storageZone: { type: String, enum: ZONE_IDS },
     purchasedAt: Date,
     expiresAt: Date,
