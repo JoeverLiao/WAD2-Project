@@ -66,7 +66,8 @@ const emit = defineEmits(['save', 'close'])
 
 const form = reactive({
     name: '',
-    quantity: 1,
+    quantity: '',
+    weightKg: '',
     unit: 'pieces',
     storage: 'fridge',
     storageZone: 'middle-shelf',
@@ -113,18 +114,22 @@ watch(
         if (props.item) {
             // Editing: copy the existing values into the form.
             form.name = props.item.name
-            form.quantity = props.item.quantity
+            form.quantity = props.item.quantity ?? ''
+            form.weightKg = props.item.weightKg ?? ''
             form.unit = props.item.unit
             form.storage = props.item.storage
-            form.storageZone = props.item.storageZone
+            form.storageZone = ['upper-shelf', 'lower-shelf'].includes(props.item.storageZone)
+                ? 'middle-shelf' : props.item.storageZone
             form.expiresAt = props.item.expiresAt || ''
         } else {
             // Adding: start with an empty form.
             form.name = ''
-            form.quantity = 1
+            form.quantity = ''
+            form.weightKg = ''
             form.unit = 'pieces'
             form.storage = props.defaultStorage
-            form.storageZone = props.defaultStorageZone || getDefaultZone(props.defaultStorage)
+            form.storageZone = ['upper-shelf', 'lower-shelf'].includes(props.defaultStorageZone)
+                ? 'middle-shelf' : props.defaultStorageZone || getDefaultZone(props.defaultStorage)
             form.expiresAt = ''
         }
     },
@@ -159,19 +164,29 @@ function submitForm() {
         return
     }
 
-    // Quantity must be a positive number.
-    if (
-        !Number.isFinite(Number(form.quantity)) ||
-        Number(form.quantity) <= 0
-    ) {
-        alert('Please enter a quantity greater than zero.')
+    const hasQuantity = form.quantity !== '' && form.quantity !== null && form.quantity !== undefined
+    const hasWeight = form.weightKg !== '' && form.weightKg !== null && form.weightKg !== undefined
+    const quantity = Number(form.quantity)
+    const weightKg = Number(form.weightKg)
+
+    if (!hasQuantity && !hasWeight) {
+        alert('Enter a quantity, a total weight, or both.')
+        return
+    }
+    if (hasQuantity && (!Number.isFinite(quantity) || quantity <= 0)) {
+        alert('Quantity must be greater than zero.')
+        return
+    }
+    if (hasWeight && (!Number.isFinite(weightKg) || weightKg <= 0)) {
+        alert('Weight must be greater than zero.')
         return
     }
 
     // Emit a clean copy rather than exposing the reactive form.
     emit('save', {
         name: trimmedName,
-        quantity: Number(form.quantity),
+        quantity: hasQuantity ? quantity : null,
+        weightKg: hasWeight ? weightKg : null,
         unit: form.unit,
         storage: form.storage,
         storageZone: form.storageZone,
@@ -234,10 +249,10 @@ function submitForm() {
                     >
                 </div>
 
-                <!-- Quantity and unit share one row. -->
+                <!-- Quantity and its unit share one row; weight can be tracked independently. -->
                 <div class="form-row">
                     <div class="form-field">
-                        <label for="food-quantity">Quantity *</label>
+                        <label for="food-quantity">Quantity</label>
 
                         <input
                             id="food-quantity"
@@ -245,12 +260,11 @@ function submitForm() {
                             type="number"
                             min="0.01"
                             step="any"
-                            required
                         >
                     </div>
 
                     <div class="form-field">
-                        <label for="food-unit">Unit</label>
+                        <label for="food-unit">Quantity unit</label>
 
                         <select
                             id="food-unit"
@@ -269,6 +283,19 @@ function submitForm() {
                             <option value="ml">ml</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="form-field">
+                    <label for="food-weight">Total weight (kg)</label>
+                    <input
+                        id="food-weight"
+                        v-model.number="form.weightKg"
+                        type="number"
+                        min="0.001"
+                        step="any"
+                        placeholder="Optional"
+                    >
+                    <small class="form-help">Enter a quantity, a total weight, or both.</small>
                 </div>
 
                 <!-- Main storage location -->
@@ -298,16 +325,8 @@ function submitForm() {
                         v-model="form.storageZone"
                     >
                         <template v-if="form.storage === 'fridge'">
-                            <option value="upper-shelf">
-                                Upper Shelf
-                            </option>
-
                             <option value="middle-shelf">
-                                Middle Shelf
-                            </option>
-
-                            <option value="lower-shelf">
-                                Lower Shelf
+                                Shelves
                             </option>
 
                             <option value="crisper">
@@ -447,6 +466,12 @@ function submitForm() {
     color: #43534a;
     font-size: 12px;
     font-weight: 700;
+}
+
+.form-help {
+    color: #78877d;
+    font-size: 11px;
+    line-height: 1.4;
 }
 
 .form-field input,

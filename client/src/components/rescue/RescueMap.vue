@@ -1,4 +1,8 @@
 <script setup>
+import '@/assets/rescue.css'
+import CollectionRequestForm from './CollectionRequestForm.vue'
+import NearbyFilters from './NearbyFilters.vue'
+import NearbyFoodCard from './NearbyFoodCard.vue'
 import {
   computed,
   nextTick,
@@ -11,8 +15,6 @@ import {
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
-import FoodIcon from '../FoodIcon.vue'
-
 import {
   api,
   apiError,
@@ -21,17 +23,9 @@ import {
   photoUrl,
 } from '@/services/rescueApi.js'
 
-import {
-  CATEGORY_OPTIONS,
-  categoryLabel,
-} from '@/services/rescueCategories.js'
-
 import { toLocalInput } from '@/services/rescueForm.js'
 
-import {
-  dateTimeLabel,
-  windowLabel,
-} from '@/services/rescueConversations.js'
+import { windowLabel } from '@/services/rescueConversations.js'
 
 import { lockBodyScroll } from '@/services/rescueModal.js'
 
@@ -938,6 +932,9 @@ defineExpose({
   refresh: refreshResults,
   requestListing,
 })
+function markPhotoFailed(listingId) {
+  failedImages.value.add(listingId)
+}
 </script>
 
 <template>
@@ -946,13 +943,13 @@ defineExpose({
     class="explore-nearby container py-4"
     aria-labelledby="explore-title"
   >
-    <header class="explore-heading">
+    <header class="explore-heading d-flex align-items-center justify-content-between flex-wrap">
       <div>
         <h2 id="explore-title" tabindex="-1">
           Explore nearby food
         </h2>
 
-        <p class="muted">
+        <p class="muted text-muted">
           Your next good meal might be a short walk away.
         </p>
       </div>
@@ -963,80 +960,27 @@ defineExpose({
     </header>
 
     <!-- Search and filters -->
-    <div class="explore-filters">
-      <label class="search-field">
-        <span class="visually-hidden">
-          Search food names
-        </span>
-
-        <input
-          v-model="search"
-          type="search"
-          maxlength="80"
-          placeholder="What are you hungry for?"
-        />
-      </label>
-
-      <label>
-        <span class="visually-hidden">
-          Food category
-        </span>
-
-        <select v-model="category">
-          <option value="all">
-            All categories
-          </option>
-
-          <option
-            v-for="option in CATEGORY_OPTIONS"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
-
-      <label>
-        <span class="visually-hidden">
-          Maximum distance from the search centre
-        </span>
-
-        <select
-          v-model="distance"
-          :disabled="searchMode === 'viewport'"
-        >
-          <option value="0.5">Within 500 m</option>
-          <option value="1">Within 1 km</option>
-          <option value="2">Within 2 km</option>
-          <option value="5">Within 5 km</option>
-          <option value="10">Within 10 km</option>
-          <option value="25">Within 25 km</option>
-        </select>
-      </label>
-
-      <label>
-        <span class="visually-hidden">
-          Pickup day
-        </span>
-
-        <select v-model="pickupDay">
-          <option value="any">Any time</option>
-          <option value="today">Today</option>
-          <option value="tomorrow">Tomorrow</option>
-        </select>
-      </label>
-    </div>
+    <NearbyFilters
+      :category="category"
+      :distance="distance"
+      :pickup-day="pickupDay"
+      :search="search"
+      :search-mode="searchMode"
+      @update:search="search = $event"
+      @update:category="category = $event"
+      @update:distance="distance = $event"
+      @update:pickupDay="pickupDay = $event"
+    />
 
     <!-- Results summary -->
-    <div class="results-heading">
+    <div class="results-heading d-flex justify-content-between flex-wrap">
       <p role="status">
         {{
-          loading
-            ? 'Looking for food…'
-            : `${filteredItems.length} good ${
-                filteredItems.length === 1 ? 'find' : 'finds'
-              }`
+        loading
+        ? 'Looking for food…'
+        : `${filteredItems.length} good ${
+        filteredItems.length === 1 ? 'find' : 'finds'
+        }`
         }}
 
         <span v-if="!loading">
@@ -1044,7 +988,7 @@ defineExpose({
         </span>
       </p>
 
-      <span class="muted">
+      <span class="muted text-muted">
         Closest to search centre first
       </span>
     </div>
@@ -1058,7 +1002,7 @@ defineExpose({
 
       <button
         type="button"
-        class="secondary-button ms-2"
+        class="secondary-button ms-2 btn rescue-button btn-outline-dark"
         :disabled="loading"
         @click="refreshResults"
       >
@@ -1076,14 +1020,14 @@ defineExpose({
 
     <!-- Map and food cards -->
     <div
-      class="explore-layout"
+      class="explore-layout d-grid align-items-start"
       :aria-busy="loading"
     >
-      <div class="map-panel">
-        <div class="map-tools">
+      <div class="map-panel position-relative d-flex flex-column overflow-hidden">
+        <div class="map-tools d-flex flex-wrap gap-2">
           <button
             type="button"
-            class="secondary-button"
+            class="secondary-button btn rescue-button btn-outline-dark"
             :disabled="geolocating"
             @click="useMyLocation"
           >
@@ -1092,7 +1036,7 @@ defineExpose({
 
           <button
             type="button"
-            class="secondary-button"
+            class="secondary-button btn rescue-button btn-outline-dark"
             @click="searchThisArea"
           >
             Search this area
@@ -1101,7 +1045,7 @@ defineExpose({
           <button
             v-if="searchMode === 'viewport'"
             type="button"
-            class="secondary-button"
+            class="secondary-button btn rescue-button btn-outline-dark"
             @click="searchNearCentre"
           >
             Search by distance
@@ -1110,15 +1054,15 @@ defineExpose({
 
         <div
           ref="mapContainer"
-          class="leaflet-mount"
+          class="leaflet-mount w-100"
           aria-label="Nearby food map"
         ></div>
 
         <p class="map-help">
           {{
-            mapMoved
-              ? 'Map moved. Choose Search this area to update the results.'
-              : 'Tap a marker to find its food card.'
+          mapMoved
+          ? 'Map moved. Choose Search this area to update the results.'
+          : 'Tap a marker to find its food card.'
           }}
 
           Distances are measured in a straight line.
@@ -1126,128 +1070,36 @@ defineExpose({
       </div>
 
       <div
-        class="food-results"
+        class="food-results d-grid"
         tabindex="0"
         aria-label="Scrollable nearby food listings"
       >
-        <article
+        <NearbyFoodCard
           v-for="(item, index) in filteredItems"
           :key="item.id"
-          :ref="(element) => setCardElement(item.id, element)"
-          class="food-card"
-          :class="{ selected: selectedId === item.id }"
-          @click="selectItem(item)"
-        >
-          <img
-            v-if="item.image && !failedImages.has(item.id)"
-            :src="item.image"
-            :alt="item.name"
-            class="food-photo"
-            loading="lazy"
-            @error="failedImages.add(item.id)"
-          />
-
-          <div
-            v-else
-            class="photo-placeholder"
-            aria-hidden="true"
-          >
-            <FoodIcon :name="item.name" />
-          </div>
-
-          <div class="food-details">
-            <div class="food-heading">
-              <h3>
-                <p
-                  type="button"
-                  class="food-title-button"
-                  :aria-pressed="selectedId === item.id"
-                >
-                  <span
-                    class="card-marker-number"
-                    aria-hidden="true"
-                  >
-                    {{ index + 1 }}
-                  </span>
-
-                  {{ item.name }}
-                </p>
-              </h3>
-
-              <span class="food-distance">
-                ⌖ {{ distanceLabel(item.distanceKm) }}
-              </span>
-            </div>
-
-            <p
-              v-if="item.description"
-              class="food-description"
-            >
-              {{ item.description }}
-            </p>
-
-            <dl class="food-facts">
-              <div>
-                <dt>Quantity</dt>
-                <dd>{{ item.quantity }}</dd>
-              </div>
-
-              <div>
-                <dt>Use by</dt>
-                <dd>{{ useBy(item.raw.expiresAt) }}</dd>
-              </div>
-            </dl>
-
-            <div class="food-footer">
-              <div>
-                <span class="detail-label">
-                  Pickup · {{ item.raw.pickupLabel }}
-                </span>
-
-                <p>{{ item.pickup }}</p>
-
-                <small class="muted">
-                  {{
-                    item.raw.isOwner
-                      ? 'Your listing'
-                      : `Shared by ${item.person}`
-                  }}
-                  · {{ categoryLabel(item.raw.category) }}
-                </small>
-              </div>
-
-              <button
-                type="button"
-                class="primary-button card-action"
-                :disabled="
-                  loading ||
-                  Boolean(openingRequestId) ||
-                  sending
-                "
-                @click="openRequest(item)"
-              >
-                {{
-                  openingRequestId === item.id
-                    ? 'Opening…'
-                    : item.raw.isOwner
-                      ? 'Manage listing →'
-                      : activeRequests.has(item.id)
-                        ? 'View your request →'
-                        : 'Request collection →'
-                }}
-              </button>
-            </div>
-          </div>
-        </article>
+          :ref="(component) => setCardElement(item.id, component?.$el)"
+          :active-requests="activeRequests"
+          :failed-images="failedImages"
+          :index="index"
+          :item="item"
+          :loading="loading"
+          :opening-request-id="openingRequestId"
+          :selected-id="selectedId"
+          :sending="sending"
+          :use-by="useBy"
+          @select-item="selectItem"
+          @open-request="openRequest"
+          @photo-error="markPhotoFailed"
+        />
 
         <p
           v-if="!loading && !filteredItems.length"
           class="empty-state"
         >
           {{
-            error
-              ? 'Food could not be loaded. Use Retry above.'
-              : 'No matching food. Try another category, a larger distance or another map area.'
+          error
+          ? 'Food could not be loaded. Use Retry above.'
+          : 'No matching food. Try another category, a larger distance or another map area.'
           }}
         </p>
       </div>
@@ -1265,611 +1117,28 @@ defineExpose({
     <Teleport to="body">
       <dialog
         ref="requestDialog"
-        class="request-dialog"
+        class="request-dialog overflow-auto"
         aria-labelledby="request-dialog-title"
         @cancel="closeRequest"
       >
-        <form @submit.prevent="submitRequest">
-          <h3 id="request-dialog-title">
-            Request {{ requestItem?.title }}
-          </h3>
-
-          <p class="muted">
-            {{ requestItem?.quantity }}
-            {{ requestItem?.unit }}
-            · Collect the whole listing.
-          </p>
-
-          <p class="muted">
-            {{ requestItem?.user?.name || 'Owner' }}’s pickup window:
-
-            {{
-              requestItem
-                ? windowLabel(
-                    requestItem.pickupStart,
-                    requestItem.pickupEnd,
-                  )
-                : ''
-            }}
-          </p>
-
-          <p
-            v-if="requestItem"
-            class="muted"
-          >
-            Meet at {{ requestItem.pickupLabel }}.
-            {{ requestItem.pickupInstructions }}
-          </p>
-
-          <div
-            v-if="requestError"
-            class="alert alert-danger"
-            role="alert"
-          >
-            {{ requestError }}
-          </div>
-
-          <p
-            v-if="requestSaved"
-            class="alert alert-success"
-            role="status"
-          >
-            Request received. The owner needs to accept it before pickup
-            is confirmed.
-          </p>
-
-          <fieldset
-            :disabled="
-              sending ||
-              requestSaved ||
-              uncertainRequest
-            "
-          >
-            <div class="row g-3">
-              <div class="col-sm-6">
-                <label for="rescue-request-start">
-                  Pickup from
-                </label>
-
-                <input
-                  id="rescue-request-start"
-                  v-model="requestedStart"
-                  type="datetime-local"
-                  :max="
-                    requestItem
-                      ? toLocalInput(requestItem.expiresAt)
-                      : undefined
-                  "
-                  required
-                />
-              </div>
-
-              <div class="col-sm-6">
-                <label for="rescue-request-end">
-                  Pickup until
-                </label>
-
-                <input
-                  id="rescue-request-end"
-                  v-model="requestedEnd"
-                  type="datetime-local"
-                  :min="requestedStart || undefined"
-                  :max="
-                    requestItem
-                      ? toLocalInput(requestItem.expiresAt)
-                      : undefined
-                  "
-                  required
-                />
-              </div>
-            </div>
-
-            <p class="field-hint">
-              Use your local time ({{ timezone }}). You can propose a
-              different window ending by
-              {{
-                requestItem
-                  ? dateTimeLabel(requestItem.expiresAt)
-                  : ''
-              }}.
-            </p>
-
-            <label
-              class="mt-3"
-              for="rescue-request-message"
-            >
-              Message
-            </label>
-
-            <textarea
-              id="rescue-request-message"
-              v-model="requestMessage"
-              maxlength="1000"
-              placeholder="Say hello or explain your suggested time…"
-              rows="3"
-            ></textarea>
-          </fieldset>
-
-          <div class="dialog-actions">
-            <button
-              type="button"
-              class="secondary-button"
-              :disabled="sending"
-              @click="closeRequest"
-            >
-              {{ requestSaved ? 'Done' : 'Cancel' }}
-            </button>
-
-            <button
-              v-if="requestSaved || uncertainRequest"
-              type="button"
-              class="primary-button"
-              :disabled="sending"
-              @click="viewSent(requestItem)"
-            >
-              Open Sent →
-            </button>
-
-            <button
-              v-else
-              type="submit"
-              class="primary-button"
-              :disabled="sending"
-            >
-              {{ sending ? 'Sending…' : 'Send request' }}
-            </button>
-          </div>
-        </form>
+        <CollectionRequestForm
+          :request-error="requestError"
+          :request-item="requestItem"
+          :request-message="requestMessage"
+          :request-saved="requestSaved"
+          :requested-end="requestedEnd"
+          :requested-start="requestedStart"
+          :sending="sending"
+          :timezone="timezone"
+          :uncertain-request="uncertainRequest"
+          @submit-request="submitRequest"
+          @close-request="closeRequest"
+          @view-sent="viewSent"
+          @update:requestedStart="requestedStart = $event"
+          @update:requestedEnd="requestedEnd = $event"
+          @update:requestMessage="requestMessage = $event"
+        />
       </dialog>
     </Teleport>
   </section>
 </template>
-
-<style scoped>
-.explore-nearby {
-  color: var(--ink);
-  font: 19px/1.4 var(--font-sans);
-}
-
-.explore-nearby *,
-.request-dialog * {
-  box-sizing: border-box;
-}
-
-p,
-h2,
-h3,
-dl,
-dd {
-  margin: 0;
-}
-
-h2,
-h3 {
-  font-family: var(--font-display);
-  font-weight: 700;
-}
-
-h2 {
-  font-size: clamp(28px, 3vw, 36px);
-}
-
-h3 {
-  font-size: 25px;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.explore-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 20px;
-  margin-bottom: 24px;
-}
-
-.explore-heading h2 {
-  margin: 8px 0;
-}
-
-.location-label {
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  padding: 8px 14px;
-  background: var(--paper-bright);
-  font-size: 16px;
-}
-
-.explore-filters {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 12px;
-  border: 1.5px solid var(--ink);
-  border-radius: 14px;
-  background: var(--paper-bright);
-}
-
-.search-field {
-  flex: 1 1 220px;
-}
-
-.explore-filters label {
-  min-width: 0;
-}
-
-.explore-filters input,
-.explore-filters select,
-.request-dialog input,
-.request-dialog textarea {
-  width: 100%;
-  min-height: 42px;
-  min-width: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper-bright);
-  color: var(--ink);
-}
-
-.search-field input {
-  border: 0;
-}
-
-.results-heading {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 18px 0 12px;
-  font-size: 16px;
-}
-
-.explore-layout {
-  display: grid;
-  grid-template-columns: 1.05fr 1fr;
-  align-items: start;
-  gap: 22px;
-}
-
-.map-panel {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 700px;
-  min-width: 0;
-  border: 1.5px solid var(--ink);
-  border-radius: 18px;
-  overflow: hidden;
-  background: var(--aqua-soft);
-}
-
-.leaflet-mount {
-  width: 100%;
-  flex: 1;
-  min-height: 180px;
-  z-index: 0;
-}
-
-.map-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px;
-  background: var(--paper);
-}
-
-.map-tools .secondary-button {
-  font-size: 15px;
-  padding: 6px 10px;
-  min-height: 38px;
-}
-
-.map-help {
-  font-size: 13px;
-  padding: 8px 12px;
-  background: var(--paper-bright);
-}
-
-.food-results {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-  max-height: 700px;
-  overflow-y: auto;
-  padding: 3px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--aqua) var(--aqua-soft);
-  cursor: pointer;
-}
-
-.food-card {
-  display: grid;
-  grid-template-columns: 28% minmax(0, 1fr);
-  border: 1.5px solid var(--ink);
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--paper-bright);
-}
-
-.food-card.selected {
-  border-color: var(--aqua);
-  box-shadow:
-    inset 0 0 0 1px var(--aqua),
-    3px 3px 0 var(--aqua-soft);
-}
-
-.food-photo {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.photo-placeholder {
-  display: grid;
-  place-items: center;
-  min-height: 180px;
-  font-size: 64px;
-  background: var(--paper);
-}
-
-.food-details {
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  min-width: 0;
-}
-
-.food-heading,
-.food-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.food-title-button {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-}
-
-.food-distance {
-  white-space: nowrap;
-  font-size: 17px;
-}
-
-.food-description {
-  font-size: 17px;
-  overflow-wrap: anywhere;
-}
-
-.food-facts {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-}
-
-.food-facts dt,
-.detail-label {
-  display: block;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.food-facts dd {
-  font-size: 20px;
-}
-
-.food-footer p,
-.food-footer small {
-  font-size: 15px;
-}
-
-.card-marker-number {
-  display: inline-grid;
-  place-items: center;
-  min-width: 23px;
-  height: 23px;
-  border-radius: 50%;
-  margin-right: 6px;
-  background: var(--aqua-soft);
-  font: 14px var(--font-sans);
-}
-
-.card-action,
-.secondary-button,
-.dialog-actions .primary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 8px 14px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  color: var(--paper-bright);
-  background: var(--aqua);
-  font-size: 17px;
-}
-
-.secondary-button {
-  color: var(--ink);
-  background: var(--paper);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.empty-state {
-  padding: 28px;
-}
-
-.map-notice,
-.refresh-note,
-.field-hint {
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.refresh-button {
-  border: 0;
-  background: transparent;
-  color: var(--aqua);
-  text-decoration: underline;
-}
-
-.request-dialog {
-  width: min(580px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
-  overflow: auto;
-  margin: auto;
-  padding: 24px;
-  border: 2px solid var(--ink);
-  border-radius: 18px;
-  background: var(--paper);
-  color: var(--ink);
-  font: 17px/1.45 var(--font-sans);
-}
-
-.request-dialog::backdrop {
-  background: rgba(18, 63, 59, 0.4);
-}
-
-.request-dialog form {
-  display: grid;
-  gap: 16px;
-}
-
-.request-dialog fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-}
-
-.request-dialog label {
-  display: block;
-  margin-bottom: 5px;
-}
-
-.request-dialog .field-hint {
-  margin-top: 8px;
-}
-
-.dialog-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-:focus-visible {
-  outline: 3px solid var(--aqua);
-  outline-offset: 3px;
-}
-
-:deep(.rescue-marker-bubble) {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 2px solid var(--ink, #123f3b);
-  border-radius: 50%;
-  background: var(--paper-bright, #fffefa);
-  color: var(--ink, #123f3b);
-  font: bold 14px var(--font-sans, sans-serif);
-  box-shadow: 2px 2px 0 #123f3b44;
-}
-
-:deep(.rescue-marker-bubble.is-own) {
-  background: var(--yellow, #ffdd69);
-}
-
-:deep(.rescue-marker-bubble.is-selected) {
-  background: var(--aqua, #149e91);
-  color: white;
-  transform: scale(1.15);
-}
-
-@media (max-width: 1100px) {
-  .explore-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .map-panel {
-    height: 390px;
-  }
-
-  .food-results {
-    max-height: 650px;
-  }
-}
-
-@media (max-width: 575px) {
-  .food-card {
-    grid-template-columns: 90px minmax(0, 1fr);
-  }
-
-  .food-details {
-    padding: 12px;
-  }
-
-  .photo-placeholder {
-    font-size: 42px;
-  }
-
-  .food-heading h3 {
-    font-size: 23px;
-  }
-
-  .food-footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .food-facts {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .explore-filters > label:not(.search-field) {
-    flex: 1 1 145px;
-  }
-
-  .map-panel {
-    height: 370px;
-  }
-
-  .request-dialog {
-    padding: 16px;
-  }
-
-  .dialog-actions {
-    gap: 8px;
-  }
-}
-</style>

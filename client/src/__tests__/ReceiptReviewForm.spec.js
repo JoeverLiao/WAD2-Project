@@ -107,8 +107,8 @@ describe('ReceiptReviewForm', () => {
     expect(url).toBe('/api/scanning/confirm')
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body).items).toEqual([
-      { name: 'Full Cream Milk', quantity: 3, unit: 'pieces', storage: 'freezer', storageZone: 'freezer-main', category: 'dairy', icon: '🥛', dietType: 'vegetarian', suggestedLocation: 'middle-shelf', weightKg: 2, purchasedAt: '2026-10-12', expiresAt: '2026-10-19', purchasePrice: 6.4 },
-      { name: 'Eggs', quantity: 1, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', category: 'eggs', icon: '🥚', dietType: 'vegetarian', suggestedLocation: 'middle-shelf', weightKg: 0.6, purchasedAt: '2026-10-12', expiresAt: '2026-11-09', purchasePrice: 3.2 },
+      { name: 'Full Cream Milk', quantity: 3, unit: 'pieces', storage: 'freezer', storageZone: 'freezer-main', category: 'dairy', icon: '🥛', dietType: 'vegetarian', suggestedLocation: 'middle-shelf', weightKg: 2, purchasedAt: '2026-10-12', expiresAt: '2026-10-19', purchasePrice: 6.4, fridgeName: 'Main fridge' },
+      { name: 'Eggs', quantity: 1, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', category: 'eggs', icon: '🥚', dietType: 'vegetarian', suggestedLocation: 'middle-shelf', weightKg: 0.6, purchasedAt: '2026-10-12', expiresAt: '2026-11-09', purchasePrice: 3.2, fridgeName: 'Main fridge' },
     ])
     expect(wrapper.get('[data-testid="saved-message"]').text()).toContain('Saved 2 items')
     expect(wrapper.get('[data-testid="merged-message"]').text()).toContain('1 was already in stock')
@@ -256,7 +256,7 @@ describe('ReceiptReviewForm', () => {
       const row = rows(wrapper)[0]
       expect(row.get('[data-testid="category"]').element.value).toBe('meat')
       expect(row.get('[data-testid="icon"]').element.value).toBe('🍗')
-      expect(row.get('[data-testid="zone"]').element.value).toBe('lower-shelf')
+      expect(row.get('[data-testid="zone"]').element.value).toBe('middle-shelf')
       expect(row.get('[data-testid="expires"]').element.value).toBe('2026-11-03')
       expect(row.get('[data-testid="weight"]').element.value).toBe('0.75') // the user's own weight is kept
       expect(row.get('[data-testid="location-hint"]').text()).toContain('Lower shelf')
@@ -368,10 +368,76 @@ it('shows actual saved destinations and links to the saved inventory IDs', async
   })
   await wrapper.get('form').trigger('submit')
   await flushPromises()
-  expect(wrapper.get('[data-testid="saved-message"]').text()).toContain('Fridge 2 · Middle shelf')
+  expect(wrapper.get('[data-testid="saved-message"]').text()).toContain('Fridge 2 · Shelves')
   expect(wrapper.findComponent(RouterLinkStub).props('to')).toEqual({
     name: 'fridge', query: { highlight: ['milk-id', 'egg-id'] },
   })
   wrapper.unmount()
   vi.unstubAllGlobals()
+})
+
+
+describe('Receipt storage destinations', () => {
+  afterEach(() => {
+    for (const key of ['full-circle-fridges', 'full-circle-pantries', 'full-circle-main-storage-labels']) localStorage.removeItem(key)
+    vi.unstubAllGlobals()
+  })
+
+  it('includes named storage discovered from saved inventory without changing the default selection', async () => {
+    const wrapper = mount(ReceiptReviewForm, { props: { manual: true } })
+    await wrapper.setProps({ inventoryItems: [
+      { storage: 'freezer', fridgeName: 'Restaurant fridge' },
+      { storage: 'pantry', pantryName: 'Back pantry' },
+    ] })
+    const selector = rows(wrapper)[0].get('[data-testid="destination"]')
+    expect(selector.text()).toContain('Restaurant fridge')
+    expect(selector.text()).toContain('Back pantry')
+    expect(selector.element.value).toBe(JSON.stringify(['fridge', 'Main fridge']))
+    wrapper.unmount()
+  })
+
+  it('defaults to the first fridge and offers the current unified compartment names', () => {
+    localStorage.setItem('full-circle-fridges', JSON.stringify(['Fridge 2']))
+    localStorage.setItem('full-circle-main-storage-labels', JSON.stringify(['Kitchen fridge', 'Cupboard']))
+    const wrapper = mount(ReceiptReviewForm, { props: { manual: true } })
+    const row = rows(wrapper)[0]
+    expect(row.get('[data-testid="destination"]').element.value).toBe(JSON.stringify(['fridge', 'Main fridge']))
+    expect(row.get('[data-testid="tile-storageDestination"]').text()).toContain('Kitchen fridge')
+    expect(row.get('[data-testid="tile-storageDestination"]').classes()).toContain('tile-optional')
+    const zones = row.findAll('[data-testid="zone"] option').map(option => option.text())
+    expect(zones.join(' ')).toContain('Shelves')
+    expect(zones.join(' ')).toContain('Upper door shelf')
+    expect(zones.join(' ')).toContain('Lower door shelf')
+    expect(zones.join(' ')).not.toMatch(/Upper shelf|Middle shelf|Lower shelf/)
+    expect(zones).toHaveLength(5)
+    wrapper.unmount()
+  })
+
+  it.each([['fridge', 'Fridge 2', 'door-lower'], ['pantry', 'Pantry 2', 'dry-storage']])('saves to the selected %s and keeps its compartment compatible', async (type, name, zone) => {
+    localStorage.setItem(type === 'fridge' ? 'full-circle-fridges' : 'full-circle-pantries', JSON.stringify([name]))
+    const fetchMock = vi.fn(async () => jsonResponse(201, { saved: 2, added: 2, merged: 0 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ReceiptReviewForm, { props: { parsed: parsed() } })
+    const row = rows(wrapper)[0]
+    await row.get('[data-testid="destination"]').setValue(JSON.stringify([type, name]))
+    await row.get('[data-testid="zone"]').setValue(zone)
+    if (type === 'pantry') expect(row.findAll('[data-testid="zone"] option')).toHaveLength(1)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const [first, second] = JSON.parse(fetchMock.mock.calls[0][1].body).items
+    expect(first).toMatchObject({ storage: type, storageZone: zone, [type === 'pantry' ? 'pantryName' : 'fridgeName']: name })
+    expect(second.fridgeName).toBe('Main fridge')
+    expect(second.storageZone).toBe('middle-shelf')
+    wrapper.unmount()
+  })
+
+  it('switches a pantry selection back to compatible fridge shelves', async () => {
+    const wrapper = mount(ReceiptReviewForm, { props: { parsed: parsed() } })
+    const row = rows(wrapper)[0]
+    await row.get('[data-testid="destination"]').setValue(JSON.stringify(['pantry', 'Pantry']))
+    expect(row.get('[data-testid="zone"]').element.value).toBe('dry-storage')
+    await row.get('[data-testid="destination"]').setValue(JSON.stringify(['fridge', 'Main fridge']))
+    expect(row.get('[data-testid="zone"]').element.value).toBe('middle-shelf')
+    wrapper.unmount()
+  })
 })

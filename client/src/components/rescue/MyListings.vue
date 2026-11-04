@@ -1,4 +1,6 @@
 <script setup>
+import '@/assets/rescue.css'
+import ListingsTable from './ListingsTable.vue'
 import {
   computed,
   nextTick,
@@ -7,18 +9,11 @@ import {
   watch,
 } from 'vue'
 
-import FoodIcon from '../FoodIcon.vue'
 import FoodListingEditor from './FoodListingEditor.vue'
 
 import { useInventoryStore } from '@/stores/inventory.js'
 
-import {
-  allPages,
-  api,
-  apiError,
-  isCancelled,
-  photoUrl,
-} from '@/services/rescueApi.js'
+import { allPages, api, apiError, isCancelled } from '@/services/rescueApi.js'
 
 import {
   displayStatus,
@@ -511,6 +506,9 @@ onBeforeUnmount(() => {
 defineExpose({
   refresh: loadListings,
 })
+function markPhotoFailed(listingId) {
+  failedPhotos.value.add(listingId)
+}
 </script>
 
 <template>
@@ -522,12 +520,12 @@ defineExpose({
       aria-labelledby="my-listings-title"
       @cancel.prevent="close"
       @click="
-        (event) => {
-          if (event.target === dialog) close()
-        }
+      (event) => {
+      if (event.target === dialog) close()
+      }
       "
     >
-      <div class="section-heading">
+      <div class="section-heading d-flex align-items-center justify-content-between flex-wrap gap-3">
         <h2 id="my-listings-title">
           My listings
 
@@ -536,14 +534,14 @@ defineExpose({
           </span>
         </h2>
 
-        <div class="heading-actions">
+        <div class="heading-actions d-flex align-items-center">
           <button
             type="button"
-            class="listing-button primary"
+            class="listing-button primary btn rescue-button btn-primary"
             :disabled="
-              loading ||
-              working ||
-              Boolean(loadError)
+            loading ||
+            working ||
+            Boolean(loadError)
             "
             @click="openEditor()"
           >
@@ -552,7 +550,7 @@ defineExpose({
 
           <button
             type="button"
-            class="modal-close"
+            class="modal-close btn rescue-close rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 p-0"
             aria-label="Close my listings"
             :disabled="working"
             @click="close"
@@ -572,7 +570,7 @@ defineExpose({
 
         <button
           type="button"
-          class="listing-button ms-2"
+          class="listing-button ms-2 btn rescue-button btn-outline-dark"
           @click="loadListings"
         >
           Retry
@@ -597,13 +595,13 @@ defineExpose({
 
       <template v-else-if="!loadError">
         <!-- Search and filters -->
-        <div class="listing-toolbar">
+        <div class="listing-toolbar d-flex flex-wrap">
           <label class="listing-search">
             <span class="visually-hidden">
               Search your listings
             </span>
 
-            <input
+            <input class="form-control"
               v-model="search"
               type="search"
               placeholder="Search food or pickup location…"
@@ -611,15 +609,15 @@ defineExpose({
           </label>
 
           <div
-            class="status-filters"
+            class="status-filters d-flex align-items-center flex-wrap"
             aria-label="Filter listings by status"
           >
             <button
               v-for="value in statuses"
               :key="value"
               type="button"
-              class="listing-button"
-              :class="{ primary: status === value }"
+              class="listing-button btn rescue-button btn-outline-dark"
+              :class="{ primary: status === value, 'btn-primary': status === value, 'btn-outline-dark': status !== value }"
               :aria-pressed="status === value"
               @click="status = value"
             >
@@ -628,7 +626,7 @@ defineExpose({
           </div>
 
           <button
-            class="text-button"
+            class="text-button btn btn-link rescue-text-button p-0"
             type="button"
             :disabled="working"
             @click="loadListings"
@@ -638,203 +636,38 @@ defineExpose({
         </div>
 
         <!-- Listings table -->
-        <div
-          class="listing-table-wrapper"
-          tabindex="0"
-          aria-label="Your listings table, scroll horizontally on small screens"
-        >
-          <table class="listing-table">
-            <thead>
-              <tr>
-                <th scope="col">Food</th>
-                <th scope="col">Pickup</th>
-                <th scope="col">Status</th>
-                <th scope="col">Requests</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr
-                v-for="item in visibleListings"
-                :key="item._id"
-              >
-                <!-- Food -->
-                <td>
-                  <div class="food-identity">
-                    <img
-                      v-if="
-                        item.hasPhoto &&
-                        !failedPhotos.has(item._id)
-                      "
-                      :src="photoUrl(item)"
-                      :alt="item.title"
-                      loading="lazy"
-                      @error="failedPhotos.add(item._id)"
-                    />
-
-                    <span
-                      v-else
-                      class="food-placeholder"
-                      aria-hidden="true"
-                    >
-                      <FoodIcon :name="item.title" />
-                    </span>
-
-                    <div>
-                      <h3>{{ item.title }}</h3>
-
-                      <p>
-                        {{ item.quantity }} {{ item.unit }}
-                      </p>
-
-                      <p class="expiry-label">
-                        Use by {{ dateLabel(item.expiresAt) }}
-                      </p>
-                    </div>
-                  </div>
-                </td>
-
-                <!-- Pickup -->
-                <td>
-                  <p>{{ item.pickupLabel }}</p>
-
-                  <p class="pickup-window">
-                    {{ pickupLabel(item) }}
-                  </p>
-                </td>
-
-                <!-- Status -->
-                <td>
-                  <span
-                    class="status-badge"
-                    :class="displayStatus(item, now)"
-                  >
-                    {{ label(displayStatus(item, now)) }}
-                  </span>
-                </td>
-
-                <!-- Requests -->
-                <td>
-                  <button
-                    v-if="counts(item).total"
-                    type="button"
-                    class="text-button"
-                    :disabled="working"
-                    @click="viewRequests(item)"
-                  >
-                    {{ counts(item).total }}
-                    {{
-                      counts(item).total === 1
-                        ? 'request'
-                        : 'requests'
-                    }}
-                    →
-                  </button>
-
-                  <span v-else class="muted">
-                    No requests
-                  </span>
-
-                  <p
-                    v-if="counts(item).pending"
-                    class="pickup-window"
-                  >
-                    {{ counts(item).pending }} awaiting reply
-                  </p>
-                </td>
-
-                <!-- Actions -->
-                <td>
-                  <div class="row-actions">
-                    <button
-                      v-if="item.status === 'available'"
-                      type="button"
-                      class="text-button"
-                      :disabled="working || !canEdit(item)"
-                      :title="editHint(item)"
-                      :aria-label="
-                        `Edit ${item.title}: ${editHint(item)}`
-                      "
-                      @click="openEditor(item)"
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      v-if="item.status === 'available'"
-                      type="button"
-                      class="text-button muted"
-                      :disabled="working"
-                      @click="askConfirmation('withdraw', item)"
-                    >
-                      Withdraw
-                    </button>
-
-                    <button
-                      v-if="item.status === 'claimed'"
-                      type="button"
-                      class="listing-button primary"
-                      :disabled="working"
-                      @click="askConfirmation('collect', item)"
-                    >
-                      Confirm collection
-                    </button>
-
-                    <button
-                      v-if="item.status === 'claimed'"
-                      type="button"
-                      class="text-button"
-                      :disabled="working"
-                      @click="viewRequests(item)"
-                    >
-                      Manage request →
-                    </button>
-
-                    <span
-                      v-if="
-                        ['collected', 'withdrawn'].includes(
-                          item.status,
-                        )
-                      "
-                      class="muted"
-                    >
-                      Saved in history
-                    </span>
-                  </div>
-                </td>
-              </tr>
-
-              <tr v-if="!visibleListings.length">
-                <td
-                  colspan="5"
-                  class="empty-state"
-                >
-                  {{
-                    listings.length
-                      ? 'No matching listings. Try another search or filter.'
-                      : 'Nothing listed yet. Share something from your fridge or pantry.'
-                  }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ListingsTable
+          :can-edit="canEdit"
+          :counts="counts"
+          :date-label="dateLabel"
+          :edit-hint="editHint"
+          :failed-photos="failedPhotos"
+          :label="label"
+          :listings="listings"
+          :now="now"
+          :pickup-label="pickupLabel"
+          :visible-listings="visibleListings"
+          :working="working"
+          @view-requests="viewRequests"
+          @open-editor="openEditor"
+          @ask-confirmation="askConfirmation"
+          @photo-error="markPhotoFailed"
+        />
 
         <!-- Pagination -->
-        <div class="pagination-footer">
-          <p class="muted">
+        <div class="pagination-footer d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <p class="muted text-muted">
             Showing {{ rangeStart }}–{{ rangeEnd }} of
             {{ filteredListings.length }}
           </p>
 
           <nav
-            class="pagination-controls"
+            class="pagination-controls d-flex align-items-center flex-wrap"
             aria-label="Listing pages"
           >
             <button
               type="button"
-              class="listing-button"
+              class="listing-button btn rescue-button btn-outline-dark"
               :disabled="page === 1"
               @click="page--"
             >
@@ -847,7 +680,7 @@ defineExpose({
 
             <button
               type="button"
-              class="listing-button"
+              class="listing-button btn rescue-button btn-outline-dark"
               :disabled="page === pageCount"
               @click="page++"
             >
@@ -868,9 +701,9 @@ defineExpose({
       <template v-if="confirmation">
         <h3 id="listing-confirm-title">
           {{
-            confirmation.type === 'collect'
-              ? 'Confirm collection of'
-              : 'Withdraw'
+          confirmation.type === 'collect'
+          ? 'Confirm collection of'
+          : 'Withdraw'
           }}
 
           {{ confirmation.item.title }}?
@@ -878,11 +711,11 @@ defineExpose({
 
         <p class="mt-3">
           {{
-            confirmation.type === 'collect'
-              ? confirmation.item.inventoryItem
-                ? 'Confirm only after handing over the food. This completes the accepted request and removes the whole linked item from your inventory.'
-                : 'Confirm only after handing over the food. This completes the accepted request.'
-              : 'This removes the listing from Explore and declines pending requests. Food stays in your inventory.'
+          confirmation.type === 'collect'
+          ? confirmation.item.inventoryItem
+          ? 'Confirm only after handing over the food. This completes the accepted request and removes the whole linked item from your inventory.'
+          : 'Confirm only after handing over the food. This completes the accepted request.'
+          : 'This removes the listing from Explore and declines pending requests. Food stays in your inventory.'
           }}
         </p>
 
@@ -894,10 +727,10 @@ defineExpose({
           {{ actionError }}
         </div>
 
-        <div class="row-actions mt-3">
+        <div class="row-actions mt-3 d-flex align-items-center flex-wrap">
           <button
             type="button"
-            class="listing-button"
+            class="listing-button btn rescue-button btn-outline-dark"
             :disabled="working"
             @click="cancelConfirmation"
           >
@@ -906,16 +739,16 @@ defineExpose({
 
           <button
             type="button"
-            class="listing-button primary"
+            class="listing-button primary btn rescue-button btn-primary"
             :disabled="working"
             @click="confirmAction"
           >
             {{
-              working
-                ? 'Saving…'
-                : confirmation.type === 'collect'
-                  ? 'Yes, collected'
-                  : 'Withdraw listing'
+            working
+            ? 'Saving…'
+            : confirmation.type === 'collect'
+            ? 'Yes, collected'
+            : 'Withdraw listing'
             }}
           </button>
         </div>
@@ -933,442 +766,3 @@ defineExpose({
     @committed="listingCommitted"
   />
 </template>
-
-<style scoped>
-/* Base */
-.listings-modal,
-.listing-dialog {
-  margin: auto;
-  max-width: calc(100vw - 32px);
-}
-
-.listings-modal::backdrop,
-.listing-dialog::backdrop {
-  background: rgba(18, 63, 59, 0.45);
-}
-
-.listings-modal:not([open]),
-.listing-dialog:not([open]) {
-  display: none;
-}
-
-.my-listings .expiry-label {
-  font-size: 14px;
-  margin-top: 3px;
-}
-
-.pickup-window {
-  font-size: 15px;
-  color: var(--muted);
-  max-width: 240px;
-}
-
-.status-badge.claimed {
-  background: var(--yellow, #ffdd69);
-}
-
-.status-badge.expired {
-  background: #ffe3d8;
-}
-
-.status-badge.withdrawn {
-  background: #eee8e0;
-}
-
-.success-notice {
-  padding: 12px;
-  border: 1px solid var(--aqua);
-  border-radius: 10px;
-  background: var(--aqua-soft);
-  font-size: 16px;
-}
-
-.my-listings .listing-button,
-.my-listings .text-button {
-  font-size: 16px;
-}
-
-.my-listings .heading-actions .listing-button {
-  font-size: 17px;
-}
-
-.my-listings {
-  color: var(--ink);
-  font: 19px/1.4 var(--font-sans);
-}
-
-.listings-overlay,
-.listings-overlay * {
-  box-sizing: border-box;
-}
-
-h2,
-h3 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-}
-
-h2 {
-  font-size: clamp(28px, 3vw, 34px);
-}
-
-h3 {
-  font-size: 23px;
-}
-
-p {
-  margin: 0;
-}
-
-button,
-input,
-select {
-  font: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Modal overlay */
-.listings-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1050;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(18, 63, 59, 0.45);
-}
-
-.listings-overlay--nested {
-  z-index: 1060;
-}
-
-/* Main listings modal */
-.listings-modal {
-  width: 100%;
-  max-width: 1200px;
-  max-height: calc(100dvh - 48px);
-  min-width: 0;
-  padding: 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 2px solid var(--ink);
-  border-radius: 22px;
-  background: var(--paper);
-  box-shadow: var(--shadow-paper);
-}
-
-/* Heading */
-.section-heading,
-.pagination-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.modal-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 1.5px solid var(--ink);
-  border-radius: 50%;
-  background: var(--paper-bright);
-  color: var(--ink);
-  font-size: 30px;
-  line-height: 1;
-}
-
-.modal-close:hover {
-  background: var(--aqua-soft);
-}
-
-/* Search and filters */
-.listing-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 22px 0;
-}
-
-.listing-search {
-  flex: 1 1 280px;
-  max-width: 360px;
-}
-
-input,
-select {
-  width: 100%;
-  min-height: 44px;
-  padding: 9px 12px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--paper-bright);
-  color: var(--ink);
-}
-
-.status-filters,
-.row-actions,
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-/* Buttons */
-.listing-button {
-  min-height: 44px;
-  padding: 8px 16px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--paper);
-  color: var(--ink);
-}
-
-.listing-button.primary {
-  background: var(--aqua);
-  color: var(--paper-bright);
-}
-
-.listing-button:hover:not(:disabled) {
-  background: var(--aqua-soft);
-}
-
-.listing-button.primary:hover:not(:disabled) {
-  background: #0d968b;
-}
-
-.text-button {
-  min-height: 44px;
-  padding: 7px 0;
-  border: 0;
-  background: transparent;
-  color: var(--aqua);
-  text-align: left;
-}
-
-.text-button:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-/* Listings table */
-.listing-table-wrapper {
-  max-width: 100%;
-  padding: 12px;
-  overflow-x: auto;
-  border: 1.5px solid var(--ink);
-  border-radius: 18px;
-  background: var(--paper-bright);
-}
-
-.listing-table {
-  width: 100%;
-  min-width: 900px;
-  border-collapse: separate;
-  border-spacing: 0 7px;
-}
-
-th {
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 400;
-  text-align: left;
-  text-transform: uppercase;
-}
-
-th,
-td {
-  padding: 10px 12px;
-  vertical-align: middle;
-}
-
-tbody tr:nth-child(odd) td {
-  background: var(--paper);
-}
-
-td:first-child {
-  width: 34%;
-  border-radius: 10px 0 0 10px;
-}
-
-td:last-child {
-  border-radius: 0 10px 10px 0;
-}
-
-/* Food details */
-.food-identity {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.food-identity img,
-.food-placeholder {
-  flex: 0 0 56px;
-  width: 56px;
-  height: 56px;
-  border-radius: 9px;
-  object-fit: cover;
-}
-
-.food-placeholder {
-  display: grid;
-  place-items: center;
-  background: var(--aqua-soft);
-  font-size: 32px;
-}
-
-.food-identity p {
-  color: var(--muted);
-  font-size: 17px;
-}
-
-/* Listing status */
-.status-badge {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 7px;
-  font-size: 17px;
-  white-space: nowrap;
-}
-
-.status-badge.available {
-  background: var(--aqua-soft);
-}
-
-.status-badge.reserved {
-  background: var(--yellow);
-}
-
-.status-badge.collected {
-  background: #e9eeea;
-}
-
-/* Pagination and notices */
-.pagination-footer {
-  margin-top: 18px;
-}
-
-.empty-state {
-  padding: 32px;
-  text-align: center;
-}
-
-.demo-notice {
-  margin-top: 12px;
-  color: var(--muted);
-}
-
-/* Add / edit / removal modals */
-.listing-dialog {
-  width: 100%;
-  max-width: 480px;
-  max-height: calc(100dvh - 48px);
-  padding: 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 2px solid var(--ink);
-  border-radius: 18px;
-  background: var(--paper);
-  color: var(--ink);
-  box-shadow: var(--shadow-paper);
-}
-
-.editor-form {
-  display: grid;
-  gap: 16px;
-}
-
-.editor-form label {
-  display: grid;
-  gap: 5px;
-}
-
-.listing-dialog > p,
-.listing-dialog > .row-actions {
-  margin-top: 18px;
-}
-
-/* Keyboard focus */
-:focus-visible {
-  outline: 3px solid var(--aqua);
-  outline-offset: 3px;
-}
-
-/* Responsive layout */
-@media (max-width: 575px) {
-  .listings-overlay {
-    padding: 12px;
-  }
-
-  .listings-modal,
-  .listing-dialog {
-    max-height: calc(100dvh - 24px);
-    padding: 16px;
-    border-radius: 18px;
-  }
-
-  .heading-actions {
-    gap: 8px;
-  }
-
-  .listing-search {
-    max-width: none;
-  }
-
-  .status-filters {
-    gap: 8px;
-  }
-
-  .listing-button {
-    padding-inline: 12px;
-  }
-
-  .pagination-controls {
-    width: 100%;
-    justify-content: space-between;
-    font-size: 17px;
-  }
-}
-
-.listings-modal {
-  width: min(1200px, calc(100vw - 32px));
-}
-
-.listing-dialog {
-  width: min(520px, calc(100vw - 32px));
-}
-
-@media (max-width: 575px) {
-  .listings-modal,
-  .listing-dialog {
-    width: calc(100vw - 24px);
-  }
-}
-</style>

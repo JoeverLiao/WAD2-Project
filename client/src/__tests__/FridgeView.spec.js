@@ -7,6 +7,7 @@ import FoodItemForm from '../components/fridge/FoodItemForm.vue'
 import { showConfirm, showPrompt } from '../utils/dialog.js'
 
 vi.mock('../utils/dialog.js')
+vi.mock('../components/EggLoader.vue', () => ({ default: { template: '<div />' } }))
 
 const food = { _id: 'apple-1', name: 'Apples', quantity: 3, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', expiresAt: '2026-11-05' }
 let wrapper
@@ -15,7 +16,7 @@ function transfer() {
   return { setData: vi.fn(), getData: () => food._id, setDragImage: vi.fn(), effectAllowed: '' }
 }
 async function openFridge(props = {}) {
-  wrapper = mount(FridgeView, { attachTo: document.body, props })
+  wrapper = mount(FridgeView, { attachTo: document.body, props, global: { stubs: { RouterLink: true } } })
   await flushPromises()
   await wrapper.get('.fridge-door').trigger('click')
 }
@@ -319,14 +320,37 @@ describe('single-portion actions', () => {
 describe('unified fridge interior', () => {
   it('shows foods from all legacy shelves together in the main area and its dialog', async () => {
     request.mockResolvedValue({ ok: true, json: async () => ['upper-shelf', 'middle-shelf', 'lower-shelf'].map((storageZone, i) => ({ ...food, _id: `shelf-${i}`, name: `Food ${i}`, storageZone })) })
-    await openFridge()
+    wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.fridge-door').trigger('click')
     expect(wrapper.findAll('.shelf-compartment')).toHaveLength(1)
     const shelf = wrapper.get('.shelf-compartment')
     expect(shelf.findAll('.mini-food')).toHaveLength(3)
+    expect(shelf.findAll('.mini-food').every(icon => !icon.element.style.gridRow)).toBe(true)
     expect(shelf.findAll('.food-quantity-badge').map(badge => badge.text())).toEqual(['×3', '×3', '×3'])
     expect(shelf.text()).toContain('Shelves')
     await shelf.trigger('click')
     expect(wrapper.findAll('.food-card')).toHaveLength(3)
+  })
+
+  it.each([150, 250, 350])('uses one shelves destination when dropping at y=%i', async clientY => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, storage: 'freezer', storageZone: 'freezer-main' }] })
+    wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.fridge-door').trigger('click')
+    const shelf = wrapper.get('.shelf-compartment')
+    shelf.get('.food-preview').element.getBoundingClientRect = () => ({ top: 100, bottom: 400, height: 300 })
+    await wrapper.get('.freezer-compartment .mini-food').trigger('dragstart', { dataTransfer: transfer(), clientX: 100, clientY: 50 })
+    await shelf.trigger('dragover', { clientY })
+    expect(document.querySelector('.drag-placement-hint').textContent).toBe('Place at Shelves')
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storageZone: 'middle-shelf' } }) })
+    await shelf.trigger('drop', { dataTransfer: transfer(), clientY })
+    await flushPromises()
+    expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
+      method: 'PATCH', body: expect.any(String),
+    }))
+    const patch = request.mock.calls.find(([, options]) => options?.method === 'PATCH')
+    expect(JSON.parse(patch[1].body).storageZone).toBe('middle-shelf')
   })
 })
 
@@ -660,4 +684,121 @@ it('renders visible expiry badges for expired and soon-to-expire shelf food', as
   expect(wrapper.get('[data-food-id="expired"] .food-expiry-badge.expired').isVisible()).toBe(true)
   expect(wrapper.get('[data-food-id="soon"] .food-expiry-badge').classes()).not.toContain('expired')
   expect(wrapper.find('[data-food-id="fresh"] .food-expiry-badge').exists()).toBe(false)
+})
+
+it('moves a food from the card to a named pantry even when the API omits pantryName', async () => {
+  localStorage.setItem('full-circle-pantries', JSON.stringify(['Pantry 2']))
+  try {
+    wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.fridge-door').trigger('click')
+    await wrapper.get('.shelf-compartment').trigger('click')
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({
+      item: { ...food, storage: 'pantry', storageZone: 'dry-storage' },
+    }) })
+    await wrapper.get('select[aria-label="Move Apples to another location"]')
+      .setValue(JSON.stringify({ type: 'pantry', name: 'Pantry 2' }))
+    await flushPromises()
+    expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ pantryName: 'Pantry 2', storage: 'pantry', storageZone: 'dry-storage' }),
+    }))
+    expect(wrapper.findAll('.food-card')).toHaveLength(0)
+    expect(JSON.parse(localStorage.getItem('full-circle-item-storage-assignments'))['apple-1'])
+      .toEqual({ pantryName: 'Pantry 2' })
+  } finally {
+    localStorage.removeItem('full-circle-pantries')
+    localStorage.removeItem('full-circle-item-storage-assignments')
+  }
+})
+
+
+describe('Compartment popup UI', () => {
+  beforeEach(() => {
+    showPrompt.mockClear()
+    showConfirm.mockClear()
+  })
+
+  it('shows food illustrations, expiry counts and a searchable inventory', async () => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [
+      { ...food, expiresAt: '2000-01-01' },
+      { ...food, _id: 'milk-2', name: 'Milk', expiresAt: null },
+    ] })
+    await openFridge()
+    await wrapper.get('.shelf-compartment').trigger('click')
+    expect(wrapper.get('.compartment-count').text()).toBe('2 foods')
+    expect(wrapper.get('.compartment-expired').text()).toContain('1 expired')
+    expect(wrapper.findAll('.food-emoji .food-icon')).toHaveLength(2)
+    const search = wrapper.get('[aria-label="Search compartment food"]')
+    await search.setValue('Milk')
+    expect(wrapper.findAll('.food-card')).toHaveLength(1)
+    expect(wrapper.get('.food-card').text()).toContain('Milk')
+    expect(wrapper.get('.compartment-count').text()).toBe('1 food found')
+    await search.setValue('no matching food')
+    expect(wrapper.get('.modal-empty').text()).toContain('No foods match this search')
+    await search.setValue('')
+    expect(wrapper.findAll('.food-card')).toHaveLength(2)
+    await wrapper.get('[aria-label="Close compartment"]').trigger('click')
+    expect(wrapper.find('.inventory-modal').exists()).toBe(false)
+  })
+
+  it.each(['consume', 'discard'])('restores the %s card action without quantity prompts for a single item', async action => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, quantity: 1 }] })
+    await openFridge()
+    await wrapper.get('.shelf-compartment').trigger('click')
+    await wrapper.get(`.${action}-button`).trigger('click')
+    await flushPromises()
+    expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
+      method: 'DELETE', body: JSON.stringify({ activity: action === 'consume' ? 'consumed' : 'discarded' }),
+    }))
+    expect(showPrompt).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.food-card')).toHaveLength(0)
+    expect(wrapper.get('.modal-empty').text()).toContain('This compartment is empty')
+    expect(document.querySelector('.food-action-dock')).toBeNull()
+  })
+})
+
+
+describe('Lower door drops and compartment food reveal', () => {
+  it.each([false, true])('moves food to the lower door shelf (embedded: %s)', async embedded => {
+    await openFridge(embedded ? { embedded: true, inventoryItems: [food] } : {})
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storageZone: 'door-lower' } }) })
+    await beginDrag()
+    await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: transfer() })
+    await flushPromises()
+    const patch = request.mock.calls.find(([, options]) => options?.method === 'PATCH')
+    expect(JSON.parse(patch[1].body)).toEqual(expect.objectContaining({ storage: 'fridge', storageZone: 'door-lower' }))
+    if (embedded) {
+      const updated = wrapper.emitted('inventory-change').at(-1)[0]
+      await wrapper.setProps({ inventoryItems: updated })
+    }
+    expect(wrapper.findAll('[data-drop-zone="door-lower"] [data-food-id="apple-1"]')).toHaveLength(1)
+    expect(wrapper.findAll('.shelf-compartment [data-food-id="apple-1"]')).toHaveLength(0)
+  })
+
+  it.each([
+    ['fridge', 'middle-shelf'], ['freezer', 'freezer-main'], ['fridge', 'door'],
+    ['fridge', 'door-lower'], ['fridge', 'crisper'], ['pantry', 'dry-storage'],
+  ])('reveals a food picture in %s / %s after closing its compartment', async (storage, storageZone) => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, storage, storageZone }] })
+    await openFridge()
+    if (storage === 'pantry') {
+      await wrapper.findAll('.storage-slide-options > button').find(button => button.text() === 'Pantry').trigger('click')
+    }
+    const area = wrapper.findAll('[data-drop-zone]').find(element => element.attributes('data-drop-zone') === storageZone)
+    await area.trigger('click')
+    await wrapper.get('[aria-label="Search compartment food"]').setValue('Apples')
+    const icon = wrapper.get('[data-food-id="apple-1"]').element
+    icon.scrollIntoView = vi.fn()
+    icon.animate = vi.fn()
+    await wrapper.get('.food-emoji').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.inventory-modal').exists()).toBe(false)
+    expect(icon.scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'center' }))
+    expect(document.activeElement).toBe(icon)
+    expect(icon.classList.contains('food-location-highlight')).toBe(true)
+    expect(icon.animate).toHaveBeenCalled()
+    if (storage !== 'pantry') expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
+    expect(request.mock.calls.filter(([, options]) => options?.method !== 'GET')).toHaveLength(0)
+  })
 })

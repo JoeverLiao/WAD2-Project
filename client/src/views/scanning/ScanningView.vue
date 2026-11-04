@@ -1,11 +1,22 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import ReceiptReviewForm from '../../components/ReceiptReviewForm.vue'
 import ReceiptUpload from '../../components/ReceiptUpload.vue'
 import '../../styles/scanning-theme.css'
 
 // 'scan' = upload a receipt photo; 'manual' = type the items in (for people without a receipt).
 const mode = ref('scan')
+const inventoryItems = ref([])
+onMounted(async () => {
+  try {
+    const response = await fetch('/api/inventory', { credentials: 'include' })
+    if (!response.ok) return
+    const data = await response.json()
+    inventoryItems.value = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : []
+  } catch {
+    // Locally saved storage names and the first fridge remain available offline.
+  }
+})
 
 // OCR result: { rawText, lines, confidence, lowConfidence, parsed }.
 // `parsed` holds the items, quantities and date found in the text; the review form lets the
@@ -70,9 +81,10 @@ function switchMode(next) {
         v-if="ocrResult"
         :key="`review-${scanKey}-${resultCount}`"
         :parsed="ocrResult.parsed"
+        :inventory-items="inventoryItems"
         @reset="startOver"
       />
     </template>
-    <ReceiptReviewForm v-else :key="`manual-${scanKey}`" manual @reset="startOver" />
+    <ReceiptReviewForm v-else :key="`manual-${scanKey}`" manual :inventory-items="inventoryItems" @reset="startOver" />
   </section>
 </template>

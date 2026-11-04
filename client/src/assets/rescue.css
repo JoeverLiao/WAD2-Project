@@ -1,0 +1,1797 @@
+/* Shared rescue theme. Import after Bootstrap; existing app colour/font variables are reused. */
+.rescue-button {
+  min-height: 44px;
+  border-radius: 10px;
+  font: inherit;
+}
+
+.rescue-button.btn-outline-dark {
+  --bs-btn-color: var(--ink);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-bg: var(--paper);
+  --bs-btn-hover-color: var(--ink);
+  --bs-btn-hover-bg: var(--aqua-soft);
+  --bs-btn-hover-border-color: var(--ink);
+  --bs-btn-active-color: var(--paper-bright);
+  --bs-btn-active-bg: var(--aqua);
+  --bs-btn-active-border-color: var(--ink);
+  --bs-btn-disabled-color: var(--ink);
+  --bs-btn-disabled-border-color: var(--ink);
+}
+
+.rescue-button.btn-primary {
+  --bs-btn-color: white;
+  --bs-btn-bg: var(--aqua);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-hover-color: white;
+  --bs-btn-hover-bg: #0d968b;
+  --bs-btn-hover-border-color: var(--ink);
+  --bs-btn-active-color: white;
+  --bs-btn-active-bg: #0d968b;
+  --bs-btn-active-border-color: var(--ink);
+  --bs-btn-disabled-color: white;
+  --bs-btn-disabled-bg: var(--aqua);
+  --bs-btn-disabled-border-color: var(--ink);
+}
+
+.rescue-text-button {
+  --bs-btn-color: var(--aqua);
+  --bs-btn-hover-color: #0d968b;
+  font: inherit;
+  text-align: left;
+  text-underline-offset: 3px;
+}
+
+.rescue-close {
+  width: 44px;
+  height: 44px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-bright);
+  color: var(--ink);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.rescue-close:hover { background: var(--aqua-soft); }
+.food-editor .btn-primary { box-shadow: 2px 2px 0 var(--ink); }
+
+/* Native dialogs keep showModal(), focus handling and the browser's top layer. */
+.food-editor::backdrop,
+.sharing-corner::backdrop,
+.my-listings::backdrop,
+.request-dialog::backdrop { background: rgba(18, 63, 59, 0.45); }
+
+.food-editor .form-control,
+.food-editor .form-select,
+.sharing-corner .form-control,
+.my-listings .form-control,
+.my-listings .form-select,
+.explore-nearby .form-control,
+.explore-nearby .form-select,
+.request-dialog .form-control {
+  min-width: 0;
+  min-height: 44px;
+  border-color: var(--line, var(--ink));
+  border-radius: 10px;
+  background-color: var(--paper-bright);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+/* FoodListingEditor: section-specific appearance and dimensions. */
+
+/* Dialog */
+.food-editor {
+  width: min(1080px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  border: 2px solid var(--ink);
+  border-radius: 22px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 1rem/1.45 var(--font-sans);
+  box-shadow: var(--shadow-paper);
+  overscroll-behavior: contain;
+}
+
+.food-editor h2,
+.food-editor h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.food-editor h2 {
+  font-size: clamp(26px, 3vw, 32px);
+}
+
+.food-editor h3 {
+  font-size: 23px;
+}
+
+.food-editor .editor-close {
+  width: 40px;
+  height: 40px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-bright);
+  color: var(--ink);
+  font-size: 28px;
+  line-height: 1;
+}
+
+/* Sections and fields */
+.food-editor .editor-section {
+  min-width: 0;
+  border: 1.5px solid var(--line, var(--ink));
+  background: var(--paper-bright);
+}
+
+.food-editor .form-control,
+.food-editor .form-select {
+  min-width: 0;
+  min-height: 44px;
+  border: 1.5px solid var(--line, var(--ink));
+  border-radius: 10px;
+  background-color: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.food-editor input:read-only {
+  background-color: var(--aqua-soft);
+}
+
+/* Buttons */
+/* Bootstrap handles button layout and states; these variables preserve the theme. */
+
+/* Food picker */
+.food-editor .picker-scroll {
+  max-height: 330px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--aqua) var(--paper);
+}
+
+.food-editor .food-choice {
+  border-radius: 13px;
+  min-width: 0;
+  border: 1.5px solid var(--line, var(--ink));
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.food-editor .food-choice:focus-within {
+  outline: 3px solid var(--aqua);
+  outline-offset: 3px;
+}
+
+.food-editor .food-choice:hover:not(.unavailable),
+.food-editor .food-choice.selected {
+  border-color: var(--aqua);
+  background: var(--aqua-soft);
+}
+
+.food-editor .food-choice.selected {
+  box-shadow: inset 0 0 0 1px var(--aqua);
+}
+
+.food-editor .food-choice.unavailable {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.food-editor .choice-indicator {
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--line, var(--ink));
+  color: transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.food-editor .selected .choice-indicator {
+  border-color: var(--aqua);
+  background: var(--aqua);
+  color: white;
+}
+
+.food-editor .choice-icon {
+  min-height: 46px;
+  font-size: 36px;
+}
+
+.food-editor .food-name,
+.food-editor .selected-name,
+.food-editor .picker-empty-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.food-editor .food-name {
+  font-size: 1.12rem;
+  line-height: 1.2;
+}
+
+.food-editor .food-expiry {
+  color: var(--aqua);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.food-editor .selection-bar {
+  border: 1.5px solid var(--aqua);
+  background: var(--aqua-soft);
+}
+
+.food-editor .selection-label {
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.food-editor .selected-name,
+.food-editor .picker-empty-title {
+  font-size: 1.2rem;
+  line-height: 1.25;
+}
+
+.food-editor .manual-entry-note,
+.food-editor .picker-feedback,
+.food-editor .picker-empty {
+  border: 1px dashed var(--line, var(--ink));
+  background: var(--paper);
+}
+
+/* Quantity */
+.food-editor .quantity-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.food-editor .quantity-stepper {
+  width: 152px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper-bright);
+}
+
+.food-editor .quantity-stepper button {
+  width: 40px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 22px;
+}
+
+.food-editor .quantity-stepper button:hover:not(:disabled) {
+  background: var(--aqua-soft);
+}
+
+.food-editor .quantity-stepper input {
+  width: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  height: 44px;
+  padding: 0 4px;
+  border: 0;
+  border-right: 1px solid var(--line, var(--ink));
+  border-left: 1px solid var(--line, var(--ink));
+  border-radius: 0;
+  background: var(--paper-bright);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.food-editor .quantity-stepper input::-webkit-inner-spin-button,
+.food-editor .quantity-stepper input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.food-editor .quantity-stepper:focus-within {
+  outline: 3px solid var(--aqua);
+  outline-offset: 3px;
+}
+
+/* Photos and map */
+.food-editor .photo-box {
+  min-height: 140px;
+  border: 1.5px dashed var(--line, var(--ink));
+  background: var(--paper);
+}
+
+.food-editor .photo-box img {
+  max-height: 210px;
+  object-fit: contain;
+}
+
+/* Address results */
+.food-editor .address-results {
+  max-height: 240px;
+}
+
+.food-editor .address-result {
+  border-color: var(--line, var(--ink));
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+
+.food-editor .address-result:hover,
+.food-editor .address-result:focus-visible {
+  background: var(--aqua-soft);
+  color: var(--ink);
+}
+
+/* Notices and footer */
+.food-editor .linked-note,
+.food-editor .photo-recovery {
+  border: 1px solid var(--line, var(--ink));
+  background: var(--aqua-soft);
+  font-size: 0.9rem;
+}
+
+.food-editor .editor-footer {
+  bottom: 0;
+  z-index: 1;
+  border-top: 1px solid var(--line, var(--ink));
+  background: var(--paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .food-editor .food-choice {
+    transition: none;
+  }
+}
+
+/* MyListings: section-specific appearance and dimensions. */
+
+/* Base */
+.listings-modal,
+.listing-dialog {
+  margin: auto;
+  max-width: calc(100vw - 32px);
+  width: 100%;
+  padding: 24px;
+}
+
+.listings-modal:not([open]),
+.listing-dialog:not([open]) {
+  display: none;
+}
+
+.my-listings .expiry-label {
+  font-size: 14px;
+  margin-top: 3px;
+}
+
+.my-listings .pickup-window {
+  font-size: 15px;
+  color: var(--muted);
+  max-width: 240px;
+}
+
+.my-listings .status-badge.claimed {
+  background: var(--yellow, #ffdd69);
+}
+
+.my-listings .status-badge.expired {
+  background: #ffe3d8;
+}
+
+.my-listings .status-badge.withdrawn {
+  background: #eee8e0;
+}
+
+.my-listings .success-notice {
+  padding: 12px;
+  border: 1px solid var(--aqua);
+  border-radius: 10px;
+  background: var(--aqua-soft);
+  font-size: 16px;
+}
+
+.my-listings .listing-button,
+.my-listings .text-button {
+  font-size: 16px;
+}
+
+.my-listings .heading-actions .listing-button {
+  font-size: 17px;
+}
+
+.my-listings {
+  color: var(--ink);
+  font: 19px/1.4 var(--font-sans);
+}
+
+.my-listings h2,
+.my-listings h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.my-listings h2 {
+  font-size: clamp(28px, 3vw, 34px);
+}
+
+.my-listings h3 {
+  font-size: 23px;
+}
+
+.my-listings p {
+  margin: 0;
+}
+
+.my-listings button,
+.my-listings input,
+.my-listings select {
+  font: inherit;
+}
+
+/* Main listings modal */
+.listings-modal {
+  max-width: 1200px;
+  max-height: calc(100dvh - 48px);
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid var(--ink);
+  border-radius: 22px;
+  background: var(--paper);
+  box-shadow: var(--shadow-paper);
+  width: 100%;
+  padding: 24px;
+}
+
+/* Heading */
+
+.my-listings .heading-actions {
+  gap: 12px;
+}
+
+/* Search and filters */
+.my-listings .listing-toolbar {
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.my-listings .listing-search {
+  flex: 1 1 280px;
+  max-width: 360px;
+}
+
+.my-listings input,
+.my-listings select {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper-bright);
+  color: var(--ink);
+}
+
+.my-listings .status-filters,
+.my-listings .row-actions,
+.my-listings .pagination-controls {
+  gap: 12px;
+}
+
+/* Buttons */
+
+/* Listings table */
+.my-listings .listing-table-wrapper {
+  max-width: 100%;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1.5px solid var(--ink);
+  border-radius: 18px;
+  background: var(--paper-bright);
+}
+
+.my-listings .listing-table {
+  min-width: 900px;
+  border-collapse: separate;
+  border-spacing: 0 7px;
+}
+
+.my-listings th {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.my-listings th,
+.my-listings td {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+
+.my-listings tbody tr:nth-child(odd) td {
+  background: var(--paper);
+}
+
+.my-listings td:first-child {
+  width: 34%;
+  border-radius: 10px 0 0 10px;
+}
+
+.my-listings td:last-child {
+  border-radius: 0 10px 10px 0;
+}
+
+/* Food details */
+.my-listings .food-identity {
+  gap: 14px;
+}
+
+.my-listings .food-identity img,
+.my-listings .food-placeholder {
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  border-radius: 9px;
+  object-fit: cover;
+}
+
+.my-listings .food-placeholder {
+  place-items: center;
+  background: var(--aqua-soft);
+  font-size: 32px;
+}
+
+.my-listings .food-identity p {
+  color: var(--muted);
+  font-size: 17px;
+}
+
+/* Listing status */
+.my-listings .status-badge {
+  padding: 4px 12px;
+  border-radius: 7px;
+  font-size: 17px;
+}
+
+.my-listings .status-badge.available {
+  background: var(--aqua-soft);
+}
+
+.my-listings .status-badge.reserved {
+  background: var(--yellow);
+}
+
+.my-listings .status-badge.collected {
+  background: #e9eeea;
+}
+
+/* Pagination and notices */
+.my-listings .pagination-footer {
+  margin-top: 18px;
+}
+
+.my-listings .empty-state {
+  padding: 32px;
+}
+.listing-dialog {
+  max-width: 480px;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-paper);
+  width: 100%;
+  padding: 24px;
+}
+
+.listing-dialog > p,
+.listing-dialog > .row-actions {
+  margin-top: 18px;
+}
+
+/* Keyboard focus */
+
+/* Responsive layout */
+@media (max-width: 575px) {
+
+  .listings-modal,
+.listing-dialog {
+    max-height: calc(100dvh - 24px);
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .my-listings .heading-actions {
+    gap: 8px;
+  }
+
+  .my-listings .listing-search {
+    max-width: none;
+  }
+
+  .my-listings .status-filters {
+    gap: 8px;
+  }
+
+  .my-listings .pagination-controls {
+    width: 100%;
+    justify-content: space-between;
+    font-size: 17px;
+  }
+}
+
+.listings-modal {
+  width: min(1200px, calc(100vw - 32px));
+  padding: 24px;
+}
+
+.listing-dialog {
+  width: min(520px, calc(100vw - 32px));
+  padding: 24px;
+}
+
+@media (max-width: 575px) {
+  .listings-modal,
+.listing-dialog {
+    width: calc(100vw - 24px);
+  }
+}
+
+/* RescueHeader: section-specific appearance and dimensions. */
+
+/* Community board */
+.rescue-header .bulletin-board-container {
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  box-shadow: var(--shadow-paper);
+}
+
+.rescue-header .board-title {
+  font-size: clamp(26px, 4vw, 45px);
+}
+
+.rescue-header .board-intro {
+  font-size: clamp(18px, 2vw, 20px);
+}
+
+/* Sticky note pin */
+.rescue-header .push-pin {
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 22px;
+  background: var(--coral);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  box-shadow: 1px 2px 0 rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+
+.rescue-header .push-pin::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  width: 6px;
+  height: 6px;
+  background: white;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+
+/* Urgency badge */
+.rescue-header .urgency-badge {
+  background: #ff6b6b;
+  color: white;
+  border: 1.5px solid var(--ink);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  animation: rescue-pulse 1.5s infinite;
+}
+
+@keyframes rescue-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+/* Sticky note */
+.rescue-header .sticky-note-card {
+  background: var(--yellow-sticky);
+  border: 3px solid var(--ink);
+  border-radius: 20px;
+  box-shadow: 6px 8px 0 var(--ink);
+  animation: rescue-subtle-float 6s ease-in-out infinite;
+  transition:
+    transform 250ms ease,
+    box-shadow 250ms ease;
+  transform-origin: 50% -1px;
+}
+
+.rescue-header .sticky-note-card:hover {
+  animation-play-state: paused;
+  box-shadow: 6px 10px 0 rgba(18, 63, 59, 0.2);
+}
+
+@keyframes rescue-subtle-float {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+.rescue-header .sticky-note-card h2 {
+  font-family: var(--font-display);
+}
+
+/* Board label */
+.rescue-header .eyebrow {
+  color: #11847b;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+/* Shared button layout */
+.rescue-header .primary-button,
+.rescue-header .secondary-button {
+  max-width: 100%;
+  border: 2px solid var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* Primary buttons */
+.rescue-header .primary-button {
+  gap: 9px;
+  padding: 13px 22px;
+  border-radius: 14px 11px 16px 10px;
+  background: var(--aqua);
+  color: white;
+  font-size: 16px;
+  box-shadow: var(--shadow-small);
+  text-decoration: none;
+}
+
+.rescue-header .sticky-note-card .primary-button {
+  font-size: 14px;
+  padding: 8px 12px;
+}
+
+.rescue-header .primary-button:hover:not(:disabled) {
+  box-shadow: 1px 2px 0 var(--ink);
+  transform: translate(2px, 2px);
+  background: #0d968b;
+  color: white;
+}
+
+.rescue-header .primary-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* Secondary buttons */
+
+.rescue-header .secondary-button:hover:not(:disabled) {
+  box-shadow: 1px 2px 0 var(--ink);
+  transform: translate(1px, 1px);
+  background: #fdfdfd;
+}
+
+.rescue-header .compact-btn {
+  padding: 8px 16px;
+  font-size: 15px;
+}
+
+/* Expiring food items */
+.rescue-header .urgent-item-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rescue-header .urgent-food-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+}
+
+.rescue-header .urgent-action {
+  line-height: 1.25;
+}
+
+.rescue-header .more-food-button {
+  background: transparent;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rescue-header .search-context {
+  font-size: 12px !important;
+  line-height: 1.4;
+}
+
+/* Keyboard focus */
+.rescue-header button:focus-visible,
+.rescue-header a:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.rescue-header .expiry-clear-icon {
+  width: 56px;
+  height: 56px;
+  border: 2px solid var(--ink);
+  background: var(--aqua-soft);
+  color: var(--ink);
+  font-size: 30px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .rescue-header .sticky-note-card,
+.rescue-header .urgency-badge {
+    animation: none;
+  }
+
+  .rescue-header .sticky-note-card,
+.rescue-header .primary-button,
+.rescue-header .secondary-button {
+    transition: none;
+  }
+
+  .rescue-header .primary-button:hover,
+.rescue-header .secondary-button:hover {
+    transform: none;
+  }
+}
+
+/* RescueMap: section-specific appearance and dimensions. */
+
+.explore-nearby {
+  color: var(--ink);
+  font: 19px/1.4 var(--font-sans);
+}
+
+.explore-nearby *,
+.request-dialog * {
+  box-sizing: border-box;
+}
+
+.explore-nearby p,
+.request-dialog p,
+.explore-nearby h2,
+.request-dialog h2,
+.explore-nearby h3,
+.request-dialog h3,
+.explore-nearby dl,
+.request-dialog dl,
+.explore-nearby dd,
+.request-dialog dd {
+  margin: 0;
+}
+
+.explore-nearby h2,
+.request-dialog h2,
+.explore-nearby h3,
+.request-dialog h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.explore-nearby h2,
+.request-dialog h2 {
+  font-size: clamp(28px, 3vw, 36px);
+}
+
+.explore-nearby h3,
+.request-dialog h3 {
+  font-size: 25px;
+}
+
+.explore-nearby button,
+.request-dialog button,
+.explore-nearby input,
+.request-dialog input,
+.explore-nearby select,
+.request-dialog select,
+.explore-nearby textarea,
+.request-dialog textarea {
+  font: inherit;
+}
+
+.explore-nearby .explore-heading,
+.request-dialog .explore-heading {
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.explore-nearby .explore-heading h2,
+.request-dialog .explore-heading h2 {
+  margin: 8px 0;
+}
+
+.explore-nearby .location-label,
+.request-dialog .location-label {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 8px 14px;
+  background: var(--paper-bright);
+  font-size: 16px;
+}
+
+.explore-nearby .explore-filters,
+.request-dialog .explore-filters {
+  gap: 10px;
+  padding: 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper-bright);
+}
+
+.explore-nearby .search-field,
+.request-dialog .search-field {
+  flex: 1 1 220px;
+}
+
+.explore-nearby .explore-filters label,
+.request-dialog .explore-filters label {
+  min-width: 0;
+}
+
+.explore-nearby .explore-filters input,
+.request-dialog .explore-filters input,
+.explore-nearby .explore-filters select,
+.request-dialog .explore-filters select,
+.request-dialog input,
+.request-dialog textarea {
+  width: 100%;
+  min-height: 42px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-bright);
+  color: var(--ink);
+}
+
+.explore-nearby .search-field input,
+.request-dialog .search-field input {
+  border: 0;
+}
+
+.explore-nearby .results-heading,
+.request-dialog .results-heading {
+  gap: 10px;
+  margin: 18px 0 12px;
+  font-size: 16px;
+}
+
+.explore-nearby .explore-layout,
+.request-dialog .explore-layout {
+  grid-template-columns: 1.05fr 1fr;
+  gap: 22px;
+}
+
+.explore-nearby .map-panel,
+.request-dialog .map-panel {
+  height: 700px;
+  min-width: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 18px;
+  background: var(--aqua-soft);
+}
+
+.explore-nearby .leaflet-mount,
+.request-dialog .leaflet-mount {
+  flex: 1;
+  min-height: 180px;
+  z-index: 0;
+}
+
+.explore-nearby .map-tools,
+.request-dialog .map-tools {
+  padding: 10px;
+  background: var(--paper);
+}
+
+.explore-nearby .map-tools .secondary-button,
+.request-dialog .map-tools .secondary-button {
+  font-size: 15px;
+  padding: 6px 10px;
+  min-height: 38px;
+}
+
+.explore-nearby .map-help,
+.request-dialog .map-help {
+  font-size: 13px;
+  padding: 8px 12px;
+  background: var(--paper-bright);
+}
+
+.explore-nearby .food-results,
+.request-dialog .food-results {
+  align-content: start;
+  gap: 14px;
+  max-height: 700px;
+  overflow-y: auto;
+  padding: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--aqua) var(--aqua-soft);
+  cursor: pointer;
+}
+
+.explore-nearby .food-card,
+.request-dialog .food-card {
+  grid-template-columns: 28% minmax(0, 1fr);
+  border: 1.5px solid var(--ink);
+  border-radius: 16px;
+  background: var(--paper-bright);
+}
+
+.explore-nearby .food-card.selected,
+.request-dialog .food-card.selected {
+  border-color: var(--aqua);
+  box-shadow:
+    inset 0 0 0 1px var(--aqua),
+    3px 3px 0 var(--aqua-soft);
+}
+
+.explore-nearby .food-photo,
+.request-dialog .food-photo {
+  object-fit: cover;
+}
+
+.explore-nearby .photo-placeholder,
+.request-dialog .photo-placeholder {
+  place-items: center;
+  min-height: 180px;
+  font-size: 64px;
+  background: var(--paper);
+}
+
+.explore-nearby .food-details,
+.request-dialog .food-details {
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.explore-nearby .food-heading,
+.request-dialog .food-heading,
+.explore-nearby .food-footer,
+.request-dialog .food-footer {
+  gap: 12px;
+  align-items: center;
+}
+
+.explore-nearby .food-title-button,
+.request-dialog .food-title-button {
+  background: none;
+  color: var(--ink);
+  font: inherit;
+}
+
+.explore-nearby .food-distance,
+.request-dialog .food-distance {
+  font-size: 17px;
+}
+
+.explore-nearby .food-description,
+.request-dialog .food-description {
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.explore-nearby .food-facts,
+.request-dialog .food-facts {
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.explore-nearby .food-facts dt,
+.request-dialog .food-facts dt,
+.explore-nearby .detail-label,
+.request-dialog .detail-label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.explore-nearby .food-facts dd,
+.request-dialog .food-facts dd {
+  font-size: 20px;
+}
+
+.explore-nearby .food-footer p,
+.request-dialog .food-footer p,
+.explore-nearby .food-footer small,
+.request-dialog .food-footer small {
+  font-size: 15px;
+}
+
+.explore-nearby .card-marker-number,
+.request-dialog .card-marker-number {
+  display: inline-grid;
+  place-items: center;
+  min-width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--aqua-soft);
+  font: 14px var(--font-sans);
+}
+
+.explore-nearby .empty-state,
+.request-dialog .empty-state {
+  padding: 28px;
+}
+
+.explore-nearby .map-notice,
+.request-dialog .map-notice,
+.explore-nearby .field-hint,
+.request-dialog .field-hint {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.request-dialog {
+  width: min(580px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.45 var(--font-sans);
+  padding: 24px;
+}
+
+.request-dialog form {
+  display: grid;
+  gap: 16px;
+}
+
+.request-dialog fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.request-dialog label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.request-dialog .field-hint {
+  margin-top: 8px;
+}
+
+.explore-nearby .dialog-actions,
+.request-dialog .dialog-actions {
+  gap: 12px;
+}
+
+.explore-nearby .rescue-marker-bubble,
+.request-dialog .rescue-marker-bubble {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--ink, #123f3b);
+  border-radius: 50%;
+  background: var(--paper-bright, #fffefa);
+  color: var(--ink, #123f3b);
+  font: bold 14px var(--font-sans, sans-serif);
+  box-shadow: 2px 2px 0 #123f3b44;
+}
+
+.explore-nearby .rescue-marker-bubble.is-own,
+.request-dialog .rescue-marker-bubble.is-own {
+  background: var(--yellow, #ffdd69);
+}
+
+.explore-nearby .rescue-marker-bubble.is-selected,
+.request-dialog .rescue-marker-bubble.is-selected {
+  background: var(--aqua, #149e91);
+  color: white;
+  transform: scale(1.15);
+}
+
+@media (max-width: 1100px) {
+  .explore-nearby .explore-layout,
+.request-dialog .explore-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .explore-nearby .map-panel,
+.request-dialog .map-panel {
+    height: 390px;
+  }
+
+  .explore-nearby .food-results,
+.request-dialog .food-results {
+    max-height: 650px;
+  }
+}
+
+@media (max-width: 575px) {
+  .explore-nearby .food-card,
+.request-dialog .food-card {
+    grid-template-columns: 90px minmax(0, 1fr);
+  }
+
+  .explore-nearby .food-details,
+.request-dialog .food-details {
+    padding: 12px;
+  }
+
+  .explore-nearby .photo-placeholder,
+.request-dialog .photo-placeholder {
+    font-size: 42px;
+  }
+
+  .explore-nearby .food-heading h3,
+.request-dialog .food-heading h3 {
+    font-size: 23px;
+  }
+
+  .explore-nearby .food-footer,
+.request-dialog .food-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .explore-nearby .food-facts,
+.request-dialog .food-facts {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .explore-nearby .explore-filters > label:not(.search-field),
+.request-dialog .explore-filters > label:not(.search-field) {
+    flex: 1 1 145px;
+  }
+
+  .explore-nearby .map-panel,
+.request-dialog .map-panel {
+    height: 370px;
+  }
+
+  .request-dialog {
+    padding: 16px;
+  }
+
+  .explore-nearby .dialog-actions,
+.request-dialog .dialog-actions {
+    gap: 8px;
+  }
+}
+
+/* SharingCorner: section-specific appearance and dimensions. */
+
+/* Base */
+.sharing-corner {
+  color: var(--ink);
+  font: 18px/1.4 var(--font-sans);
+}
+
+.sharing-corner h2,
+.sharing-corner h3,
+.sharing-corner h4,
+.sharing-corner p {
+  margin: 0;
+}
+
+.sharing-corner h2,
+.sharing-corner h3,
+.sharing-corner h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.sharing-corner h2 {
+  font-size: clamp(28px, 3vw, 36px);
+}
+
+.sharing-corner h3 {
+  font-size: 24px;
+}
+
+.sharing-corner h4 {
+  font-size: 22px;
+}
+
+.sharing-corner button,
+.sharing-corner input {
+  font: inherit;
+}
+
+/* Native dialogs */
+.sharing-modal,
+.sharing-confirm {
+  margin: auto;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+}
+
+.sharing-modal {
+  width: min(1360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  border-radius: 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: var(--shadow-paper);
+}
+
+.sharing-confirm {
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  border-radius: 18px;
+}
+
+.sharing-modal:not([open]),
+.sharing-confirm:not([open]) {
+  display: none;
+}
+
+/* Inbox surfaces */
+.sharing-corner .sharing-inbox {
+  min-height: 600px;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background: var(--paper-bright);
+}
+
+.sharing-corner .conversation-sidebar {
+  min-width: 0;
+  background: var(--paper);
+}
+
+.sharing-corner .conversation-content {
+  min-width: 0;
+}
+
+.sharing-corner .item-groups {
+  max-height: 510px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--aqua) var(--aqua-soft);
+}
+
+.sharing-corner .conversation-section {
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-bright);
+}
+
+.sharing-corner .conversation-section-heading {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.sharing-corner .conversation-count {
+  background: var(--aqua-soft);
+  font-family: var(--font-sans);
+  font-size: 15px;
+}
+
+.sharing-corner .item-group {
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper-bright);
+}
+
+.sharing-corner .group-heading,
+.sharing-corner .request-person {
+  min-width: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.sharing-corner .group-heading.selected,
+.sharing-corner .request-person.selected {
+  background: var(--aqua-soft);
+}
+
+.sharing-corner .group-copy,
+.sharing-corner .request-person > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sharing-corner .group-copy strong,
+.sharing-corner .request-person strong {
+  font-family: var(--font-display);
+  font-size: 21px;
+  line-height: 1.2;
+}
+
+.sharing-corner .group-copy small,
+.sharing-corner .request-person small {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.sharing-corner .group-chevron {
+  font-size: 24px;
+}
+
+.sharing-corner .conversation-avatar,
+.sharing-corner .person-avatar {
+  background: var(--coral);
+  font-family: var(--font-display);
+}
+
+.sharing-corner .conversation-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 23px;
+}
+
+.sharing-corner .person-avatar {
+  width: 52px;
+  height: 52px;
+  border: 1.5px solid var(--ink);
+  font-size: 24px;
+}
+
+.sharing-corner .conversation-food-icon {
+  width: 28px;
+  font-size: 25px;
+}
+
+/* Form controls and buttons */
+.sharing-corner .form-control {
+  min-width: 0;
+  min-height: 44px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background-color: var(--paper-bright);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+
+/* Listing preview */
+.sharing-corner .listing-summary {
+  min-width: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.sharing-corner .listing-summary > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sharing-corner .listing-photo,
+.sharing-corner .listing-placeholder {
+  width: clamp(64px, 7vw, 86px);
+  height: clamp(70px, 7vw, 82px);
+  object-fit: cover;
+}
+
+.sharing-corner .listing-placeholder {
+  background: var(--aqua-soft);
+  font-size: 40px;
+}
+
+/* Messages */
+.sharing-corner .message-list {
+  max-height: 270px;
+}
+
+.sharing-corner .message-bubble {
+  max-width: 90%;
+  border: 1.5px solid var(--ink);
+  border-radius: 18px;
+  background: var(--aqua-soft);
+  overflow-wrap: anywhere;
+}
+
+.sharing-corner .message-bubble.own {
+  background: var(--paper);
+}
+
+.sharing-corner .message-bubble small {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.sharing-corner .reply-form {
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.sharing-corner .reply-form input {
+  border: 0;
+  background: transparent;
+}
+
+/* Pickup details */
+.sharing-corner .pickup-proposal {
+  border: 1.5px solid var(--ink);
+  border-radius: 14px;
+  background: var(--yellow-sticky);
+}
+
+.sharing-corner .pickup-label,
+.sharing-corner .pickup-status {
+  font-size: 16px;
+}
+
+.sharing-corner .pickup-status {
+  background: var(--aqua-soft);
+}
+
+.sharing-corner .pickup-status.changed {
+  background: var(--coral);
+}
+
+.sharing-corner .time-change-note {
+  border: 1px dashed var(--ink);
+  border-radius: 10px;
+  background: var(--paper-bright);
+}
+
+.sharing-corner .pickup-time-form p {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* FoodRescueView: section-specific appearance and dimensions. */
+
+/* Dashboard appearance */
+.rescue-page .sharing-dashboard {
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 5px 6px 0 var(--ink);
+  font-family: var(--font-sans);
+}
+
+.rescue-page .sharing-dashboard h2 {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 2.2vw, 29px);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* Icons */
+.rescue-page .sharing-icon {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rescue-page .sharing-stat__chevron {
+  width: 24px;
+  height: 24px;
+}
+
+/* Add listing button */
+.rescue-page .sharing-dashboard__add {
+  border: 2px solid var(--ink);
+  border-radius: 14px 11px 16px 10px;
+  background: var(--aqua);
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 500;
+  box-shadow: var(--shadow-small);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.rescue-page .sharing-dashboard__add:hover:not(:disabled) {
+  background: #0d968b;
+  box-shadow: 1px 2px 0 var(--ink);
+  transform: translate(2px, 2px);
+}
+
+.rescue-page .sharing-dashboard__add:active {
+  transform: translateY(2px);
+}
+
+/* Statistic cards */
+.rescue-page .sharing-stat {
+  min-width: 0;
+  min-height: 182px;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.rescue-page .sharing-stat--received {
+  background: #fff0c2;
+}
+
+.rescue-page .sharing-stat--sent {
+  background: var(--aqua-soft);
+}
+
+.rescue-page .sharing-stat--listings {
+  background: #f0f4e5;
+}
+
+.rescue-page .sharing-stat__heading {
+  min-height: 36px;
+}
+
+.rescue-page .sharing-stat__label {
+  font-family: var(--font-display);
+  font-size: clamp(21px, 1.8vw, 23px);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.rescue-page .sharing-stat__badge {
+  background: var(--coral);
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.rescue-page .sharing-stat__total {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.rescue-page .sharing-stat__detail {
+  font-size: clamp(22px, 2vw, 25px);
+  line-height: 1.3;
+}
+
+.rescue-page .pickup-check {
+  border: 1.5px solid var(--ink);
+  border-radius: 16px;
+  background: var(--yellow-sticky);
+}
+
+.rescue-page .pickup-check-title,
+.rescue-page .pickup-check-question {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.rescue-page .pickup-check-title {
+  font-size: 25px;
+}
+
+.rescue-page .pickup-check-question {
+  font-size: 22px;
+}
+
+.rescue-page .pickup-check-item {
+  border: 1px solid var(--line, var(--ink));
+  border-radius: 12px;
+  background: var(--paper-bright);
+}
+
+.rescue-page .pickup-answer {
+  min-height: 44px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.rescue-page .pickup-answer--yes {
+  background: var(--aqua);
+  color: white;
+}
+
+.rescue-page .pickup-answer:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Focus and motion */
+.rescue-page .sharing-dashboard button:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+}
+
+@media (hover: hover) {
+  .rescue-page .sharing-stat:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 0 rgba(18, 63, 59, 0.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rescue-page .sharing-stat,
+.rescue-page .sharing-dashboard__add {
+    transition: none;
+  }
+
+  .rescue-page .sharing-stat:hover,
+.rescue-page .sharing-dashboard__add:hover,
+.rescue-page .sharing-dashboard__add:active {
+    transform: none;
+  }
+}
+
+/* Consistent keyboard focus for every rescue section, including teleported dialogs. */
+
+.rescue-page :focus-visible,
+.rescue-header :focus-visible,
+.food-editor :focus-visible,
+.sharing-corner :focus-visible,
+.my-listings :focus-visible,
+.explore-nearby :focus-visible,
+.request-dialog :focus-visible {
+  outline: 3px solid var(--aqua);
+  outline-offset: 3px;
+}
+
