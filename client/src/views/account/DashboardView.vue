@@ -11,10 +11,21 @@ const eggTips = [
   'Need dinner ideas? See what you can cook with what you have!',
 ]
 import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
-import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
 import { summarizeFoodEvents } from '../../utils/analyticsUtils.js'
 
-const impactTotals = summarizeFoodEvents(sampleAnalyticsEvents)
+const impactEvents = ref([])
+const impactError = ref('')
+const impactTotals = computed(() => summarizeFoodEvents(impactEvents.value))
+async function loadImpact() {
+  impactError.value = ''
+  try {
+    const response = await fetch('/api/analytics/history', { credentials: 'include' })
+    if (!response.ok) throw new Error('Could not load your impact.')
+    const data = await response.json()
+    impactEvents.value = data.events || []
+  } catch (error) { impactError.value = error.message }
+}
+onMounted(loadImpact)
 
 import { navbarBusy, pageIsLoading, usePageLoading } from '../../utils/pageLoading.js'
 import { computed, ref, watch, onMounted } from 'vue'
@@ -34,6 +45,7 @@ const { user, isAuthenticated } = storeToRefs(authStore)
 // The user's Smart Fridge items, loaded from the backend
 const inventoryStore = useInventoryStore()
 const { items, loading, error } = storeToRefs(inventoryStore)
+watch(items, loadImpact)
 usePageLoading(loading, 'Loading your dashboard')
 
 // Every item tagged with its area title and days left, most urgent first
@@ -311,8 +323,9 @@ const vReveal = {
           </section>
         </div>
       </div>
+    <p v-if="impactError" role="alert">{{ impactError }}</p>
     <RouterLink class="impact-link d-block mt-4 mb-3" :to="{ name: 'analytics', hash: '#daily-food-impact' }">
-      <ImpactOverview :totals="impactTotals" demo />
+      <ImpactOverview :totals="impactTotals" />
     </RouterLink>
     <EggCompanion always-happy :messages="eggTips" />
   </section>

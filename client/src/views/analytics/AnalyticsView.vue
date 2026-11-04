@@ -2,7 +2,7 @@
 import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { sampleAnalyticsEvents } from '../../data/analyticsDemo.js'
+import { usePageLoading } from '../../utils/pageLoading.js'
 import VegetableCompanions from '../../components/analytics/VegetableCompanions.vue'
 import {
   foodKey,
@@ -22,11 +22,40 @@ const series = [
   { key: 'saved', label: 'Consumed, shared or rescued', color: '#3e9a8e' },
   { key: 'discarded', label: 'Discarded', color: '#cf563e' },
 ]
-const days = [
-  ...new Set(sampleAnalyticsEvents.map((event) => event.occurredAt.slice(0, 10))),
-].sort()
-const range = ref([0, days.length - 1])
-const events = ref(sampleAnalyticsEvents.map((event) => ({ ...event })))
+const events = ref([])
+const loading = ref(false)
+const saving = ref(false)
+const loadError = ref('')
+usePageLoading(loading, 'Loading your food activity')
+const days = ref([])
+const range = ref([0, 1])
+
+function updateDays() {
+  const today = new Date().toISOString().slice(0, 10)
+  const dates = events.value.map(event => event.occurredAt.slice(0, 10)).sort()
+  const end = dates.at(-1) > today ? dates.at(-1) : today
+  const fallback = new Date(end + 'T00:00:00Z').getTime() - 29 * 86400000
+  const start = Math.min(fallback, dates[0] ? Date.parse(dates[0] + 'T00:00:00Z') : fallback)
+  const count = Math.round((Date.parse(end + 'T00:00:00Z') - start) / 86400000) + 1
+  days.value = Array.from({ length: count }, (_, index) => new Date(start + index * 86400000).toISOString().slice(0, 10))
+  range.value = [Math.max(0, count - 30), count - 1]
+}
+updateDays()
+
+async function loadActivity() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const response = await fetch('/api/analytics/history', { credentials: 'include' })
+    if (!response.ok) throw new Error('Could not load your food activity.')
+    const data = await response.json()
+    events.value = data.events || []
+    updateDays()
+    updateViewport(false)
+  } catch (error) { loadError.value = error.message }
+  finally { loading.value = false }
+}
+
 const editor = ref(null)
 const selectedDate = ref(null)
 const drafts = ref([])
@@ -55,8 +84,8 @@ const dateFormat = new Intl.DateTimeFormat('en-SG', {
   timeZone: 'UTC',
 })
 const formatDate = (date) => dateFormat.format(new Date(`${date}T12:00:00Z`))
-const isZoomed = computed(() => range.value[0] !== 0 || range.value[1] !== days.length - 1)
-const visibleDays = computed(() => days.slice(range.value[0], range.value[1] + 1))
+const isZoomed = computed(() => range.value[0] !== 0 || range.value[1] !== days.value.length - 1)
+const visibleDays = computed(() => days.value.slice(range.value[0], range.value[1] + 1))
 const visibleEvents = computed(() =>
   events.value.filter(
     (event) =>
@@ -66,7 +95,7 @@ const visibleEvents = computed(() =>
 )
 const totals = computed(() => summarizeFoodEvents(visibleEvents.value))
 const comparison = computed(() =>
-  previousFoodPeriod(visibleDays.value[0], visibleDays.value.at(-1), days[0]),
+  previousFoodPeriod(visibleDays.value[0], visibleDays.value.at(-1), days.value[0]),
 )
 const previousTotals = computed(() =>
   summarizeFoodEvents(
@@ -119,12 +148,12 @@ const periodPresets = [
 function choosePeriod(count) {
   selectedFood.value = null
   cancelDrag()
-  setRange(count ? [Math.max(0, days.length - count), days.length - 1] : [0, days.length - 1], true)
+  setRange(count ? [Math.max(0, days.value.length - count), days.value.length - 1] : [0, days.value.length - 1], true)
 }
 function isPreset(count) {
   return (
-    range.value[1] === days.length - 1 &&
-    range.value[0] === (count ? Math.max(0, days.length - count) : 0)
+    range.value[1] === days.value.length - 1 &&
+    range.value[0] === (count ? Math.max(0, days.value.length - count) : 0)
   )
 }
 const animatedTotals = ref({ ...totals.value })
@@ -161,6 +190,7 @@ function updateMotion() {
   updateViewport(false)
 }
 onMounted(() => {
+  loadActivity()
   mounted = true
   resizeChart(chart.value?.clientWidth ?? 0)
   if (chart.value && typeof ResizeObserver !== 'undefined') {
@@ -201,7 +231,7 @@ const renderedRange = ref([...range.value])
 const renderedYMax = ref(yMax.value)
 let zoomFrame
 const fullDaily = computed(() =>
-  days.map((date) => {
+  days.value.map((date) => {
     const records = events.value.filter((event) => event.occurredAt.startsWith(date))
     return {
       date,
@@ -285,7 +315,7 @@ function indexAt(position) {
   return Math.max(
     0,
     Math.min(
-      days.length - 1,
+      days.value.length - 1,
       Math.round(
         renderedRange.value[0] +
           ((position - plot.left) / (plot.right - plot.left)) *
@@ -322,7 +352,7 @@ function movePointer(event) {
     const shift = Math.round(
       ((drag.value.start - chartPoint(event).x) / (plot.right - plot.left)) * span,
     )
-    const start = Math.max(0, Math.min(days.length - 1 - span, first + shift))
+    const start = Math.max(0, Math.min(days.value.length - 1 - span, first + shift))
     setRange([start, start + span])
   } else if (!drag.value) hover.value = indexAt(pointerX(event))
 }
@@ -342,7 +372,7 @@ function cancelDrag() {
   }
 }
 function resetZoom() {
-  setRange([0, days.length - 1], true)
+  setRange([0, days.value.length - 1], true)
   cancelDrag()
 }
 function changeRange(boundary, event) {
@@ -351,7 +381,7 @@ function changeRange(boundary, event) {
   next[boundary] =
     boundary === 0
       ? Math.max(0, Math.min(index, next[1] - 1))
-      : Math.min(days.length - 1, Math.max(index, next[0] + 1))
+      : Math.min(days.value.length - 1, Math.max(index, next[0] + 1))
   event.target.value = next[boundary]
   setRange(next)
   cancelDrag()
@@ -367,14 +397,14 @@ function wheelZoom(event) {
   const change = Math.max(1, Math.round(span * 0.2))
   const nextSpan = Math.max(
     1,
-    Math.min(days.length - 1, span + (event.deltaY < 0 ? -change : change)),
+    Math.min(days.value.length - 1, span + (event.deltaY < 0 ? -change : change)),
   )
   if (nextSpan === span) return
   // Keep the date under the pointer at the same position within the new window.
   const anchor = range.value[0] + fraction * span
   const start = Math.max(
     0,
-    Math.min(days.length - 1 - nextSpan, Math.round(anchor - fraction * nextSpan)),
+    Math.min(days.value.length - 1 - nextSpan, Math.round(anchor - fraction * nextSpan)),
   )
   setRange([start, start + nextSpan], true)
   hover.value = indexAt(point.x)
@@ -407,11 +437,12 @@ function clickDate(event) {
   openDate(fullDaily.value[indexAt(point.x)].date)
 }
 function closeEditor() {
+  if (saving.value) return
   editor.value.close()
   selectedDate.value = null
   drafts.value = []
 }
-function saveDay() {
+async function saveDay() {
   if (
     drafts.value.some(
       (event) =>
@@ -428,20 +459,36 @@ function saveDay() {
     editError.value = 'Enter a food name, unit and location, and valid non-negative numbers.'
     return
   }
-  const updates = new Map(
-    drafts.value.map((event) => [
-      event._id,
-      {
-        ...event,
-        name: event.name.trim(),
-        unit: event.unit.trim(),
-        location: event.location.trim(),
-      },
-    ]),
-  )
-  events.value = events.value.map((event) => updates.get(event._id) || event)
-  closeEditor()
+  if (saving.value) return
+  saving.value = true
+  try {
+    for (const draft of drafts.value) {
+      const existing = Boolean(draft._id)
+      const response = await fetch(existing ? '/api/analytics/events/' + draft._id : '/api/analytics/events', {
+        method: existing ? 'PUT' : 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...draft, occurredAt: selectedDate.value + 'T00:00:00.000Z' }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Could not save activity.')
+      const index = events.value.findIndex(event => event._id === data.event._id)
+      if (index >= 0) events.value[index] = data.event
+      else events.value.push(data.event)
+      draft._id = data.event._id
+    }
+    updateDays()
+    updateViewport(false)
+    saving.value = false
+    closeEditor()
+  } catch (error) { editError.value = error.message }
+  finally { saving.value = false }
 }
+
+function addDraft() {
+  drafts.value.push({ name: '', action: 'consumed', quantity: 1, unit: 'pieces', weightKg: 0,
+    valueSgd: 0, location: 'My kitchen', category: 'Other', source: 'Manual entry' })
+}
+
 </script>
 
 <template>
@@ -464,15 +511,13 @@ function saveDay() {
             <span aria-hidden="true">{{ animatedTotals.saved.toFixed(2) }} kg kept.</span>
           </p>
           <p class="stamp-sub">A little less in the bin.</p>
-          <span class="stamp-note">In the selected dates · demo data</span>
+          <span class="stamp-note">In the selected dates</span>
         </div>
       </div>
     </header>
 
-    <p class="demo-note">
-      <span class="pill pill-aqua">Demo data</span> {{ events.length }} fictional food activity
-      records. No account data is used.
-    </p>
+    <div v-if="loadError" class="alert alert-danger" role="alert">{{ loadError }} <button type="button" @click="loadActivity">Retry</button></div>
+    <p v-if="!loading && !events.length" class="mb-4">No food activity yet. Consume or discard food in your fridge to start tracking your impact.</p>
     <ImpactOverview
       class="mb-5"
       :totals="totals"
@@ -512,7 +557,7 @@ function saveDay() {
         </div>
         <div class="range-panel mb-3">
           <p class="range-summary mb-1" aria-live="polite">
-            {{ formatDate(visibleDays[0]) }} – {{ formatDate(visibleDays.at(-1)) }} 2026 ·
+            {{ formatDate(visibleDays[0]) }} – {{ formatDate(visibleDays.at(-1)) }} ·
             {{ visibleEvents.length }} events
           </p>
           <div
@@ -562,10 +607,10 @@ function saveDay() {
           >
           <template v-else
             >Not enough earlier history to compare this {{ comparison.length }}-day period. Try Last 7
-            days or Last 14 days. Demo history: {{ formatDate(days[0]) }}–{{
+            days or Last 14 days. Recorded history: {{ formatDate(days[0]) }}–{{
               formatDate(days.at(-1))
             }}
-            2026.</template
+            .</template
           >
         </div>
         <div class="d-flex flex-wrap gap-3 small mb-2">
@@ -685,7 +730,7 @@ function saveDay() {
           </g>
         </svg>
         <p class="small text-muted mb-0">
-          Cards and activity follow the selected dates. Food weight is estimated for this demo.
+          Cards and activity follow the selected dates. Weights and values reflect your recorded activity.
         </p>
       </div>
     </section>
@@ -846,20 +891,20 @@ function saveDay() {
       <form @submit.prevent="saveDay">
         <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
           <h2 id="editor-title" class="h4 mb-0">
-            Activity for {{ formatDate(selectedDate) }} 2026
+            Activity for {{ formatDate(selectedDate) }} {{ selectedDate?.slice(0, 4) }}
           </h2>
           <button
             type="button"
             class="btn-close"
             aria-label="Close editor"
-            @click="closeEditor"
+            @click="!saving && closeEditor()"
           ></button>
         </div>
         <p id="editor-help" class="small text-muted">
-          Edit this day's demo activity. Changes update the chart and totals, and reset when you
-          leave or refresh this page.
+          Record what happened on this date. Saved activity updates your chart and totals.
         </p>
-        <fieldset v-for="(draft, index) in drafts" :key="draft._id" class="editor-record p-3 mb-3">
+        <button type="button" class="btn-paper mb-3" :disabled="saving" @click="addDraft">Add record</button>
+        <fieldset :disabled="saving" v-for="(draft, index) in drafts" :key="draft._id" class="editor-record p-3 mb-3">
           <legend class="float-none w-auto fs-6 px-2">Food record {{ index + 1 }}</legend>
           <div class="row g-3">
             <label class="col-sm-8"
@@ -930,10 +975,10 @@ function saveDay() {
         </fieldset>
         <p v-if="editError" class="text-danger" role="alert">{{ editError }}</p>
         <div class="d-flex justify-content-end gap-2">
-          <button type="button" class="btn-paper btn-paper-secondary" @click="closeEditor">
+          <button type="button" class="btn-paper btn-paper-secondary" @click="!saving && closeEditor()">
             Cancel
           </button>
-          <button type="submit" class="btn-paper">Save changes</button>
+          <button type="submit" class="btn-paper" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>
         </div>
       </form>
     </dialog>

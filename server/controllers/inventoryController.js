@@ -1,3 +1,4 @@
+import FoodEvent from '../models/foodEventModel.js'
 import mongoose from 'mongoose'
 import InventoryItem from '../models/inventoryItemModel.js'
 import FoodListing from '../models/foodListingModel.js'
@@ -14,6 +15,39 @@ import RescuePhoto from '../models/rescuePhotoModel.js'
 // That owner filter is essential: without it, one user might be able to
 // view, edit or delete another user's food by guessing an item ID.
 // ============================================================
+
+function activitySnapshot(item, action, quantity, fraction = 1) {
+  return {
+    user: item.user, inventoryItem: item._id, name: item.name, action,
+    quantity, unit: item.unit || 'pieces', category: item.category || 'Other',
+    weightKg: (Number(item.weightKg) || 0) * fraction,
+    valueSgd: (Number(item.purchasePrice) || 0) * fraction,
+    location: item.storage === 'pantry' ? item.pantryName || 'Pantry' : item.fridgeName || 'Main fridge',
+    source: 'Inventory activity',
+  }
+}
+
+async function recordPartialActivity(req, res, next) {
+  try {
+    const amount = req.body.amount
+    if (!['consumed', 'discarded'].includes(req.body.activity) || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Enter a valid activity and quantity.' })
+    }
+    const updated = await mongoose.connection.transaction(async session => {
+      const item = await InventoryItem.findOne({ _id: req.params.id, user: req.userId }).session(session)
+      if (!item || !Number.isFinite(item.quantity) || amount >= item.quantity) return null
+      const fraction = amount / item.quantity
+      await FoodEvent.create([activitySnapshot(item, req.body.activity, amount, fraction)], { session })
+      item.quantity -= amount
+      if (item.weightKg != null) item.weightKg *= 1 - fraction
+      if (item.purchasePrice != null) item.purchasePrice *= 1 - fraction
+      await item.save({ session })
+      return item
+    })
+    if (!updated) return res.status(409).json({ error: 'The food quantity has changed. Reload and try again.' })
+    res.json({ item: updated })
+  } catch (error) { next(error) }
+}
 
 // Fields the frontend is allowed to create or update.
 // We deliberately do not accept `user`, `_id`, `createdAt` or `updatedAt`
@@ -229,6 +263,8 @@ async function updateItem(req, res, next) {
       return res.status(400).json({ error: 'Invalid inventory item ID.' })
     }
 
+    if (req.body.activity) return recordPartialActivity(req, res, next)
+
     const fields = pickEditableFields(req.body)
     if (Object.keys(fields).length === 0) {
       return res.status(400).json({ error: 'No editable fields were provided.' })
@@ -313,6 +349,9 @@ async function deleteItem(req, res, next) {
       })
     }
 
+    if (req.body?.activity && !['consumed', 'discarded'].includes(req.body.activity)) {
+      return res.status(400).json({ error: 'Invalid food activity.' })
+    }
     const deleted = await mongoose.connection.transaction(
       async (session) => {
         const item = await InventoryItem.findOne({
@@ -382,6 +421,9 @@ async function deleteItem(req, res, next) {
           )
         }
 
+        if (req.body?.activity) {
+          await FoodEvent.create([activitySnapshot(item, req.body.activity, item.quantity || 1)], { session })
+        }
         await item.deleteOne({ session })
 
         return true

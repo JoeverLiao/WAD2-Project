@@ -83,7 +83,7 @@ const currency = new Intl.NumberFormat('en-SG', { style: 'currency', currency: '
             <strong class="metric-value" :aria-label="currency.format(totals.value)"
               ><span aria-hidden="true">{{ currency.format(animatedTotals.value) }}</span></strong
             >
-            <p class="metric-note">Demo value of food kept from waste</p>
+            <p class="metric-note">Recorded value of food kept from waste</p>
             <p
               v-if="periodChange"
               :key="periodChange('value').text"

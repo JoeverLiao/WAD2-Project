@@ -26,7 +26,7 @@ import { usePageLoading } from '../../utils/pageLoading.js'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, inject, watch } from 'vue'
 
 // Reusable card for displaying one food item.
-import { routerKey, routeLocationKey } from 'vue-router'
+import { RouterLink, routerKey, routeLocationKey } from 'vue-router'
 
 import EggLoader from '../../components/EggLoader.vue'
 import FoodItemCard from '../../components/fridge/FoodItemCard.vue'
@@ -682,17 +682,6 @@ function closeExpiryPanel() {
 }
 
 
-function openAddForm(storage = 'fridge', storageZone = null) {
-    // Null tells FoodItemForm to start a new item rather than edit one.
-    editingItem.value = null
-    defaultStorage.value = storage
-
-    // Use the selected area when it supplies a zone. If not, choose a
-    // sensible default based on the main storage location.
-    defaultStorageZone.value = storageZone || defaultZoneFor(storage)
-    formVisible.value = true
-}
-
 function openEditForm(item) {
     // Pass the selected item to the form so it can pre-fill the fields.
     editingItem.value = item
@@ -797,7 +786,9 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
         try {
             const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
                 method: 'DELETE',
-                credentials: 'include'
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activity: action === 'consume' ? 'consumed' : 'discarded' })
             })
             if (!response.ok) throw new Error(`Could not ${actionLabel} food (HTTP ${response.status}).`)
 
@@ -863,7 +854,9 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
                 `/api/inventory/${encodeURIComponent(item.id)}`,
                 {
                     method: 'DELETE',
-                    credentials: 'include'
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activity: action === 'consume' ? 'consumed' : 'discarded' })
                 }
             )
         } else {
@@ -877,7 +870,7 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        quantity: remainingQuantity
+                        activity: action === 'consume' ? 'consumed' : 'discarded', amount
                     })
                 }
             )
@@ -899,8 +892,9 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
             await nextTick()
             if (selectedCompartment.value) dialogRef.value?.focus()
         } else {
+            const data = await response.json()
             items.value = items.value.map(existingItem => existingItem.id === item.id
-                ? { ...existingItem, quantity: remainingQuantity } : existingItem)
+                ? normaliseItem(data.item || data) : existingItem)
         }
 
         // Start the animation only after the backend update succeeds.
@@ -1240,7 +1234,7 @@ async function changeSelectedFoods(group, action, onAnimationSuccess) {
     errorMessage.value = ''
     actionPending.value = true
     try {
-        const succeeded = await saveFoodGroup(group, 'DELETE')
+        const succeeded = await saveFoodGroup(group, 'DELETE', { activity: action === 'consume' ? 'consumed' : 'discarded' })
         if (succeeded.size && typeof onAnimationSuccess === 'function') onAnimationSuccess({ proportion: 1 })
     } finally { actionPending.value = false }
 }
@@ -1482,7 +1476,7 @@ async function discardExpiredFoods() {
         if (!confirmed) return
         errorMessage.value = ''
         const expired = [...expiryItems.value]
-        const discarded = await saveFoodGroup(expired, 'DELETE')
+        const discarded = await saveFoodGroup(expired, 'DELETE', { activity: 'discarded' })
         if (discarded.size < expired.length) {
             errorMessage.value = 'Some expired foods could not be discarded. Please try again.'
         }
@@ -1663,9 +1657,9 @@ onBeforeUnmount(cancelActionReaction)
                         </section>
                     </div>
                 </div>
-                <button type="button" class="primary-button" @click="openAddForm('fridge')">
+                <RouterLink :to="{ name: 'scanning' }" class="primary-button">
                     ＋ Add Food
-                </button>
+                </RouterLink>
             </div>
         </header>
 
@@ -1844,7 +1838,7 @@ onBeforeUnmount(cancelActionReaction)
                     <button type="button" class="modal-close" aria-label="Close compartment" @click="closeCompartment">✕</button>
                 </header>
                 <div v-if="!embedded" class="modal-toolbar">
-                    <button type="button" class="primary-button small-button" @click="openAddForm(selectedCompartment.storage, selectedCompartment.zone)">＋ Add to this compartment</button>
+                    <RouterLink :to="{ name: 'scanning' }" class="primary-button small-button">＋ Add food via scanner</RouterLink>
                 </div>
                 <div v-if="compartmentItems.length" class="modal-food-list">
                     <!-- Food cards expose editing and removal; Consume/Discard use the external drag dock. -->
@@ -2928,4 +2922,5 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     .storage-settings-enter-active,.storage-settings-leave-active { transition:opacity 200ms ease, translate 200ms ease; }
     .storage-settings-enter-from,.storage-settings-leave-to { opacity:0; translate:-14px 0; }
 }
+.primary-button { text-decoration:none; }
 </style>

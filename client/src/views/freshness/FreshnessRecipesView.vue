@@ -1,5 +1,6 @@
 
 <script setup>
+import FoodIcon from '../../components/FoodIcon.vue'
 import { canonicalName, daysUntil, normalizeRecipe, analyseRecipes } from '../../utils/recipeSuggestions.js'
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -29,6 +30,14 @@ const pageSize = 6
 const eatSoonOpen = ref(false)
 const eatSoonSearch = ref('')
 const eatSoonSort = ref('expiry')
+function scrollIngredients(event) {
+  if (event.ctrlKey) return
+  const grid = event.currentTarget
+  if (grid.scrollWidth <= grid.clientWidth) return
+  event.preventDefault()
+  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
+  grid.scrollLeft += delta * (event.deltaMode === 1 ? 24 : event.deltaMode === 2 ? grid.clientWidth : 1)
+}
 const expandedItem = ref(null)
 
 const modalOpen = ref(false)
@@ -786,6 +795,9 @@ onUnmounted(() => {
             <div
               v-if="visibleUrgentItems.length"
               class="urgent-grid"
+              tabindex="0"
+              aria-label="Expiring ingredients. Scroll sideways for more."
+              @wheel="scrollIngredients"
             >
               <div
                 v-for="item in visibleUrgentItems"
@@ -801,6 +813,7 @@ onUnmounted(() => {
                         : item.localId
                   "
                 >
+                  <FoodIcon :item="item" class="urgent-food-icon" />
                   <div>
                     <strong>{{ item.name }}</strong>
                     <small>
@@ -2397,6 +2410,19 @@ onUnmounted(() => {
 .recipe-cooked-action { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 14px; }
 .recipe-cooked-action button { border: 1px solid var(--ink); border-radius: 8px; padding: 6px 10px; background: var(--mint); color: var(--ink); font-weight: bold; }
 .recipe-cooked-action button:disabled { opacity: .5; }
+.urgent-grid {
+  grid-template-columns:none;
+  grid-template-rows:repeat(2, auto);
+  grid-auto-flow:column;
+  grid-auto-columns:max(160px, calc((100% - 36px) / 4));
+  align-items:stretch;
+  overflow-x:auto;
+  padding:4px 3px 12px;
+  overscroll-behavior-x:contain;
+}
+.urgent-item-main { flex-direction:column; text-align:center; height:auto; min-height:170px; }
+.urgent-item-main .urgent-food-icon { width:54px; height:54px; flex-shrink:0; }
+.urgent-grid:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
 </style>
 
 <style>
