@@ -3,6 +3,9 @@ import { computed } from 'vue'
 
 // This section displays parent-owned state and emits user actions.
 const props = defineProps({
+  summaryClass: { type: String, default: '' },
+  idPrefix: { type: String, default: 'pickup' },
+  hint: { type: String, default: 'Singapore time. Neighbours can request this window or suggest another.' },
   form: { type: Object, required: true },
   locked: { type: Boolean, required: true },
   pickupDay: { type: String, required: true },
@@ -81,7 +84,7 @@ function selectPickupPreset(option) {
     <div class="d-flex flex-wrap gap-2">
       <button
         type="button"
-        class="btn editor-button rescue-button btn-outline-dark"
+        class="btn editor-button rescue-button"
         :class="
         pickupDaySelected && pickupDay === pickupToday
         ? 'btn-dark'
@@ -99,7 +102,7 @@ function selectPickupPreset(option) {
       <button
         v-if="pickupDayAllowed(pickupTomorrow)"
         type="button"
-        class="btn editor-button rescue-button btn-outline-dark"
+        class="btn editor-button rescue-button"
         :class="
         pickupDaySelected && pickupDay === pickupTomorrow
         ? 'btn-dark'
@@ -124,17 +127,17 @@ function selectPickupPreset(option) {
     </div>
 
     <div v-if="showPickupCalendar" class="mt-2">
-      <label for="pickup-day" class="visually-hidden">
+      <label :for="`${idPrefix}-day`" class="visually-hidden">
         Pickup date
       </label>
 
       <input
-        id="pickup-day"
+        :id="`${idPrefix}-day`"
         :value="pickupDaySelected ? pickupDay : ''"
         class="form-control"
         type="date"
         :min="pickupToday"
-        :max="form.expiresAt || undefined"
+        :max="form.expiresAt ? form.expiresAt.slice(0, 10) : undefined"
         @change="selectPickupDay($event.target.value)"
       />
     </div>
@@ -151,7 +154,7 @@ function selectPickupPreset(option) {
         >
           <button
             type="button"
-            class="btn editor-button w-100 h-100 py-2 rescue-button btn-outline-dark"
+            class="btn editor-button w-100 h-100 py-2 rescue-button"
             :class="
             pickupPreset === option.id
             ? 'btn-dark'
@@ -191,12 +194,12 @@ function selectPickupPreset(option) {
         class="row g-2 mt-1"
       >
         <div class="col-6">
-          <label for="pickup-start-time" class="form-label">
+          <label :for="`${idPrefix}-start-time`" class="form-label">
             From *
           </label>
 
           <input
-            id="pickup-start-time"
+            :id="`${idPrefix}-start-time`"
             v-model="pickupStartTime"
             class="form-control"
             type="time"
@@ -205,12 +208,12 @@ function selectPickupPreset(option) {
         </div>
 
         <div class="col-6">
-          <label for="pickup-end-time" class="form-label">
+          <label :for="`${idPrefix}-end-time`" class="form-label">
             Until *
           </label>
 
           <input
-            id="pickup-end-time"
+            :id="`${idPrefix}-end-time`"
             v-model="pickupEndTime"
             class="form-control"
             type="time"
@@ -225,6 +228,7 @@ function selectPickupPreset(option) {
     <div
       v-if="pickupDaySelected && pickupSummary"
       class="linked-note rounded-3 p-3 mt-3"
+      :class="summaryClass"
       role="status"
     >
       <strong class="d-block">Your pickup window</strong>
@@ -235,7 +239,7 @@ function selectPickupPreset(option) {
     </div>
 
     <p class="small text-muted mb-0 mt-2">
-      Singapore time. Neighbours can request this window or suggest another.
+      {{ hint }}
     </p>
   </fieldset>
 </template>

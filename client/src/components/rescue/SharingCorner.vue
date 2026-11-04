@@ -1,5 +1,6 @@
 <script setup>
 import '@/assets/rescue.css'
+import { useConversationActivity } from '@/composables/rescue/useConversationActivity.js'
 import ConversationListingSummary from './ConversationListingSummary.vue'
 import ConversationPickup from './ConversationPickup.vue'
 import ConversationSidebar from './ConversationSidebar.vue'
@@ -20,6 +21,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'changed'])
 const inventory = useInventoryStore()
+const { activityFor, recordMessages, markRead, loadActivity } = useConversationActivity()
 
 function close() {
   if (busy.value) return
@@ -119,21 +121,36 @@ const conversationSections = computed(() =>
     const past = section.id === 'past'
 
     const groups = visibleGroups.value
-      .map((group) => ({
-        ...group,
-        requests: group.requests.filter(
-          (request) => request.past === past,
-        ),
-      }))
+      .map((group) => {
+        const requests = group.requests
+          .filter((request) => request.past === past)
+          .map((request) => ({
+            ...request,
+            ...activityFor(request.raw, group.direction),
+          }))
+
+        // Sort only active conversations. Status changes do not count as messages.
+        if (!past) {
+          requests.sort((a, b) => b.latestMessageAt - a.latestMessageAt || a.id.localeCompare(b.id))
+        }
+
+        return {
+          ...group,
+          requests,
+          latestMessageAt: Math.max(0, ...requests.map((request) => request.latestMessageAt)),
+          hasUnread: requests.some((request) => request.hasUnread),
+        }
+      })
       .filter((group) => group.requests.length)
+
+    if (!past) {
+      groups.sort((a, b) => b.latestMessageAt - a.latestMessageAt || a.person.localeCompare(b.person))
+    }
 
     return {
       ...section,
       groups,
-      count: groups.reduce(
-        (total, group) => total + group.requests.length,
-        0,
-      ),
+      count: groups.reduce((total, group) => total + group.requests.length, 0),
     }
   }),
 )
@@ -421,6 +438,14 @@ async function loadInbox({ silent = false, focus = false } = {}) {
     sent.value = outgoing
     inboxError.value = ''
 
+    const threads = [
+      ...incoming.map((request) => ({ request, direction: 'received' })),
+      ...outgoing.map((request) => ({ request, direction: 'sent' })),
+    ].filter(({ request }) => !isPastRequest(request, conversationNow.value))
+
+    await loadActivity(threads, controller.signal)
+    if (!alive || !open.value || controller.signal.aborted || sequence !== inboxSequence) return
+
     if (focus) {
       chooseInitial()
     }
@@ -442,8 +467,10 @@ async function loadInbox({ silent = false, focus = false } = {}) {
 
 async function loadMessages({ silent = false } = {}) {
   const requestId = selectedBase.value?.id
+  const request = selectedRaw.value
+  const direction = activeTab.value
 
-  if (!requestId) {
+  if (!requestId || !open.value || !selectedRequestId.value) {
     chatMessages.value = []
     legacyInitial.value = null
     return
@@ -519,13 +546,20 @@ async function loadMessages({ silent = false } = {}) {
     chatMessages.value = [...records.values()]
     legacyInitial.value = initial
     messageError.value = ''
+    recordMessages(request, direction, chatMessages.value, initial)
 
     if (!document.hidden) {
       const incoming = chatMessages.value.filter(message => entityId(message.sender) !== currentUserId.value)
       for (let offset = 0; offset < incoming.length || offset === 0; offset += 100) {
+        if (!alive || !open.value || document.hidden || controller.signal.aborted || selectedBase.value?.id !== requestId) return
         await api.post(`/rescue/requests/${requestId}/messages/read`,
           { messageIds: incoming.slice(offset, offset + 100).map(message => message._id), initial: Boolean(initial) },
           { signal: controller.signal })
+      }
+
+      // Clear only messages loaded in the visible conversation, after read acknowledgement.
+      if (alive && open.value && !document.hidden && !controller.signal.aborted && selectedBase.value?.id === requestId) {
+        markRead(request, direction, chatMessages.value, initial)
       }
     }
 

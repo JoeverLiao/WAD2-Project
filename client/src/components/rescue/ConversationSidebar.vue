@@ -135,6 +135,13 @@ function selectRequest(group, request) {
                   <small>{{ groupSummary(group) }}</small>
                 </span>
 
+                <span
+                  v-if="section.id === 'active' && group.hasUnread"
+                  class="rescue-unread-dot"
+                >
+                  <span class="visually-hidden">Unread messages</span>
+                </span>
+
                 <span class="group-chevron ms-auto" aria-hidden="true">
                   {{
                   expandedIds.includes(`${section.id}-${group.id}`)
@@ -175,6 +182,13 @@ function selectRequest(group, request) {
                   <span class="d-flex flex-column gap-1">
                     <strong>{{ request.food }}</strong>
                     <small>{{ request.preview }}</small>
+                  </span>
+
+                  <span
+                    v-if="section.id === 'active' && request.hasUnread"
+                    class="rescue-unread-dot ms-auto mt-1"
+                  >
+                    <span class="visually-hidden">Unread messages</span>
                   </span>
                 </button>
               </div>
