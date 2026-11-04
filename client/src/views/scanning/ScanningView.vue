@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import ReceiptReviewForm from '../../components/ReceiptReviewForm.vue'
 import ReceiptUpload from '../../components/ReceiptUpload.vue'
+import EggCompanion from '../../components/analytics/VegetableCompanions.vue'
 import '../../styles/scanning-theme.css'
 
 // 'scan' = upload a receipt photo; 'manual' = type the items in (for people without a receipt).
@@ -86,5 +87,6 @@ function switchMode(next) {
       />
     </template>
     <ReceiptReviewForm v-else :key="`manual-${scanKey}`" manual :inventory-items="inventoryItems" @reset="startOver" />
+    <EggCompanion always-happy />
   </section>
 </template>
