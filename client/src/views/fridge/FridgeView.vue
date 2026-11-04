@@ -1335,6 +1335,30 @@ async function saveFoodGroup(group, method, payload) {
     return succeeded
 }
 
+function otherStorageOptions(item) {
+    const type = item.storage === 'pantry' ? 'pantry' : 'fridge'
+    const name = item[assignmentFields[type]] || mainNames[type]
+    return storageOptions.value.filter(option => option.type !== type || option.name !== name)
+}
+
+async function moveToStorage({ item, destination }) {
+    if (shiftingFood.value || actionPending.value || saving.value) return
+    if (!otherStorageOptions(item).some(option => option.type === destination.type && option.name === destination.name)) return
+    const sourceType = item.storage === 'pantry' ? 'pantry' : 'fridge'
+    const payload = { [assignmentFields[destination.type]]: destination.name }
+    if (sourceType !== destination.type) {
+        payload.storage = destination.type
+        payload.storageZone = destination.type === 'pantry' ? 'dry-storage' : 'middle-shelf'
+    }
+    errorMessage.value = ''
+    shiftingFood.value = true
+    try {
+        await saveFoodGroup([item], 'PATCH', payload)
+    } finally {
+        shiftingFood.value = false
+    }
+}
+
 async function changeSelectedFoods(group, action, onAnimationSuccess) {
     const confirmed = await showConfirm({
         title: `${action === 'consume' ? 'Consume' : 'Discard'} ${group.length} selected foods?`,
@@ -1993,9 +2017,12 @@ onBeforeUnmount(cancelActionReaction)
                         :amount="amountLabel(item)"
                         :diet-label="dietTypeLabel(item.dietType)"
                         :storage-warning="getRecommendation(item)"
+                        :storage-options="otherStorageOptions(item)"
+                        :busy="shiftingFood || actionPending || saving"
                         :dragging="draggedItemId === item.id"
                         @edit="openEditForm"
                         @remove="removeItem"
+                        @move-storage="moveToStorage"
                         @drag-start="startModalDrag"
                         @drag-end="finishDrag"
                     />

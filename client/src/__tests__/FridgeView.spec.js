@@ -7,6 +7,7 @@ import FoodItemForm from '../components/fridge/FoodItemForm.vue'
 import { showConfirm, showPrompt } from '../utils/dialog.js'
 
 vi.mock('../utils/dialog.js')
+vi.mock('../components/EggLoader.vue', () => ({ default: { template: '<div />' } }))
 
 const food = { _id: 'apple-1', name: 'Apples', quantity: 3, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', expiresAt: '2026-11-05' }
 let wrapper
@@ -660,4 +661,30 @@ it('renders visible expiry badges for expired and soon-to-expire shelf food', as
   expect(wrapper.get('[data-food-id="expired"] .food-expiry-badge.expired').isVisible()).toBe(true)
   expect(wrapper.get('[data-food-id="soon"] .food-expiry-badge').classes()).not.toContain('expired')
   expect(wrapper.find('[data-food-id="fresh"] .food-expiry-badge').exists()).toBe(false)
+})
+
+it('moves a food from the card to a named pantry even when the API omits pantryName', async () => {
+  localStorage.setItem('full-circle-pantries', JSON.stringify(['Pantry 2']))
+  try {
+    wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.fridge-door').trigger('click')
+    await wrapper.get('.shelf-compartment').trigger('click')
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({
+      item: { ...food, storage: 'pantry', storageZone: 'dry-storage' },
+    }) })
+    await wrapper.get('select[aria-label="Move Apples to another location"]')
+      .setValue(JSON.stringify({ type: 'pantry', name: 'Pantry 2' }))
+    await flushPromises()
+    expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ pantryName: 'Pantry 2', storage: 'pantry', storageZone: 'dry-storage' }),
+    }))
+    expect(wrapper.findAll('.food-card')).toHaveLength(0)
+    expect(JSON.parse(localStorage.getItem('full-circle-item-storage-assignments'))['apple-1'])
+      .toEqual({ pantryName: 'Pantry 2' })
+  } finally {
+    localStorage.removeItem('full-circle-pantries')
+    localStorage.removeItem('full-circle-item-storage-assignments')
+  }
 })

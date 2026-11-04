@@ -26,6 +26,8 @@ const props = defineProps({
     storageWarning: { type: String, default: '' },
     dietLabel: { type: String, default: '' },
     dragging: { type: Boolean, default: false },
+    storageOptions: { type: Array, default: () => [] },
+    busy: Boolean,
 })
 
 // ------------------------------------------------------------
@@ -41,6 +43,7 @@ const props = defineProps({
 const emit = defineEmits([
     'edit',
     'remove',
+    'move-storage',
     'drag-start',
     'drag-end'
 ])
@@ -232,6 +235,15 @@ function handleDragEnd() {
         >
             {{ expiryStatus }}
         </span>
+        <label v-if="storageOptions.length" class="food-storage-move" @click.stop>
+            Move to another location
+            <select :disabled="busy" :aria-label="`Move ${item.name} to another location`"
+                @change="emit('move-storage', { item, destination: JSON.parse($event.target.value) }); $event.target.value = ''">
+                <option value="" disabled selected>Choose fridge or pantry…</option>
+                <option v-for="option in storageOptions" :key="option.type + ':' + option.name"
+                    :value="JSON.stringify({ type: option.type, name: option.name })">{{ option.label }} ({{ option.type }})</option>
+            </select>
+        </label>
     </article>
 </template>
 
@@ -383,4 +395,6 @@ h4 {
     background: #ffe5e3;
     color: #b33d35;
 }
+.food-storage-move { display:grid; gap:5px; margin-top:14px; color:#557b77; font-size:15px; }
+.food-storage-move select { min-width:0; width:100%; min-height:44px; padding:6px 10px; border:1px solid #8bb8a6; border-radius:10px; background:#f7fffa; color:#234d3b; font:inherit; }
 </style>
