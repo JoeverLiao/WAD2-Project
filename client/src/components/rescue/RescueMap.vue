@@ -455,6 +455,41 @@ function searchNearCentre() {
   refreshResults()
 }
 
+async function centreOnSavedLocation() {
+  try {
+    const { data } = await api.get('/locations/saved')
+    const location = data.location
+
+    if (
+      !map ||
+      location?.latitude == null ||
+      location?.longitude == null
+    ) {
+      return
+    }
+
+    const latitude = Number(location.latitude)
+    const longitude = Number(location.longitude)
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return
+    }
+
+    centreLabel.value = location.address
+
+    map.setView([latitude, longitude], map.getZoom())
+  } catch {
+    // Keep the existing Singapore centre if loading fails.
+  }
+}
+
 function useMyLocation() {
   if (!navigator.geolocation) {
     mapNotice.value =
@@ -842,6 +877,8 @@ onMounted(async () => {
       .addTo(map)
 
     layer = L.layerGroup().addTo(map)
+
+    await centreOnSavedLocation()
 
     map.on('moveend', () => {
       mapMoved.value = true
