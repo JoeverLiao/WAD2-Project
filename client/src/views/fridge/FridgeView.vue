@@ -829,6 +829,7 @@ async function saveItem(formData) {
 
         closeForm()
         if (originalItem && (originalItem.storage !== savedItem.storage || originalItem.storageZone !== savedItem.storageZone)) {
+            showMovedStorageAdvice([savedItem])
             selectedCompartment.value = null
             showStorage(savedItem.storage)
             await foodTransfer.play(origins, new Set([savedItem.id]), locationLabel(savedItem))
@@ -1352,6 +1353,13 @@ async function saveFoodGroup(group, method, payload) {
     if (succeeded.size) items.value = method === 'DELETE'
         ? items.value.filter(item => !succeeded.has(item.id))
         : items.value.map(item => updates.get(item.id) || item)
+    if (method === 'PATCH') {
+        const moved = group.filter(item => {
+            const updated = updates.get(item.id)
+            return updated && (updated.storage !== item.storage || updated.storageZone !== item.storageZone)
+        }).map(item => updates.get(item.id))
+        if (moved.length) showMovedStorageAdvice(moved)
+    }
     selectedFoodIds.value = new Set([...selectedFoodIds.value].filter(id => !succeeded.has(id)))
     const failed = results.filter(result => result.status === 'rejected').length
     if (failed) errorMessage.value = `${failed} food item(s) could not be updated. They remain selected; please try again.`
@@ -1447,7 +1455,8 @@ function getRecommendation(item) {
 }
 
 function storageAdvice(item) {
-    const allowedLocations = Array.isArray(item.allowedLocations) ? item.allowedLocations : []
+    const allowedLocations = Array.isArray(item.allowedLocations) && item.allowedLocations.length
+        ? item.allowedLocations : storageForZone(item.suggestedLocation) ? [item.suggestedLocation] : []
     if (allowedLocations.includes(item.storageZone)) return ''
     if (allowedLocations.length > 0 && !allowedLocations.includes(item.storageZone)) {
         const zoneLabels = {
@@ -1493,6 +1502,11 @@ const storageRecommendations = computed(() =>
 const ignoredStorageRecommendations = computed(() =>
     filteredItems.value.filter(item => item.storageGuidanceIgnored && storageAdvice(item))
 )
+const movedStorageAdviceIds = ref([])
+const movedStorageWarnings = computed(() => items.value.filter(item => movedStorageAdviceIds.value.includes(item.id) && getRecommendation(item)))
+function showMovedStorageAdvice(moved) {
+    movedStorageAdviceIds.value = moved.filter(item => getRecommendation(item)).map(item => item.id)
+}
 const arrangingFoodIds = ref(new Set())
 const arrangementError = ref('')
 const confirmingGuidanceAction = ref(false)
@@ -1500,7 +1514,7 @@ const guidanceBusy = computed(() => shiftingFood.value || saving.value || action
 
 function guidanceDestination(item) {
     if (!getRecommendation(item)) return null
-    const allowed = item.allowedLocations.filter(zone => storageForZone(zone))
+    const allowed = (item.allowedLocations.length ? item.allowedLocations : [item.suggestedLocation]).filter(zone => storageForZone(zone))
     let zone = allowed.length
         ? allowed.includes(item.suggestedLocation) ? item.suggestedLocation : allowed[0]
         : null
@@ -1579,6 +1593,7 @@ async function saveGuidancePreferences(group, ignored) {
         selectedFoodIds.value = new Set([...selectedFoodIds.value, ...previousSelection])
         arrangementError.value = errorMessage.value
         foodTooltip.value = null
+        movedStorageAdviceIds.value = []
     } finally { saving.value = false }
 }
 
@@ -2221,6 +2236,12 @@ onBeforeUnmount(cancelActionReaction)
             @action-drop="dropOnAction" />
         <FoodTransferOverlay :flights="foodTransfer.flights.value" :announcement="foodTransfer.announcement.value" @complete="foodTransfer.finish" />
         <Teleport to="body">
+            <aside v-if="movedStorageWarnings.length" class="storage-move-warning" role="alert" aria-label="Storage guidance after moving food">
+                <div class="storage-move-warning-heading"><strong><NoticeIcon name="bell" /> Check the new storage location</strong>
+                    <button type="button" aria-label="Dismiss storage guidance prompt" @click="movedStorageAdviceIds = []">✕</button>
+                </div>
+                <ul><li v-for="item in movedStorageWarnings" :key="item.id">{{ getRecommendation(item) }}</li></ul>
+            </aside>
             <div v-if="selectionBox" class="food-selection-box" aria-hidden="true" :style="{ left: selectionBox.left + 'px', top: selectionBox.top + 'px', width: (selectionBox.right - selectionBox.left) + 'px', height: (selectionBox.bottom - selectionBox.top) + 'px' }"></div>
             <div v-if="selectedFoodIds.size" class="food-selection-count" role="status">{{ selectedFoodIds.size }} selected · Drag a highlighted food to move the group · Esc to clear</div>
             <EggLoader :visible="shiftingFood" label="Shifting food" />
@@ -2423,6 +2444,11 @@ onBeforeUnmount(cancelActionReaction)
 .recommendation-section h2 { margin:0; font-family:var(--font-display, "Kalam", cursive, sans-serif); font-size:24px; }
 .recommendation-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
 .guidance-heading-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.storage-move-warning { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:1100; width:min(560px,calc(100vw - 32px)); box-sizing:border-box; padding:14px 16px; border:2px solid #806020; border-radius:16px; background:#fff4cc; color:#634914; box-shadow:4px 5px 0 #173d3933; font:17px/1.4 var(--font-sans,"Patrick Hand",cursive,sans-serif); }
+.storage-move-warning-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.storage-move-warning-heading button { flex:none; display:grid; place-items:center; width:40px; height:40px; border:1px solid #b4a06c; border-radius:10px; background:#fffaf0; color:inherit; cursor:pointer; }
+.storage-move-warning ul { max-height:25dvh; overflow:auto; margin:8px 0 0; padding-left:20px; }
+.storage-move-warning li + li { margin-top:8px; }
 .recommendation-copy { flex:1; min-width:0; }
 .guidance-item-actions { display:flex; align-items:center; align-self:center; gap:8px; margin-left:auto; }
 .guidance-ignore { min-height:44px; padding:8px 12px; border:1px solid #9fada3; border-radius:12px; background:#fffefa; color:#52665f; font:16px var(--font-sans); cursor:pointer; transition:background .2s; }

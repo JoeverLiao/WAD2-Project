@@ -1074,3 +1074,55 @@ describe('Ignoring storage guidance', () => {
     expect(wrapper.get('.guidance-error').text()).toContain('could not be updated')
   })
 })
+
+
+describe('Storage guidance after moving food', () => {
+  const stored = { ...food, _id: 'move-advice', name: 'Apples', storageZone: 'crisper', expiresAt: '2099-01-01', suggestedLocation: 'crisper', allowedLocations: ['crisper'] }
+  const drag = async () => {
+    await wrapper.get('[data-food-id="move-advice"]').trigger('dragstart', {
+      dataTransfer: { ...transfer(), getData: () => 'move-advice' }, clientX: 400, clientY: 300,
+    })
+  }
+  it.each([false, true])('prompts after a successful move out of recommended storage (embedded: %s)', async embedded => {
+    if (!embedded) request.mockResolvedValueOnce({ ok: true, json: async () => [stored] })
+    await openFridge(embedded ? { embedded: true, inventoryItems: [stored] } : {})
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...stored, storageZone: 'door-lower' } }) })
+    await drag()
+    await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: { ...transfer(), getData: () => 'move-advice' } })
+    await flushPromises()
+    if (embedded) await wrapper.setProps({ inventoryItems: wrapper.emitted('inventory-change').at(-1)[0] })
+    expect(document.querySelector('.storage-move-warning').textContent).toContain('Crisper drawer')
+    expect(wrapper.get('[data-food-id="move-advice"] .food-storage-badge').exists()).toBe(true)
+    if (!embedded) expect(wrapper.get('.recommendation-card').text()).toContain('Apples')
+    await wrapper.get('[data-food-id="move-advice"]').trigger('pointerenter', { pointerType: 'mouse' })
+    expect(document.querySelector('.food-tooltip-storage').textContent).toContain('Crisper drawer')
+    document.querySelector('[aria-label="Dismiss storage guidance prompt"]').click()
+    await flushPromises()
+    expect(document.querySelector('.storage-move-warning')).toBeNull()
+  })
+
+  it('uses a recorded suggestion when legacy food has no allowed-locations list', async () => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...stored, storageZone: 'door', allowedLocations: [] }] })
+    await openFridge()
+    expect(wrapper.get('.recommendation-card').text()).toContain('Crisper drawer')
+    expect(wrapper.get('[data-food-id="move-advice"] .food-storage-badge').exists()).toBe(true)
+    expect(wrapper.get('[aria-label="Arrange Apples"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('does not prompt when a move fails or when food moves between allowed places', async () => {
+    const allowed = { ...stored, storageZone: 'middle-shelf', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf', 'door'] }
+    request.mockResolvedValueOnce({ ok: true, json: async () => [allowed] })
+    await openFridge()
+    request.mockResolvedValueOnce({ ok: false, status: 503 })
+    await drag()
+    await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: { ...transfer(), getData: () => 'move-advice' } })
+    await flushPromises()
+    expect(document.querySelector('.storage-move-warning')).toBeNull()
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...allowed, storageZone: 'door' } }) })
+    await drag()
+    await wrapper.get('[data-drop-zone="door"]').trigger('drop', { dataTransfer: { ...transfer(), getData: () => 'move-advice' } })
+    await flushPromises()
+    expect(document.querySelector('.storage-move-warning')).toBeNull()
+    expect(wrapper.find('.food-storage-badge').exists()).toBe(false)
+  })
+})

@@ -4,6 +4,9 @@ import InventoryItem from '../models/inventoryItemModel.js'
 import FoodListing from '../models/foodListingModel.js'
 import RescueRequest from '../models/rescueRequestModel.js'
 import RescuePhoto from '../models/rescuePhotoModel.js'
+import { completeItems } from '../services/inventoryService.js'
+import { classifyItem } from '../services/foodKnowledge.js'
+import { ZONE_IDS } from '../services/storageGuide.js'
 //Thahesh
 // // ============================================================
 // INVENTORY API CONTROLLER
@@ -325,7 +328,7 @@ async function updateItem(req, res, next) {
       name: existingItem.name,
       quantity: existingItem.quantity,
       weightKg: existingItem.weightKg,
-      unit: existingItem.unit,
+      ...(existingItem.unit != null ? { unit: existingItem.unit } : {}),
       storage: existingItem.storage,
       storageZone: existingItem.storageZone,
       ...fields,
@@ -360,6 +363,31 @@ async function updateItem(req, res, next) {
     if ((Object.prototype.hasOwnProperty.call(fields, 'quantity') ||
          Object.prototype.hasOwnProperty.call(fields, 'weightKg')) && !hasTrackedAmount(combined)) {
       return res.status(400).json({ error: 'An item must keep a quantity or weight greater than zero.' })
+    }
+
+    const locationChanged = combined.storage !== existingItem.storage || combined.storageZone !== existingItem.storageZone
+    if (!preferenceOnly && locationChanged) {
+      // Older inventory records may predate stored guidance. Use the same rules as receipts.
+      let allowed = (existingItem.allowedLocations || []).filter(zone => ZONE_IDS.includes(zone))
+      let suggested = ZONE_IDS.includes(existingItem.suggestedLocation) ? existingItem.suggestedLocation : null
+      let reason = existingItem.locationReason
+      if (!allowed.length && suggested) allowed = [suggested]
+      if (!allowed.length && (existingItem.category || classifyItem(existingItem.name).category)) {
+        const source = existingItem.toObject ? existingItem.toObject() : existingItem
+        const guidance = completeItems([source])[0]
+        allowed = guidance.allowedLocations
+        suggested = guidance.suggestedLocation
+        reason = guidance.locationReason
+      }
+      if (allowed.length) {
+        fields.allowedLocations = allowed
+        fields.suggestedLocation = suggested && allowed.includes(suggested) ? suggested : allowed[0]
+        if (reason) fields.locationReason = reason
+        // A previous dismissal does not suppress a new move out of a recommended place.
+        if (allowed.includes(existingItem.storageZone) && !allowed.includes(combined.storageZone)) {
+          fields.storageGuidanceIgnored = false
+        }
+      }
     }
 
     // Copy normalized/validated fields back into the actual update object.
