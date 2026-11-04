@@ -1093,7 +1093,7 @@ async function loadSavedLocation() {
                             class="choice-icon d-flex align-items-center justify-content-center my-1"
                             aria-hidden="true"
                           >
-                            <FoodIcon :food="item.name" />
+                            <FoodIcon :name="item.name" />
                           </span>
 
                           <span class="food-name">{{ item.name }}</span>

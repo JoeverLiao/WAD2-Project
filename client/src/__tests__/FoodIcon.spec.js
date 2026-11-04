@@ -1,101 +1,57 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import FoodIcon from '../components/FoodIcon.vue'
-import NoticeIcon from '../components/NoticeIcon.vue'
-import { DEFAULT_FOOD_ICON, FOOD_ICON_GROUPS, FOOD_ICONS } from '../utils/foodIcons.js'
-import { foodIconFor, foodIconForEmoji, resolveFoodIcon } from '../utils/foodIconMap.js'
-import { CATEGORIES } from '../utils/inventoryOptions.js'
+import manifest from '../icons/manifest.json'
+import { iconConfig } from '../icons/config.js'
+import { flushIconRequests, resetIconResolver } from '../icons/iconResolver.js'
 
-describe('food icon library', () => {
-  it('gives every icon artwork, a label, a known group and one colour', () => {
-    const groups = FOOD_ICON_GROUPS.map((g) => g.id)
-    const incomplete = Object.entries(FOOD_ICONS)
-      .filter(([, icon]) => !icon.shape || !icon.detail || !icon.label || !groups.includes(icon.group) || !/^#[0-9A-F]{6}$/i.test(icon.color))
-      .map(([id]) => id)
-    expect(incomplete).toEqual([])
-  })
+const YELLOW = manifest.palette.yellow.toUpperCase()
+const entry = (id) => manifest.icons.find((icon) => icon.id === id)
 
-  it('covers every group the app needs', () => {
-    const empty = FOOD_ICON_GROUPS.filter((group) => !Object.values(FOOD_ICONS).some((icon) => icon.group === group.id))
-    expect(empty).toEqual([])
-  })
-
-  it('has a library icon for every emoji an item can be saved with', () => {
-    const missing = CATEGORIES.flatMap((category) => category.icons).filter((emoji) => foodIconForEmoji(emoji) === null)
-    expect(missing).toEqual([])
-  })
-})
-
-describe('choosing a food icon', () => {
-  it.each([
-    ['Full cream milk', 'milk'],
-    ['Cream cheese', 'cheese'],
-    ['Orange juice', 'juice'],
-    ['Oranges', 'orange'],
-    ['Tomato sauce', 'jar'],
-    ['Garden tomatoes', 'tomato'],
-    ['Greek yoghurt', 'yoghurt'],
-    ['Fresh pesto', 'jar'],
-    ['Organic veggie box', 'leafy'],
-    ['Extra sourdough', 'bread'],
-    ['Banana bread', 'bread'],
-    ['Pineapple chunks', 'pineapple'],
-    ['Pink Lady apples', 'apple'],
-    ['Sweet potato', 'sweetPotato'],
-    ['Goat cheese', 'cheese'],
-    ['Boiled eggs', 'egg'],
-    ['Eggplant', 'eggplant'],
-    ['Watermelon', 'watermelon'],
-    ['Steak', 'steak'],
-    ['Vanilla ice cream', 'iceCream'],
-    ['Salmon fillet', 'fish'],
-    ['Fish sauce', 'jar'],
-  ])('matches %s to %s', (name, id) => {
-    expect(foodIconFor(name)).toBe(id)
-  })
-
-  it('uses the name first, so the same food always gets the same icon', () => {
-    expect(resolveFoodIcon({ name: 'Milk', icon: '🧀', category: 'dairy' })).toBe('milk')
-    expect(resolveFoodIcon({ name: 'Milk', icon: '🥛', category: 'other' })).toBe('milk')
-  })
-
-  it('falls back to the stored emoji, then the category, then the default', () => {
-    expect(resolveFoodIcon({ name: 'Zorblax', icon: '🍓', category: 'fruit' })).toBe('strawberry')
-    expect(resolveFoodIcon({ name: 'Zorblax', icon: '🌶️' })).toBe('chilli')
-    expect(resolveFoodIcon({ name: 'Zorblax', category: 'seafood' })).toBe('fish')
-    expect(resolveFoodIcon({ name: 'Zorblax' })).toBe(DEFAULT_FOOD_ICON)
-    expect(resolveFoodIcon()).toBe(DEFAULT_FOOD_ICON)
-    expect(foodIconFor('')).toBe(DEFAULT_FOOD_ICON)
-  })
-})
+afterEach(() => resetIconResolver())
 
 describe('FoodIcon', () => {
-  it('draws the resolved icon for an item, hidden from screen readers', () => {
-    const wrapper = mount(FoodIcon, { props: { item: { name: 'Bananas', icon: '🍎', category: 'fruit' } } })
-    expect(wrapper.attributes('data-food-icon')).toBe('banana')
-    // Drawn with the one fruit shape, in the banana's own colour.
-    expect(wrapper.get('.food-shape').attributes('d')).toBe(FOOD_ICONS.avocado.shape)
-    expect(wrapper.get('.food-shape').attributes('fill')).toBe(FOOD_ICONS.banana.color)
-    expect(wrapper.attributes('aria-hidden')).toBe('true')
+  it('shows a loading placeholder, then the chosen icon in the chosen colour', async () => {
+    resetIconResolver({ request: async (names) => names.map((input) => ({ input, icon: 'banana', color: YELLOW })) })
+    const wrapper = mount(FoodIcon, { props: { name: 'Banana' } })
+    expect(wrapper.find('[data-food-icon-loading]').exists()).toBe(true)
+
+    await flushIconRequests()
+    await flushPromises()
+    const icon = wrapper.find('.food-icon')
+    expect(icon.attributes('data-food-icon')).toBe('banana')
+    expect(icon.attributes('data-food-color')).toBe(YELLOW)
+    expect(icon.attributes('style')).toContain('color:')
+    expect(icon.find('svg .food-shape').attributes('fill')).toBe('currentColor')
   })
 
-  it('accepts a plain name or a chosen icon id', () => {
-    expect(mount(FoodIcon, { props: { food: 'Sourdough' } }).attributes('data-food-icon')).toBe('bread')
-    expect(mount(FoodIcon, { props: { kind: 'can' } }).attributes('data-food-icon')).toBe('can')
-    expect(mount(FoodIcon, { props: { kind: 'not-an-icon', food: 'Kiwi' } }).attributes('data-food-icon')).toBe('kiwi')
+  it('reads the name from an item', async () => {
+    resetIconResolver({ request: async (names) => names.map((input) => ({ input, icon: 'egg', color: YELLOW })) })
+    const wrapper = mount(FoodIcon, { props: { item: { name: 'Eggs', quantity: 6 } } })
+    await flushIconRequests()
+    await flushPromises()
+    expect(wrapper.find('.food-icon').attributes('data-food-icon')).toBe('egg')
   })
 
-  it('lets a colour replace the icon colour without changing its shape', () => {
-    const wrapper = mount(FoodIcon, { props: { food: 'Apple', color: '#123456' } })
-    expect(wrapper.get('.food-shape').attributes('fill')).toBe('#123456')
-    expect(wrapper.get('.food-shape').attributes('d')).toBe(FOOD_ICONS.avocado.shape)
+  it('shows the fallback icon and colour when no answer is available', () => {
+    const wrapper = mount(FoodIcon, { props: { name: 'Apple' } }) // requests are off in tests by default
+    const icon = wrapper.find('.food-icon')
+    expect(icon.attributes('data-food-icon')).toBe(manifest.fallbackIcon)
+    expect(icon.attributes('data-food-color')).toBe(iconConfig.fallbackColor)
+    expect(icon.find('svg').exists()).toBe(true)
   })
-})
 
-describe('NoticeIcon', () => {
-  it('renders in the current text colour', () => {
-    const bell = mount(NoticeIcon, { props: { name: 'bell' } })
-    expect(bell.attributes('stroke')).toBe('currentColor')
-    expect(bell.get('path').attributes('d')).toBeTruthy()
+  it('draws a manifest icon directly with kind, in its own colour unless color is given', () => {
+    const ice = mount(FoodIcon, { props: { kind: 'ice' } }).find('.food-icon')
+    expect(ice.attributes('data-food-icon')).toBe('ice')
+    expect(ice.attributes('data-food-color')).toBe(entry('ice').color)
+
+    const recoloured = mount(FoodIcon, { props: { kind: 'ice', color: '#000000' } }).find('.food-icon')
+    expect(recoloured.attributes('data-food-color')).toBe('#000000')
+  })
+
+  it('treats an unknown kind as a food name', () => {
+    const wrapper = mount(FoodIcon, { props: { kind: 'bowl' } })
+    expect(wrapper.find('.food-icon').attributes('data-food-icon')).toBe(manifest.fallbackIcon)
   })
 })

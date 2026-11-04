@@ -1788,7 +1788,7 @@ onBeforeUnmount(cancelActionReaction)
                 </button>
                 <div v-if="expiryItems.length" class="modal-food-list">
                     <button v-for="item in expiryItems" :key="item.id" type="button" class="expiry-food-row" @click="jumpToItem(item)">
-                        <span class="modal-food-emoji"><FoodIcon :food="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                        <span class="modal-food-emoji"><FoodIcon :name="item.name" /><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                         <span class="modal-food-info">
                             <strong>{{ item.name }}</strong>
                             <span>{{ itemStorageName(item) }}<template v-if="item.storage !== 'pantry'"> · {{ locationLabel(item) }}</template> · {{ amountLabel(item) }}</span>

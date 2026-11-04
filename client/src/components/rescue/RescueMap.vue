@@ -1152,7 +1152,7 @@ defineExpose({
             class="photo-placeholder"
             aria-hidden="true"
           >
-            <FoodIcon :food="item.name" />
+            <FoodIcon :name="item.name" />
           </div>
 
           <div class="food-details">

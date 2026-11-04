@@ -1,62 +1,106 @@
 <script setup>
-import { computed } from 'vue'
-import { DEFAULT_FOOD_ICON, FOOD_ICONS, foodTypeIcon } from '../utils/foodIcons.js'
-import { isFoodIcon } from '../utils/foodIconMap.js'
-import { classifyFood } from '../utils/foodIconClassifier.js'
+import { computed, watch } from 'vue'
+import { iconEntry, iconSvg, isIconId } from '../icons/manifest.js'
+import { foodIconState, resolveFoodIcon } from '../icons/iconResolver.js'
 
-// The one way to draw a food icon. Give it either:
-//   item - a food with name, icon and category (inventory item, receipt row, listing)
-//   food - just a name
-//   kind - a library icon id, to choose the icon directly (drawn in its own library colour)
-// A food is drawn with its type's one shape (every fruit is the round fruit, every drink the bottle)
-// filled with its natural colour (foodIconClassifier.js). color replaces that colour.
+// The one way to draw a food icon. Give it one of:
+//   name - a food name; Claude chooses the icon and colour (see icons/iconResolver.js)
+//   item - anything with a name field (inventory item, receipt row, listing)
+//   kind - an icon id from icons/manifest.json, drawn in that entry's own colour
+// color replaces the chosen colour. Size and line style come from the CSS variables below.
 const props = defineProps({
+  name: { type: String, default: '' },
   item: { type: Object, default: null },
-  food: { type: String, default: '' },
   kind: { type: String, default: '' },
   color: { type: String, default: '' },
 })
 
-const look = computed(() => {
-  if (isFoodIcon(props.kind)) return { icon: props.kind, color: FOOD_ICONS[props.kind].color }
-  return classifyFood(props.item ?? { name: props.food })
-})
-// id names the food (banana); shape is what is drawn (the round fruit).
-const id = computed(() => look.value.icon)
-const shape = computed(() => (isFoodIcon(props.kind) ? props.kind : foodTypeIcon(id.value)))
-const icon = computed(() => FOOD_ICONS[shape.value] ?? FOOD_ICONS[DEFAULT_FOOD_ICON])
-const fill = computed(() => props.color || look.value.color || icon.value.color)
+const foodName = computed(() => props.item?.name ?? props.name)
+const fixed = computed(() => isIconId(props.kind))
+
+watch(
+  [foodName, fixed],
+  ([name, isFixed]) => {
+    if (!isFixed) resolveFoodIcon(name)
+  },
+  { immediate: true },
+)
+
+const state = computed(() =>
+  fixed.value
+    ? { loading: false, icon: props.kind, color: iconEntry(props.kind).color }
+    : foodIconState(foodName.value),
+)
+const svg = computed(() => (state.value.loading ? '' : iconSvg(state.value.icon)))
+const fill = computed(() => props.color || state.value.color)
 </script>
 
 <template>
-  <svg class="food-icon" :data-food-icon="id" :data-food-shape="shape" :data-food-color="fill" viewBox="0 0 70 70" aria-hidden="true">
-    <path class="food-shape" :d="icon.shape" :fill="fill" />
-    <path class="food-line" :d="icon.detail" />
-  </svg>
+  <span
+    v-if="state.loading"
+    class="food-icon food-icon--loading"
+    data-food-icon-loading
+    aria-hidden="true"
+  />
+  <!-- SVG markup comes only from the app's own files in icons/svg, never from user input. -->
+  <!-- eslint-disable-next-line vue/no-v-html -->
+  <span
+    v-else
+    class="food-icon"
+    :data-food-icon="state.icon"
+    :data-food-color="fill"
+    :style="{ color: fill }"
+    aria-hidden="true"
+    v-html="svg"
+  />
 </template>
 
 <style scoped>
 .food-icon {
+  --food-icon-size: 1.15em;
+  --food-icon-outline: 3.2px;
+  --food-icon-detail: 2.5px;
   display: inline-block;
   flex: none;
-  width: 1.15em;
-  height: 1.15em;
-  overflow: visible;
+  width: var(--food-icon-size);
+  height: var(--food-icon-size);
   vertical-align: -0.2em;
 }
 
-.food-shape {
-  stroke: var(--ink);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 3.2px;
+.food-icon :deep(svg) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.food-line {
+.food-icon :deep(.food-shape) {
+  fill: currentColor;
+  stroke: var(--ink);
+  stroke-width: var(--food-icon-outline);
+}
+
+.food-icon :deep(.food-line) {
   fill: none;
   stroke: var(--ink);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.5px;
+  stroke-width: var(--food-icon-detail);
+}
+
+.food-icon--loading {
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  animation: food-icon-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes food-icon-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .food-icon--loading {
+    animation: none;
+  }
 }
 </style>

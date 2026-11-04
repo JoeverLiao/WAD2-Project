@@ -1,0 +1,867 @@
+{
+  "fallbackIcon": "generic",
+  "palette": {
+    "red": "#F48678",
+    "deepRed": "#F2665A",
+    "coral": "#FFAA8A",
+    "peach": "#FFB8A0",
+    "pink": "#F4A6C0",
+    "orange": "#FFB35C",
+    "amber": "#FFC15C",
+    "yellow": "#FFD66B",
+    "paleYellow": "#FFE9A0",
+    "cream": "#F7F1DE",
+    "white": "#FFFFFF",
+    "lime": "#C8DB72",
+    "green": "#91D985",
+    "darkGreen": "#6FB46A",
+    "lavender": "#B9A0E0",
+    "purple": "#A88BD8",
+    "wine": "#C46B8A",
+    "blue": "#8FA8E8",
+    "aqua": "#9ADCEB",
+    "tan": "#E8B877",
+    "brown": "#C9A27E",
+    "darkBrown": "#A9785A",
+    "charcoal": "#7A7480"
+  },
+  "icons": [
+    {
+      "id": "fruit",
+      "label": "Fruit",
+      "type": "category",
+      "category": "fruit",
+      "description": "Any fruit that has no specific icon, e.g. lychee, durian, rambutan, guava.",
+      "file": "svg/avocado.svg",
+      "color": "#C8DB72"
+    },
+    {
+      "id": "vegetable",
+      "label": "Vegetable",
+      "type": "category",
+      "category": "vegetable",
+      "description": "Any vegetable that has no specific icon, e.g. okra, bitter gourd, radish, bean sprouts.",
+      "file": "svg/leafy.svg",
+      "color": "#91D985"
+    },
+    {
+      "id": "meat",
+      "label": "Meat",
+      "type": "category",
+      "category": "meat",
+      "description": "Any meat or poultry cut that has no specific icon, e.g. pork belly, lamb chops, minced beef.",
+      "file": "svg/steak.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "seafood",
+      "label": "Seafood",
+      "type": "category",
+      "category": "seafood",
+      "description": "Any fish or seafood that has no specific icon.",
+      "file": "svg/fish.svg",
+      "color": "#9ADCEB"
+    },
+    {
+      "id": "dairy",
+      "label": "Dairy",
+      "type": "category",
+      "category": "dairy",
+      "description": "Any dairy product that has no specific icon, e.g. cream, condensed milk, kefir.",
+      "file": "svg/milk.svg",
+      "color": "#E8F8F5"
+    },
+    {
+      "id": "bakery",
+      "label": "Bakery & grains",
+      "type": "category",
+      "category": "bakery",
+      "description": "Any baked good or grain product that has no specific icon.",
+      "file": "svg/bread.svg",
+      "color": "#E8B877"
+    },
+    {
+      "id": "drink",
+      "label": "Drink",
+      "type": "category",
+      "category": "drink",
+      "description": "Any drink that has no specific icon, e.g. kombucha, soy milk, sports drinks.",
+      "file": "svg/bottle.svg",
+      "color": "#B9EAE5"
+    },
+    {
+      "id": "apple",
+      "label": "Apple",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Apple. Use for: apple.",
+      "file": "svg/apple.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "pear",
+      "label": "Pear",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Pear. Use for: pear.",
+      "file": "svg/pear.svg",
+      "color": "#C8DB72"
+    },
+    {
+      "id": "orange",
+      "label": "Orange",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Orange. Use for: orange, mandarin, clementine, tangerine, satsuma, grapefruit.",
+      "file": "svg/orange.svg",
+      "color": "#FFB35C"
+    },
+    {
+      "id": "lemon",
+      "label": "Lemon",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Lemon. Use for: lemon, lime.",
+      "file": "svg/lemon.svg",
+      "color": "#FFE07A"
+    },
+    {
+      "id": "banana",
+      "label": "Banana",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Bananas and plantains. Use for long, curved fruit; never draw these as round fruit.",
+      "file": "svg/banana.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "grapes",
+      "label": "Grapes",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Grapes. Use for: grape, raisin.",
+      "file": "svg/grapes.svg",
+      "color": "#B9A0E0"
+    },
+    {
+      "id": "strawberry",
+      "label": "Strawberry",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Strawberry. Use for: strawberry, strawberries, raspberry, raspberries.",
+      "file": "svg/strawberry.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "blueberry",
+      "label": "Blueberries",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Blueberries. Use for: blueberry, blueberries, blackberry, blackberries, berry, berries.",
+      "file": "svg/blueberry.svg",
+      "color": "#8FA8E8"
+    },
+    {
+      "id": "cherry",
+      "label": "Cherries",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Cherries. Use for: cherry, cherries.",
+      "file": "svg/cherry.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "peach",
+      "label": "Peach",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Peach. Use for: peach, apricot, nectarine, plum.",
+      "file": "svg/peach.svg",
+      "color": "#FFB8A0"
+    },
+    {
+      "id": "mango",
+      "label": "Mango",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Mango. Use for: mango, papaya.",
+      "file": "svg/mango.svg",
+      "color": "#FFC15C"
+    },
+    {
+      "id": "pineapple",
+      "label": "Pineapple",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Pineapple. Use for: pineapple.",
+      "file": "svg/pineapple.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "watermelon",
+      "label": "Watermelon",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Watermelon. Use for: watermelon.",
+      "file": "svg/watermelon.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "melon",
+      "label": "Melon",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Melon. Use for: melon, honeydew, cantaloupe.",
+      "file": "svg/melon.svg",
+      "color": "#C8DB72"
+    },
+    {
+      "id": "coconut",
+      "label": "Coconut",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Coconut. Use for: coconut.",
+      "file": "svg/coconut.svg",
+      "color": "#C9A27E"
+    },
+    {
+      "id": "kiwi",
+      "label": "Kiwi",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Kiwi. Use for: kiwi.",
+      "file": "svg/kiwi.svg",
+      "color": "#A8C66C"
+    },
+    {
+      "id": "avocado",
+      "label": "Avocado",
+      "type": "specific",
+      "category": "fruit",
+      "description": "Avocados.",
+      "file": "svg/avocado.svg",
+      "color": "#C8DB72"
+    },
+    {
+      "id": "leafy",
+      "label": "Leafy greens",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Leafy greens. Use for: veggie, vegetable, lettuce, spinach, kale, cabbage, bok choy, pak choi, herb, basil, parsley, coriander, cilantro, mint, celery, asparagus, greens, rocket, arugula, sprout, leaves, leaf.",
+      "file": "svg/leafy.svg",
+      "color": "#91D985"
+    },
+    {
+      "id": "broccoli",
+      "label": "Broccoli",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Broccoli. Use for: broccoli, cauliflower.",
+      "file": "svg/broccoli.svg",
+      "color": "#91D985"
+    },
+    {
+      "id": "carrot",
+      "label": "Carrot",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Carrot. Use for: carrot.",
+      "file": "svg/carrot.svg",
+      "color": "#FFB35C"
+    },
+    {
+      "id": "cucumber",
+      "label": "Cucumber",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Cucumber. Use for: cucumber, zucchini, courgette.",
+      "file": "svg/cucumber.svg",
+      "color": "#8FCB7B"
+    },
+    {
+      "id": "corn",
+      "label": "Corn",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Corn. Use for: corn, sweetcorn.",
+      "file": "svg/corn.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "tomato",
+      "label": "Tomato",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Tomato. Use for: tomato.",
+      "file": "svg/tomato.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "eggplant",
+      "label": "Eggplant",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Eggplant. Use for: eggplant, aubergine, brinjal.",
+      "file": "svg/eggplant.svg",
+      "color": "#A88BD8"
+    },
+    {
+      "id": "pepper",
+      "label": "Bell pepper",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Bell pepper. Use for: pepper, capsicum, bell pepper.",
+      "file": "svg/pepper.svg",
+      "color": "#91D985"
+    },
+    {
+      "id": "chilli",
+      "label": "Chilli",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Chilli. Use for: chilli, chillies, chili, chilies, jalapeno.",
+      "file": "svg/chilli.svg",
+      "color": "#F2665A"
+    },
+    {
+      "id": "mushroom",
+      "label": "Mushroom",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Mushroom. Use for: mushroom, shiitake, enoki.",
+      "file": "svg/mushroom.svg",
+      "color": "#E6CDB0"
+    },
+    {
+      "id": "potato",
+      "label": "Potato",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Potato. Use for: potato.",
+      "file": "svg/potato.svg",
+      "color": "#D9B382"
+    },
+    {
+      "id": "sweetPotato",
+      "label": "Sweet potato",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Sweet potato. Use for: sweet potato, yam.",
+      "file": "svg/sweetPotato.svg",
+      "color": "#D98A6C"
+    },
+    {
+      "id": "onion",
+      "label": "Onion",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Onion. Use for: onion, shallot, leek, scallion, spring onion.",
+      "file": "svg/onion.svg",
+      "color": "#E9C2E3"
+    },
+    {
+      "id": "garlic",
+      "label": "Garlic",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Garlic. Use for: garlic, ginger.",
+      "file": "svg/garlic.svg",
+      "color": "#F4EEDF"
+    },
+    {
+      "id": "pumpkin",
+      "label": "Pumpkin",
+      "type": "specific",
+      "category": "vegetable",
+      "description": "Pumpkin. Use for: pumpkin, squash.",
+      "file": "svg/pumpkin.svg",
+      "color": "#FFB35C"
+    },
+    {
+      "id": "steak",
+      "label": "Meat",
+      "type": "specific",
+      "category": "meat",
+      "description": "Meat. Use for: beef, steak, pork, lamb, mince, meat, mutton, veal, meatball.",
+      "file": "svg/steak.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "drumstick",
+      "label": "Chicken",
+      "type": "specific",
+      "category": "meat",
+      "description": "Chicken. Use for: chicken, drumstick, wing, turkey, duck, poultry, nugget.",
+      "file": "svg/drumstick.svg",
+      "color": "#F2B56B"
+    },
+    {
+      "id": "bacon",
+      "label": "Bacon & ham",
+      "type": "specific",
+      "category": "meat",
+      "description": "Bacon & ham. Use for: bacon, ham, prosciutto.",
+      "file": "svg/bacon.svg",
+      "color": "#F4A091"
+    },
+    {
+      "id": "sausage",
+      "label": "Sausage",
+      "type": "specific",
+      "category": "meat",
+      "description": "Sausage. Use for: sausage, hot dog, hotdog, frankfurter, chorizo, salami, pepperoni.",
+      "file": "svg/sausage.svg",
+      "color": "#E89070"
+    },
+    {
+      "id": "fish",
+      "label": "Fish",
+      "type": "specific",
+      "category": "meat",
+      "description": "Fish. Use for: fish, salmon, tuna, cod, sardine, mackerel, tilapia, anchovy, anchovies, trout, seafood.",
+      "file": "svg/fish.svg",
+      "color": "#9ADCEB"
+    },
+    {
+      "id": "shrimp",
+      "label": "Shrimp & prawns",
+      "type": "specific",
+      "category": "meat",
+      "description": "Shrimp & prawns. Use for: shrimp, prawn, lobster.",
+      "file": "svg/shrimp.svg",
+      "color": "#FFAA8A"
+    },
+    {
+      "id": "crab",
+      "label": "Crab",
+      "type": "specific",
+      "category": "meat",
+      "description": "Crab. Use for: crab.",
+      "file": "svg/crab.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "octopus",
+      "label": "Squid & octopus",
+      "type": "specific",
+      "category": "meat",
+      "description": "Squid & octopus. Use for: squid, octopus, calamari.",
+      "file": "svg/octopus.svg",
+      "color": "#F4A6C0"
+    },
+    {
+      "id": "shell",
+      "label": "Shellfish",
+      "type": "specific",
+      "category": "meat",
+      "description": "Shellfish. Use for: oyster, clam, mussel, scallop, shellfish.",
+      "file": "svg/shell.svg",
+      "color": "#E6DCCD"
+    },
+    {
+      "id": "sushi",
+      "label": "Sushi",
+      "type": "specific",
+      "category": "meat",
+      "description": "Sushi. Use for: sushi, sashimi, onigiri.",
+      "file": "svg/sushi.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "milk",
+      "label": "Milk",
+      "type": "specific",
+      "category": "dairy",
+      "description": "Milk. Use for: milk, cream, buttermilk.",
+      "file": "svg/milk.svg",
+      "color": "#E8F8F5"
+    },
+    {
+      "id": "cheese",
+      "label": "Cheese",
+      "type": "specific",
+      "category": "dairy",
+      "description": "Cheese. Use for: cheese, cheddar, mozzarella, parmesan, feta, brie, halloumi, paneer.",
+      "file": "svg/cheese.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "butter",
+      "label": "Butter",
+      "type": "specific",
+      "category": "dairy",
+      "description": "Butter. Use for: butter, margarine, ghee.",
+      "file": "svg/butter.svg",
+      "color": "#FFE9A0"
+    },
+    {
+      "id": "yoghurt",
+      "label": "Yoghurt",
+      "type": "specific",
+      "category": "dairy",
+      "description": "Yoghurt. Use for: yoghurt, yogurt, kefir, pudding.",
+      "file": "svg/yoghurt.svg",
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "iceCream",
+      "label": "Ice cream",
+      "type": "specific",
+      "category": "dairy",
+      "description": "Ice cream. Use for: ice cream, gelato, sorbet, ice lolly, popsicle.",
+      "file": "svg/iceCream.svg",
+      "color": "#FFC2B8"
+    },
+    {
+      "id": "egg",
+      "label": "Egg",
+      "type": "specific",
+      "category": "dairy",
+      "description": "Whole eggs of any kind: chicken, duck, quail, salted or century eggs. Not egg dishes.",
+      "file": "svg/egg.svg",
+      "color": "#FFE9B8"
+    },
+    {
+      "id": "bread",
+      "label": "Bread",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Bread. Use for: bread, loaf, toast, sourdough, bun, roti, naan, tortilla, pita.",
+      "file": "svg/bread.svg",
+      "color": "#E8B877"
+    },
+    {
+      "id": "croissant",
+      "label": "Croissant",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Croissant. Use for: croissant.",
+      "file": "svg/croissant.svg",
+      "color": "#F2B56B"
+    },
+    {
+      "id": "baguette",
+      "label": "Baguette",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Baguette. Use for: baguette.",
+      "file": "svg/baguette.svg",
+      "color": "#E8B877"
+    },
+    {
+      "id": "bagel",
+      "label": "Bagel & pretzel",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Bagel & pretzel. Use for: bagel, pretzel.",
+      "file": "svg/bagel.svg",
+      "color": "#D9A066"
+    },
+    {
+      "id": "pancake",
+      "label": "Pancakes",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Pancakes. Use for: pancake, waffle, crepe.",
+      "file": "svg/pancake.svg",
+      "color": "#F2C46B"
+    },
+    {
+      "id": "rice",
+      "label": "Rice",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Rice. Use for: rice, risotto.",
+      "file": "svg/rice.svg",
+      "color": "#F7F1DE"
+    },
+    {
+      "id": "noodles",
+      "label": "Pasta & noodles",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Pasta & noodles. Use for: noodle, ramen, pasta, spaghetti, macaroni, udon, lasagne, lasagna, penne, fusilli.",
+      "file": "svg/noodles.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "cereal",
+      "label": "Cereal & oats",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Cereal & oats. Use for: cereal, oat, oatmeal, porridge, granola, muesli, cornflakes.",
+      "file": "svg/cereal.svg",
+      "color": "#F2C46B"
+    },
+    {
+      "id": "grain",
+      "label": "Flour & grains",
+      "type": "specific",
+      "category": "bakery",
+      "description": "Flour and loose grains: flour, quinoa, barley, wheat, couscous, semolina.",
+      "file": "svg/grain.svg",
+      "color": "#E8D29A"
+    },
+    {
+      "id": "juice",
+      "label": "Juice",
+      "type": "specific",
+      "category": "drink",
+      "description": "Juice. Use for: juice, smoothie, lemonade.",
+      "file": "svg/juice.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "bottle",
+      "label": "Bottle",
+      "type": "specific",
+      "category": "drink",
+      "description": "Bottle. Use for: oil, olive oil, vinegar.",
+      "file": "svg/bottle.svg",
+      "color": "#B9EAE5"
+    },
+    {
+      "id": "softDrink",
+      "label": "Soft drink",
+      "type": "specific",
+      "category": "drink",
+      "description": "Soft drink. Use for: soda, cola, soft drink, bubble tea, milk tea, cocktail.",
+      "file": "svg/softDrink.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "coffee",
+      "label": "Coffee",
+      "type": "specific",
+      "category": "drink",
+      "description": "Coffee. Use for: coffee, latte, espresso, cappuccino.",
+      "file": "svg/coffee.svg",
+      "color": "#C9A27E"
+    },
+    {
+      "id": "tea",
+      "label": "Tea",
+      "type": "specific",
+      "category": "drink",
+      "description": "Tea. Use for: tea, matcha.",
+      "file": "svg/tea.svg",
+      "color": "#B7DC72"
+    },
+    {
+      "id": "beer",
+      "label": "Beer",
+      "type": "specific",
+      "category": "drink",
+      "description": "Beer. Use for: beer, ale, lager.",
+      "file": "svg/beer.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "wine",
+      "label": "Wine",
+      "type": "specific",
+      "category": "drink",
+      "description": "Wine. Use for: wine, champagne, prosecco.",
+      "file": "svg/wine.svg",
+      "color": "#C46B8A"
+    },
+    {
+      "id": "water",
+      "label": "Water",
+      "type": "specific",
+      "category": "drink",
+      "description": "Water. Use for: water, sparkling water.",
+      "file": "svg/water.svg",
+      "color": "#9ADCEB"
+    },
+    {
+      "id": "jar",
+      "label": "Sauces & spreads",
+      "type": "specific",
+      "category": "other",
+      "description": "Sauces & spreads. Use for: sauce, ketchup, mayo, mayonnaise, pesto, jam, salsa, dressing, mustard, paste, pickle, kimchi, spread, nutella.",
+      "file": "svg/jar.svg",
+      "color": "#B7DC72"
+    },
+    {
+      "id": "honey",
+      "label": "Honey",
+      "type": "specific",
+      "category": "other",
+      "description": "Honey. Use for: honey, syrup, maple syrup.",
+      "file": "svg/honey.svg",
+      "color": "#FFC15C"
+    },
+    {
+      "id": "salt",
+      "label": "Salt & spices",
+      "type": "specific",
+      "category": "other",
+      "description": "Salt & spices. Use for: salt, spice, black pepper, seasoning, cinnamon, paprika, cumin.",
+      "file": "svg/salt.svg",
+      "color": "#F4EEDF"
+    },
+    {
+      "id": "can",
+      "label": "Canned food",
+      "type": "specific",
+      "category": "other",
+      "description": "Canned or tinned food whose contents are not one clear food.",
+      "file": "svg/can.svg",
+      "color": "#F48678"
+    },
+    {
+      "id": "beans",
+      "label": "Beans & lentils",
+      "type": "specific",
+      "category": "other",
+      "description": "Beans & lentils. Use for: bean, lentil, chickpea, edamame, hummus.",
+      "file": "svg/beans.svg",
+      "color": "#C98A6C"
+    },
+    {
+      "id": "tofu",
+      "label": "Tofu",
+      "type": "specific",
+      "category": "other",
+      "description": "Tofu. Use for: tofu, tempeh.",
+      "file": "svg/tofu.svg",
+      "color": "#F7F1DE"
+    },
+    {
+      "id": "nut",
+      "label": "Nuts",
+      "type": "specific",
+      "category": "other",
+      "description": "Nuts. Use for: nut, peanut, almond, cashew, walnut, pistachio, hazelnut, chestnut, pecan.",
+      "file": "svg/nut.svg",
+      "color": "#D9B382"
+    },
+    {
+      "id": "chocolate",
+      "label": "Chocolate",
+      "type": "specific",
+      "category": "other",
+      "description": "Chocolate. Use for: chocolate, cocoa.",
+      "file": "svg/chocolate.svg",
+      "color": "#A9785A"
+    },
+    {
+      "id": "cookie",
+      "label": "Cookies & biscuits",
+      "type": "specific",
+      "category": "other",
+      "description": "Cookies & biscuits. Use for: cookie, biscuit.",
+      "file": "svg/cookie.svg",
+      "color": "#E8B877"
+    },
+    {
+      "id": "candy",
+      "label": "Sweets",
+      "type": "specific",
+      "category": "other",
+      "description": "Sweets. Use for: candy, sweets, gummy, gummies, lolly, lollies, marshmallow, jelly.",
+      "file": "svg/candy.svg",
+      "color": "#F4A6C0"
+    },
+    {
+      "id": "snack",
+      "label": "Snacks & crisps",
+      "type": "specific",
+      "category": "other",
+      "description": "Snacks & crisps. Use for: chips, crisps, popcorn, cracker, snack, pretzels.",
+      "file": "svg/snack.svg",
+      "color": "#FFB35C"
+    },
+    {
+      "id": "cake",
+      "label": "Cake & pastries",
+      "type": "specific",
+      "category": "other",
+      "description": "Cake & pastries. Use for: cake, cupcake, muffin, pie, tart, donut, doughnut, brownie, pastry, danish.",
+      "file": "svg/cake.svg",
+      "color": "#FFC2B8"
+    },
+    {
+      "id": "sandwich",
+      "label": "Sandwiches & wraps",
+      "type": "specific",
+      "category": "other",
+      "description": "Sandwiches & wraps. Use for: sandwich, wrap, burrito, kebab, sub, taco.",
+      "file": "svg/sandwich.svg",
+      "color": "#F2C46B"
+    },
+    {
+      "id": "pizza",
+      "label": "Pizza",
+      "type": "specific",
+      "category": "other",
+      "description": "Pizza. Use for: pizza.",
+      "file": "svg/pizza.svg",
+      "color": "#FFD66B"
+    },
+    {
+      "id": "burger",
+      "label": "Burger",
+      "type": "specific",
+      "category": "other",
+      "description": "Burger. Use for: burger, hamburger, cheeseburger.",
+      "file": "svg/burger.svg",
+      "color": "#E8B877"
+    },
+    {
+      "id": "salad",
+      "label": "Salad",
+      "type": "specific",
+      "category": "other",
+      "description": "Salad. Use for: salad, coleslaw.",
+      "file": "svg/salad.svg",
+      "color": "#91D985"
+    },
+    {
+      "id": "soup",
+      "label": "Soups & curries",
+      "type": "specific",
+      "category": "other",
+      "description": "Soups & curries. Use for: soup, stew, curry, broth, stock.",
+      "file": "svg/soup.svg",
+      "color": "#F2B56B"
+    },
+    {
+      "id": "dumpling",
+      "label": "Dumplings",
+      "type": "specific",
+      "category": "other",
+      "description": "Dumplings. Use for: dumpling, gyoza, bao, wonton, spring roll.",
+      "file": "svg/dumpling.svg",
+      "color": "#F7F1DE"
+    },
+    {
+      "id": "ice",
+      "label": "Frozen food",
+      "type": "specific",
+      "category": "other",
+      "description": "Ice, and frozen items that are not clearly a specific food.",
+      "file": "svg/ice.svg",
+      "color": "#CDEFFB"
+    },
+    {
+      "id": "box",
+      "label": "Other food",
+      "type": "specific",
+      "category": "other",
+      "description": "Packaged or boxed food and ready meals whose contents are not one clear food.",
+      "file": "svg/box.svg",
+      "color": "#B9EAE5"
+    },
+    {
+      "id": "generic",
+      "label": "Food",
+      "type": "fallback",
+      "category": "other",
+      "description": "Only when you cannot tell what the item is, or it is not food.",
+      "file": "svg/generic.svg",
+      "color": "#D9D4C7"
+    }
+  ]
+}

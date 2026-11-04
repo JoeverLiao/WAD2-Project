@@ -1090,7 +1090,7 @@ onBeforeUnmount(() => {
                             class="conversation-food-icon flex-shrink-0"
                             aria-hidden="true"
                           >
-                            <FoodIcon :food="request.food" />
+                            <FoodIcon :name="request.food" />
                           </span>
 
                           <span class="d-flex flex-column gap-1">
@@ -1170,7 +1170,7 @@ onBeforeUnmount(() => {
                   class="listing-placeholder d-flex align-items-center justify-content-center flex-shrink-0 rounded"
                   aria-hidden="true"
                 >
-                  <FoodIcon :food="selectedGroup.food" />
+                  <FoodIcon :name="selectedGroup.food" />
                 </span>
 
                 <div>

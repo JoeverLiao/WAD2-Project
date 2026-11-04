@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
                       class="urgent-food-icon flex-shrink-0"
                       aria-hidden="true"
                     >
-                      <FoodIcon :food="item.title" />
+                      <FoodIcon :name="item.title" />
                     </span>
 
                     <div class="flex-grow-1">

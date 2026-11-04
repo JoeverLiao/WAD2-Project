@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 70" fill="none" stroke="#123f3b" stroke-linecap="round" stroke-linejoin="round">
+  <path class="food-shape" d="M10 33C12 12 58 12 60 33c0 14-9 25-20 25H30C19 58 10 47 10 33Z" fill="currentColor" stroke-width="3.2"/>
+  <path class="food-line" d="M10 33h50M20 25c5-5 10 5 15 0s10 5 15 0M27 43c5 4 11 4 16 0" stroke-width="2.5"/>
+</svg>
