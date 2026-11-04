@@ -1,4 +1,5 @@
 <script setup>
+import { canonicalName, daysUntil, normalizeRecipe, analyseRecipes } from '../../utils/recipeSuggestions.js'
 import EggCompanion from '../../components/analytics/VegetableCompanions.vue'
 
 const eggTips = [
@@ -55,23 +56,24 @@ const allExpiryItems = computed(() => {
 // Not expired yet, soonest first: still worth cooking
 const urgentItems = computed(() => allExpiryItems.value.filter((i) => i.status === 'eat-soon' || i.status === 'fresh').slice(0, 3))
 
-// Real TheMealDB recipes ranked by how many of the user's ingredients they use.
-// Ingredients that expire soonest go first, so suggestions help use them up.
+// Match the recipe page's default "From my fridge" recommendations.
 const recipes = ref([])
 const recipesLoading = ref(false)
 const recipesError = ref('')
-
-const usableIngredients = computed(() => [
-  ...new Set(
-    allExpiryItems.value
-      .filter((i) => i.status !== 'expired' && Number(i.quantity) > 0)
-      .map((i) => i.name.toLowerCase()),
-  ),
-].slice(0, 8))
+const recipeInventory = computed(() => items.value
+  .map(item => ({ ...item, days: daysUntil(item.expiresAt) }))
+  .filter(item => item.days === null || item.days >= 0))
+const usableIngredients = computed(() => [...new Set(recipeInventory.value
+  .map(item => canonicalName(item.name)).filter(Boolean))].slice(0, 8))
+const suggestedRecipes = computed(() => analyseRecipes(recipes.value, recipeInventory.value)
+  .sort((a, b) => b.rescueScore - a.rescueScore).slice(0, 3))
+let recipeRequestId = 0
 
 async function loadRecipes(ingredients) {
+  const requestId = ++recipeRequestId
   if (!ingredients.length) {
     recipes.value = []
+    recipesLoading.value = false
     return
   }
   recipesLoading.value = true
@@ -82,13 +84,16 @@ async function loadRecipes(ingredients) {
     })
     if (!response.ok) throw new Error(`Recipes HTTP ${response.status}`)
     const data = await response.json()
-    recipes.value = Array.isArray(data) ? data : []
+    if (requestId !== recipeRequestId) return
+    const list = Array.isArray(data) ? data : data?.recipes ?? data?.data?.recipes ?? []
+    recipes.value = list.map(normalizeRecipe).filter(recipe => recipe.id)
   } catch (err) {
+    if (requestId !== recipeRequestId) return
     console.error('Failed to load recipes:', err)
     recipes.value = []
     recipesError.value = 'Unable to load recipe suggestions right now.'
   } finally {
-    recipesLoading.value = false
+    if (requestId === recipeRequestId) recipesLoading.value = false
   }
 }
 
@@ -229,7 +234,7 @@ const vReveal = {
               {{ usableIngredients.length ? 'No recipes found for your ingredients yet.' : 'Add some food to get recipe ideas.' }}
             </p>
             <ul v-else class="dashboard-recipe-grid">
-              <li v-for="recipe in recipes.slice(0, 3)" :key="recipe.id">
+              <li v-for="recipe in suggestedRecipes" :key="recipe.id">
                 <RouterLink :to="{ name: 'recipe-detail', params: { id: String(recipe.id) } }" class="dashboard-recipe-card">
                   <div class="dashboard-recipe-photo">
                     <img v-if="recipe.image" :src="recipe.image" alt="" loading="lazy">
@@ -238,7 +243,7 @@ const vReveal = {
                   <div class="dashboard-recipe-copy">
                     <strong class="recipe-name">{{ recipe.name }}</strong>
                     <span v-if="recipe.ingredients?.length" class="recipe-meta">
-                      {{ recipe.matchedIngredients?.length ?? 0 }}/{{ recipe.ingredients.length }} ingredients
+                      {{ recipe.matched.length }}/{{ recipe.ingredients.length }} ingredients
                     </span>
                   </div>
                 </RouterLink>
