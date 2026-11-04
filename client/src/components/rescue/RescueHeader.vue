@@ -494,6 +494,15 @@ a:focus-visible {
   outline-offset: 4px;
 }
 
+.expiry-clear-icon {
+  width: 56px;
+  height: 56px;
+  border: 2px solid var(--ink);
+  background: var(--aqua-soft);
+  color: var(--ink);
+  font-size: 30px;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .sticky-note-card,

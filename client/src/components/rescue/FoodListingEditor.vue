@@ -28,13 +28,12 @@ const inventory = useInventoryStore()
 // Form
 const editing = computed(() => Boolean(props.listing?._id))
 
-const source = ref(
-  props.listing
-    ? props.listing.inventoryItem
-      ? 'inventory'
-      : 'manual'
-    : 'inventory',
-)
+// New listings start with inventory; existing listings keep their original source.
+let initialSource = 'inventory'
+if (props.listing && !props.listing.inventoryItem) {
+  initialSource = 'manual'
+}
+const source = ref(initialSource)
 
 const selectedInventoryId = ref(
   String(
@@ -50,7 +49,7 @@ const form = reactive({
   description: props.listing?.description || '',
   quantity: props.listing?.quantity ?? '',
   unit: props.listing?.unit || 'pieces',
-  expiresAt: toLocalInput(props.listing?.expiresAt),
+  expiresAt: toLocalInput(props.listing?.expiresAt).slice(0, 10),
   pickupStart: toLocalInput(props.listing?.pickupStart),
   pickupEnd: toLocalInput(props.listing?.pickupEnd),
   pickupLabel: props.listing?.pickupLabel || '',
@@ -99,46 +98,69 @@ function inventoryExpiry(item) {
 
   const date = new Date(
     /^\d{4}-\d{2}-\d{2}$/.test(String(value))
-      ? `${value}T00:00:00`
+      ? `${value}T23:59:59.999+08:00`
       : value,
   )
 
-  return Number.isFinite(date.getTime()) ? date.toISOString() : ''
+  return Number.isFinite(date.getTime())
+    ? date.toISOString()
+    : ''
 }
 
 const linkedExpiry = computed(() => inventoryExpiry(selectedInventory.value))
 
+function singaporeDateKey(value = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(value)
+
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  )
+
+  return `${values.year}-${values.month}-${values.day}`
+}
+
 const inventoryOptions = computed(() => {
   const query = inventorySearch.value.trim().toLowerCase()
-  const now = Date.now()
+  const today = singaporeDateKey()
 
   return inventory.items
     .filter((item) => {
-      const expiry = inventoryExpiry(item)
+      const expiryDate = item.expiresAt
+        ? String(item.expiresAt).slice(0, 10)
+        : ''
 
       return (
-        (!expiry || Date.parse(expiry) > now) &&
+        (!expiryDate || singaporeDateKey() <= expiryDate) &&
         String(item.name || '').toLowerCase().includes(query)
       )
     })
     .sort((a, b) => {
-      const compareNames = () =>
-        String(a.name || '').localeCompare(
-          String(b.name || ''),
-          'en',
-          { sensitivity: 'base', numeric: true },
-        )
+      const nameOrder = String(a.name || '').localeCompare(
+        String(b.name || ''),
+        'en',
+        { sensitivity: 'base', numeric: true },
+      )
 
-      if (inventorySort.value === 'name') return compareNames()
+      if (inventorySort.value === 'name') return nameOrder
 
-      const aExpiry = inventoryExpiry(a)
-      const bExpiry = inventoryExpiry(b)
+      const aExpiry = a.expiresAt
+        ? String(a.expiresAt).slice(0, 10)
+        : ''
 
-      if (!aExpiry && !bExpiry) return compareNames()
+      const bExpiry = b.expiresAt
+        ? String(b.expiresAt).slice(0, 10)
+        : ''
+
+      if (!aExpiry && !bExpiry) return nameOrder
       if (!aExpiry) return 1
       if (!bExpiry) return -1
 
-      return Date.parse(aExpiry) - Date.parse(bExpiry) || compareNames()
+      return aExpiry.localeCompare(bExpiry) || nameOrder
     })
 })
 
@@ -159,9 +181,11 @@ function inventoryDisabledReason(item) {
     return 'Less than one whole unit available'
   }
 
-  const expiry = inventoryExpiry(item)
+  const expiryDate = item.expiresAt
+  ? String(item.expiresAt).slice(0, 10)
+  : ''
 
-  if (expiry && Date.parse(expiry) <= Date.now()) {
+  if (expiryDate && expiryDate < singaporeDateKey()) {
     return 'Expired'
   }
 
@@ -175,7 +199,7 @@ function chooseInventory(item) {
   form.title = item.name
   form.quantity = 1
   form.unit = item.unit.trim()
-  form.expiresAt = toLocalInput(inventoryExpiry(item))
+  form.expiresAt = toLocalInput(inventoryExpiry(item)).slice(0, 10)
 }
 
 function changeSource(value) {
@@ -191,30 +215,21 @@ function changeSource(value) {
 }
 
 function inventoryExpiryLabel(item) {
-  const timestamp = Date.parse(inventoryExpiry(item))
+  if (!item.expiresAt) return 'No expiry recorded'
 
-  if (!Number.isFinite(timestamp)) return 'No expiry recorded'
-  if (timestamp <= Date.now()) return 'Expired'
+  const expiryDate = String(item.expiresAt).slice(0, 10)
+  const today = singaporeDateKey()
 
-  const expiry = new Date(timestamp)
-  const today = new Date()
+  if (expiryDate < today) return 'Expired'
+  if (expiryDate === today) return 'Expires today'
 
-  if (
-    expiry.getFullYear() === today.getFullYear() &&
-    expiry.getMonth() === today.getMonth() &&
-    expiry.getDate() === today.getDate()
-  ) {
-    return 'Use by today'
-  }
+  const date = new Date(`${expiryDate}T12:00:00+08:00`)
 
-  return `Use by ${new Intl.DateTimeFormat('en-SG', {
+  return `Expires ${date.toLocaleDateString('en-SG', {
+    timeZone: 'Asia/Singapore',
     day: 'numeric',
     month: 'short',
-    year:
-      expiry.getFullYear() !== today.getFullYear()
-        ? 'numeric'
-        : undefined,
-  }).format(expiry)}`
+  })}`
 }
 
 function inventoryStorageLabel(item) {
@@ -357,6 +372,7 @@ async function searchPickupAddresses(page = 1) {
   const controller = new AbortController()
   addressController = controller
 
+  // Ignore older requests if a newer search starts before they finish.
   const sequence = ++addressSearchSequence
 
   addressLoading.value = true
@@ -600,10 +616,24 @@ async function save() {
     form.latitude = selectedAddress.value.latitude
     form.longitude = selectedAddress.value.longitude
 
-    payload = validateForm(form, {
-      linked: linked.value,
-      linkedExpiry: linkedExpiry.value,
-    })
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.expiresAt)) {
+      throw new Error('Choose a valid expiry date.')
+    }
+
+    const expiryTimestamp = new Date(
+      `${form.expiresAt}T23:59:59.999+08:00`,
+    ).toISOString()
+
+    payload = validateForm(
+      {
+        ...form,
+        expiresAt: expiryTimestamp,
+      },
+      {
+        linked: linked.value,
+        linkedExpiry: linkedExpiry.value,
+      },
+    )
 
     if (linked.value && !editing.value) {
       payload.inventoryItem = selectedInventoryId.value
@@ -614,23 +644,16 @@ async function save() {
       delete payload.unit
     }
 
-    // Preserve exact timestamps when the displayed values are unchanged.
+    // Preserve unchanged pickup timestamps when editing.
     if (editing.value) {
-      for (const key of ['expiresAt', 'pickupStart', 'pickupEnd']) {
+      for (const key of ['pickupStart', 'pickupEnd']) {
         if (form[key] === toLocalInput(props.listing[key])) {
           payload[key] = props.listing[key]
         }
       }
-    } else if (
-      linked.value &&
-      form.expiresAt === toLocalInput(linkedExpiry.value)
-    ) {
-      payload.expiresAt = linkedExpiry.value
     }
   } catch (err) {
-    error.value =
-    err.response?.data?.details ||
-    apiError(err)
+    error.value = err.response?.data?.details || apiError(err)
     return
   }
 
@@ -640,10 +663,15 @@ async function save() {
     : 'Creating listing…'
 
   try {
-    const { data } = editing.value
-      ? await api.patch(`/rescue/${props.listing._id}`, payload)
-      : await api.post('/rescue', payload)
+    let response
+    if (editing.value) {
+      response = await api.patch(`/rescue/${props.listing._id}`, payload)
+    } else {
+      response = await api.post('/rescue', payload)
+    }
+    const data = response.data
 
+    // Remember the saved listing so retrying a photo never creates another listing.
     persisted.value = data.listing
     emit('committed', data.listing)
 
@@ -702,38 +730,6 @@ function finishWithoutPhotoChange() {
   }
 }
 
-// Lifecycle
-onMounted(async () => {
-  previouslyFocused = document.activeElement
-  releaseScroll = lockBodyScroll()
-  dialog.value.showModal()
-
-  await Promise.all([
-    inventory.loadInventory(),
-    loadExistingPhoto(),
-    loadSavedLocation(),
-  ])
-})
-
-onBeforeUnmount(() => {
-  alive = false
-  addressSearchSequence += 1
-  addressController?.abort()
-
-  clearPreview()
-
-  if (currentPhotoObjectUrl) {
-    URL.revokeObjectURL(currentPhotoObjectUrl)
-  }
-
-  dialog.value?.close()
-  releaseScroll?.()
-
-  if (previouslyFocused?.isConnected) {
-    previouslyFocused.focus()
-  }
-})
-
 const geolocating = ref(false)
 
 function getBrowserPosition() {
@@ -757,6 +753,7 @@ async function useMyLocation() {
 
   resetAddressResults()
 
+  // Ignore older requests if a newer search starts before they finish.
   const sequence = ++addressSearchSequence
 
   geolocating.value = true
@@ -817,14 +814,15 @@ async function useMyLocation() {
   } catch (err) {
     if (!alive || sequence !== addressSearchSequence) return
 
-    addressError.value =
-      err.code === 1
-        ? 'Location permission was denied. Allow access or search manually.'
-        : err.code === 2
-          ? 'Your location is unavailable. Please search manually.'
-          : err.code === 3
-            ? 'Location access timed out. Try again or search manually.'
-            : apiError(err, 'Could not locate your address.')
+    if (err.code === 1) {
+      addressError.value = 'Location permission was denied. Allow access or search manually.'
+    } else if (err.code === 2) {
+      addressError.value = 'Your location is unavailable. Please search manually.'
+    } else if (err.code === 3) {
+      addressError.value = 'Location access timed out. Try again or search manually.'
+    } else {
+      addressError.value = apiError(err, 'Could not locate your address.')
+    }
   } finally {
     if (alive) geolocating.value = false
   }
@@ -886,6 +884,227 @@ async function loadSavedLocation() {
     if (alive) savedLocationLoading.value = false
   }
 }
+
+// Pickup shortcuts still fill the existing form fields.
+// Existing listings retain their original pickup window.
+const pickupToday = singaporeDateKey()
+
+const tomorrow = new Date(`${pickupToday}T12:00:00+08:00`)
+tomorrow.setTime(tomorrow.getTime() + 24 * 60 * 60 * 1000)
+
+const pickupTomorrow = singaporeDateKey(tomorrow)
+
+const pickupDay = ref(
+  form.pickupStart.slice(0, 10) || pickupToday,
+)
+
+// Existing listings show their saved times immediately.
+const pickupDaySelected = ref(Boolean(form.pickupStart))
+const pickupPreset = ref(form.pickupStart ? 'custom' : '')
+
+const showPickupCalendar = ref(
+  ![pickupToday, pickupTomorrow].includes(pickupDay.value),
+)
+
+const pickupTimeOptions = [
+  {
+    id: 'morning',
+    label: 'Morning',
+    timeLabel: '9 am–12 pm',
+    start: '09:00',
+    end: '12:00',
+  },
+  {
+    id: 'afternoon',
+    label: 'Afternoon',
+    timeLabel: '12–5 pm',
+    start: '12:00',
+    end: '17:00',
+  },
+  {
+    id: 'evening',
+    label: 'Evening',
+    timeLabel: '5–9 pm',
+    start: '17:00',
+    end: '21:00',
+  },
+]
+
+// The time inputs read and update the same fields used by save().
+const pickupStartTime = computed({
+  get() {
+    return form.pickupStart.slice(11, 16)
+  },
+  set(time) {
+    form.pickupStart = time
+      ? `${pickupDay.value}T${time}`
+      : ''
+  },
+})
+
+const pickupEndTime = computed({
+  get() {
+    return form.pickupEnd.slice(11, 16)
+  },
+  set(time) {
+    form.pickupEnd = time
+      ? `${pickupDay.value}T${time}`
+      : ''
+  },
+})
+
+function pickupDayAllowed(day) {
+  return Boolean(
+    day &&
+    day >= singaporeDateKey() &&
+    (!form.expiresAt || day <= form.expiresAt.slice(0, 10)),
+  )
+}
+
+// Return a usable window, or null when it has ended.
+// Windows already in progress begin at the next 15-minute slot.
+function pickupPresetWindow(option) {
+  const day = pickupDay.value
+
+  if (!pickupDayAllowed(day)) return null
+
+  let start = Date.parse(`${day}T${option.start}:00+08:00`)
+  const end = Date.parse(`${day}T${option.end}:00+08:00`)
+
+  const quarterHour = 15 * 60 * 1000
+  const nextSlot =
+    (Math.floor(Date.now() / quarterHour) + 1) * quarterHour
+
+  start = Math.max(start, nextSlot)
+
+  if (start >= end) return null
+
+  // Convert the adjusted start back to Singapore HH:mm.
+  const startTime = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Singapore',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(start))
+
+  return {
+    start: `${day}T${startTime}`,
+    end: `${day}T${option.end}`,
+  }
+}
+
+function selectPickupPreset(option) {
+  const window = pickupPresetWindow(option)
+
+  if (!window) return
+
+  pickupPreset.value = option.id
+  form.pickupStart = window.start
+  form.pickupEnd = window.end
+}
+
+function selectPickupDay(day) {
+  if (!pickupDayAllowed(day)) return
+
+  pickupDaySelected.value = true
+
+  const startTime = pickupStartTime.value
+  const endTime = pickupEndTime.value
+
+  pickupDay.value = day
+
+  const option = pickupTimeOptions.find(
+    (item) => item.id === pickupPreset.value,
+  )
+
+  if (option) {
+    const window = pickupPresetWindow(option)
+
+    if (window) {
+      selectPickupPreset(option)
+      return
+    }
+
+    // Ask for another window if this preset has already ended.
+    pickupPreset.value = 'custom'
+    form.pickupStart = ''
+    form.pickupEnd = ''
+    return
+  }
+
+  form.pickupStart = startTime ? `${day}T${startTime}` : ''
+  form.pickupEnd = endTime ? `${day}T${endTime}` : ''
+}
+
+const pickupSummary = computed(() => {
+  if (!form.pickupStart || !form.pickupEnd) return ''
+
+  const start = new Date(`${form.pickupStart}:00+08:00`)
+  const end = new Date(`${form.pickupEnd}:00+08:00`)
+
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    end <= start
+  ) {
+    return ''
+  }
+
+  const dayLabel = new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(start)
+
+  const timeFormatter = new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+
+  return `${dayLabel}, ${timeFormatter.format(start)}–${timeFormatter.format(end)}`
+})
+
+const showListingDetails = computed(() => {
+  return (
+    editing.value ||
+    source.value === 'manual' ||
+    Boolean(selectedInventory.value)
+  )
+})
+// Lifecycle
+onMounted(async () => {
+  previouslyFocused = document.activeElement
+  releaseScroll = lockBodyScroll()
+  dialog.value.showModal()
+
+  await Promise.all([
+    inventory.loadInventory(),
+    loadExistingPhoto(),
+    loadSavedLocation(),
+  ])
+})
+
+onBeforeUnmount(() => {
+  alive = false
+  addressSearchSequence += 1
+  addressController?.abort()
+
+  clearPreview()
+
+  if (currentPhotoObjectUrl) {
+    URL.revokeObjectURL(currentPhotoObjectUrl)
+  }
+
+  dialog.value?.close()
+  releaseScroll?.()
+
+  if (previouslyFocused?.isConnected) {
+    previouslyFocused.focus()
+  }
+})
+
 </script>
 
 <template>
@@ -906,14 +1125,14 @@ async function loadSavedLocation() {
               {{ editing ? 'Edit your listing' : 'Share something good' }}
             </h2>
 
-            <p class="field-hint mt-1">
+            <p class="small text-muted mb-0 mt-1">
               One type of food per listing. Your neighbour collects
               the quantity you choose to share.
             </p>
           </div>
 
           <button
-            class="editor-close flex-shrink-0 d-flex align-items-center justify-content-center"
+            class="btn editor-close rounded-circle p-0 flex-shrink-0 d-flex align-items-center justify-content-center"
             type="button"
             aria-label="Close listing editor"
             :disabled="saving"
@@ -929,15 +1148,15 @@ async function loadSavedLocation() {
 
         <div
           v-if="persisted && photoPending"
-          class="photo-recovery p-3 mb-3"
+          class="photo-recovery rounded-3 p-3 mb-3"
         >
-          <p>
+          <p class="mb-0">
             Your listing is already saved. Retrying will only update its photo.
           </p>
 
           <div class="d-flex flex-wrap gap-2 mt-2">
             <button
-              class="editor-button primary"
+              class="btn btn-primary editor-button"
               type="button"
               :disabled="saving"
               @click="retryPhoto"
@@ -946,7 +1165,7 @@ async function loadSavedLocation() {
             </button>
 
             <button
-              class="editor-button"
+              class="btn btn-outline-dark editor-button"
               type="button"
               :disabled="saving"
               @click="finishWithoutPhotoChange"
@@ -956,14 +1175,14 @@ async function loadSavedLocation() {
           </div>
         </div>
 
-        <fieldset :disabled="locked">
+        <fieldset class="border-0 p-0 m-0" :disabled="locked">
           <!-- Food picker -->
-          <section v-if="!editing" class="editor-section p-3 mb-3">
+          <section v-if="!editing" class="editor-section rounded-4 p-3 mb-3">
             <div class="row g-2 align-items-center mb-3">
               <div class="col-12 col-sm">
                 <h3 class="mb-1">Choose what to share</h3>
 
-                <p class="picker-muted">
+                <p class="small text-muted mb-0">
                   One item, one neighbour, less food wasted.
                 </p>
               </div>
@@ -971,7 +1190,12 @@ async function loadSavedLocation() {
               <div class="col-12 col-sm-auto">
                 <button
                   type="button"
-                  class="editor-link"
+                  :class="
+                    source === 'inventory'
+                      ? 'primary-button'
+                      : 'btn btn-link editor-link p-0'
+                  "
+                  :disabled="locked"
                   @click="
                     changeSource(
                       source === 'inventory' ? 'manual' : 'inventory',
@@ -990,7 +1214,7 @@ async function loadSavedLocation() {
             <template v-if="source === 'inventory'">
               <p
                 v-if="inventory.loading"
-                class="picker-muted text-center py-4"
+                class="small text-muted mb-0 text-center py-4"
                 role="status"
               >
                 Finding food in your fridge and pantry…
@@ -998,14 +1222,14 @@ async function loadSavedLocation() {
 
               <div
                 v-else-if="inventory.error"
-                class="picker-feedback p-3"
+                class="picker-feedback rounded-3 p-3"
                 role="alert"
               >
-                <p>{{ inventory.error }}</p>
+                <p class="mb-0">{{ inventory.error }}</p>
 
                 <button
                   type="button"
-                  class="editor-button mt-2"
+                  class="btn btn-outline-dark editor-button mt-2"
                   @click="inventory.loadInventory"
                 >
                   Try again
@@ -1044,7 +1268,7 @@ async function loadSavedLocation() {
                   </div>
                 </div>
 
-                <fieldset>
+                <fieldset class="border-0 p-0 m-0">
                   <legend class="visually-hidden">
                     Choose one food item to share
                   </legend>
@@ -1077,7 +1301,7 @@ async function loadSavedLocation() {
                           <span
                             class="d-flex align-items-center justify-content-between gap-2"
                           >
-                            <span class="food-storage">
+                            <span class="small text-muted">
                               {{ inventoryStorageLabel(item) }}
                             </span>
 
@@ -1098,14 +1322,14 @@ async function loadSavedLocation() {
 
                           <span class="food-name">{{ item.name }}</span>
 
-                          <span class="food-meta">
+                          <span class="small text-muted">
                             {{ item.quantity ?? '—' }} {{ item.unit }}
                           </span>
 
                           <span
                             class="food-expiry mt-auto pt-1"
                             :class="{
-                              'food-unavailable':
+                              'text-muted':
                                 Boolean(inventoryDisabledReason(item)),
                             }"
                           >
@@ -1118,8 +1342,8 @@ async function loadSavedLocation() {
                       </div>
 
                       <div v-if="!inventoryOptions.length" class="col-12">
-                        <div class="picker-empty text-center px-3 py-4">
-                          <p class="picker-empty-title">
+                        <div class="picker-empty rounded-3 text-center px-3 py-4">
+                          <p class="mb-0 picker-empty-title">
                             {{
                               inventorySearch.trim()
                                 ? 'No matching food'
@@ -1127,13 +1351,13 @@ async function loadSavedLocation() {
                             }}
                           </p>
 
-                          <p class="picker-muted mt-1">
+                          <p class="small text-muted mb-0 mt-1">
                             Try another search or add food manually.
                           </p>
 
                           <button
                             type="button"
-                            class="editor-link mt-2"
+                            class="btn btn-link p-0 editor-link mt-2"
                             @click="changeSource('manual')"
                           >
                             + Add food manually
@@ -1147,7 +1371,7 @@ async function loadSavedLocation() {
                 <!-- Selected item and quantity -->
                 <div
                   v-if="selectedInventory"
-                  class="selection-bar p-3 mt-3"
+                  class="selection-bar rounded-3 p-3 mt-3"
                 >
                   <div class="row g-3 align-items-center">
                     <div class="col-12 col-lg">
@@ -1155,11 +1379,11 @@ async function loadSavedLocation() {
                         Ready to share
                       </span>
 
-                      <p class="selected-name">
+                      <p class="mb-0 selected-name">
                         {{ selectedInventory.name }}
                       </p>
 
-                      <p class="picker-muted mt-1">
+                      <p class="small text-muted mb-0 mt-1">
                         {{ selectedInventory.quantity }}
                         {{ selectedInventory.unit }} available
                       </p>
@@ -1170,17 +1394,17 @@ async function loadSavedLocation() {
                         <div class="col-auto">
                           <label
                             for="share-picker-quantity"
-                            class="quantity-label d-block mb-1"
+                            class="form-label quantity-label d-block mb-1"
                           >
                             Quantity to share
                           </label>
 
                           <div
-                            class="quantity-stepper d-flex align-items-center overflow-hidden"
+                            class="quantity-stepper input-group flex-nowrap align-items-center overflow-hidden"
                           >
                             <button
                               type="button"
-                              class="flex-shrink-0"
+                              class="btn btn-outline-dark flex-shrink-0"
                               aria-label="Decrease quantity"
                               :disabled="
                                 locked ||
@@ -1195,7 +1419,7 @@ async function loadSavedLocation() {
                             <input
                               id="share-picker-quantity"
                               v-model.number="form.quantity"
-                              class="text-center"
+                              class="form-control text-center"
                               type="number"
                               min="1"
                               :max="maxShareQuantity"
@@ -1208,7 +1432,7 @@ async function loadSavedLocation() {
 
                             <button
                               type="button"
-                              class="flex-shrink-0"
+                              class="btn btn-outline-dark flex-shrink-0"
                               aria-label="Increase quantity"
                               :disabled="
                                 locked ||
@@ -1225,7 +1449,7 @@ async function loadSavedLocation() {
                         <div class="col-auto">
                           <button
                             type="button"
-                            class="editor-button primary"
+                            class="btn btn-primary editor-button"
                             :disabled="!validShareQuantity"
                             @click="continueToFoodDetails"
                           >
@@ -1237,18 +1461,18 @@ async function loadSavedLocation() {
                   </div>
                 </div>
 
-                <p v-else class="picker-muted mt-3">
+                <p v-else class="small text-muted mb-0 mt-3">
                   Choose one item above. We’ll fill in its details below.
                 </p>
               </template>
             </template>
 
-            <div v-else class="manual-entry-note p-3">
-              <p class="selected-name">
+            <div v-else class="manual-entry-note rounded-3 p-3">
+              <p class="mb-0 selected-name">
                 Something outside your inventory?
               </p>
 
-              <p class="picker-muted mt-1">
+              <p class="small text-muted mb-0 mt-1">
                 Enter its name, quantity and use-by date below.
               </p>
             </div>
@@ -1256,17 +1480,17 @@ async function loadSavedLocation() {
 
           <div
             v-if="editing && linked"
-            class="linked-note p-3 mb-3"
+            class="linked-note rounded-3 p-3 mb-3"
           >
             Linked to your inventory. Quantity and unit stay fixed;
             the shared quantity is deducted after collection.
           </div>
-
+          <template v-if="showListingDetails">
           <div class="row g-3">
             <!-- Step 1: Full-width food details -->
             <div class="col-12">
               <section
-                class="editor-section p-3 p-md-4"
+                class="editor-section rounded-4 p-3 p-md-4"
                 aria-labelledby="food-details-heading"
               >
                 <h3 id="food-details-heading" class="mb-3">
@@ -1276,7 +1500,7 @@ async function loadSavedLocation() {
                 <div class="row g-3">
                   <!-- Name and category -->
                   <div class="col-12 col-md-8">
-                    <label for="listing-title">Food name *</label>
+                    <label class="form-label" for="listing-title">Food name *</label>
 
                     <input
                       id="listing-title"
@@ -1289,7 +1513,7 @@ async function loadSavedLocation() {
                   </div>
 
                   <div class="col-12 col-md-4">
-                    <label for="listing-category">Category</label>
+                    <label class="form-label" for="listing-category">Category</label>
 
                     <select
                       id="listing-category"
@@ -1308,7 +1532,7 @@ async function loadSavedLocation() {
 
                   <!-- Quantity, unit and expiry -->
                   <div class="col-6 col-md-3">
-                    <label for="listing-quantity">Quantity *</label>
+                    <label class="form-label" for="listing-quantity">Quantity *</label>
 
                     <input
                       id="listing-quantity"
@@ -1328,7 +1552,7 @@ async function loadSavedLocation() {
                   </div>
 
                   <div class="col-6 col-md-3">
-                    <label for="listing-unit">Unit *</label>
+                    <label class="form-label" for="listing-unit">Unit *</label>
 
                     <input
                       id="listing-unit"
@@ -1353,23 +1577,23 @@ async function loadSavedLocation() {
                   </div>
 
                   <div class="col-12 col-md-6">
-                    <label for="listing-expiry">Use-by date and time *</label>
+                    <label class="form-label" for="listing-expiry">Use-by date and time *</label>
 
                     <input
                       id="listing-expiry"
                       v-model="form.expiresAt"
                       class="form-control"
-                      type="datetime-local"
-                      :min="minDatetime"
+                      type="date"
+                      :min="minDatetime.slice(0, 10)"
                       :max="
                         linkedExpiry
-                          ? toLocalInput(linkedExpiry)
+                          ? toLocalInput(linkedExpiry).slice(0, 10)
                           : undefined
                       "
                       required
                     />
 
-                    <p class="field-hint mt-2">
+                    <p class="small text-muted mb-0 mt-2">
                       All dates and times use your device timezone:
                       {{ localTimezone }}.
                     </p>
@@ -1377,7 +1601,7 @@ async function loadSavedLocation() {
 
                   <!-- Description -->
                   <div class="col-12">
-                    <label for="listing-description">Short description</label>
+                    <label class="form-label" for="listing-description">Short description</label>
 
                     <textarea
                       id="listing-description"
@@ -1395,20 +1619,20 @@ async function loadSavedLocation() {
             <!-- Step 2: Photo -->
             <div class="col-12 col-lg-5">
               <section
-                class="editor-section p-3 p-md-4 h-100"
+                class="editor-section rounded-4 p-3 p-md-4 h-100"
                 aria-labelledby="food-photo-heading"
               >
                 <h3 id="food-photo-heading" class="mb-2">
                   2. Add a photo
                 </h3>
 
-                <p class="field-hint mb-3">
+                <p class="small text-muted mb-0 mb-3">
                   Optional, but a clear photo helps neighbours know what
                   they are collecting.
                 </p>
 
                 <div
-                  class="photo-box d-flex align-items-center justify-content-center p-3 text-center"
+                  class="photo-box rounded-3 d-flex align-items-center justify-content-center p-3 text-center"
                 >
                   <img
                     v-if="photoPreview"
@@ -1424,7 +1648,7 @@ async function loadSavedLocation() {
                     alt="Current listing photo"
                   />
 
-                  <p v-else class="field-hint">
+                  <p v-else class="small text-muted mb-0">
                     {{
                       hasExistingPhoto && !photoLoaded
                         ? 'Loading current photo…'
@@ -1448,14 +1672,14 @@ async function loadSavedLocation() {
                   @cancel.stop
                 />
 
-                <p class="field-hint mt-2">
+                <p class="small text-muted mb-0 mt-2">
                   JPEG, PNG or WebP, up to 8 MiB.
                 </p>
 
                 <button
                   v-if="photo"
                   type="button"
-                  class="editor-link mt-2"
+                  class="btn btn-link p-0 editor-link mt-2"
                   @click="clearPhoto"
                 >
                   Clear selected photo
@@ -1463,11 +1687,11 @@ async function loadSavedLocation() {
 
                 <label
                   v-if="listing?.hasPhoto && !photo"
-                  class="check-label d-flex align-items-center gap-2 mt-3"
+                  class="form-label check-label d-flex align-items-center gap-2 mt-3"
                 >
                   <input
                     v-model="removeExistingPhoto"
-                    class="flex-shrink-0"
+                    class="form-check-input flex-shrink-0 mt-0"
                     type="checkbox"
                   />
 
@@ -1479,7 +1703,7 @@ async function loadSavedLocation() {
             <!-- Step 3: Pickup -->
             <div class="col-12 col-lg-7">
               <section
-                class="editor-section p-3 p-md-4 h-100"
+                class="editor-section rounded-4 p-3 p-md-4 h-100"
                 aria-labelledby="food-pickup-heading"
               >
                 <h3 id="food-pickup-heading" class="mb-3">
@@ -1487,37 +1711,173 @@ async function loadSavedLocation() {
                 </h3>
 
                 <!-- Pickup window -->
-                <div class="row g-3">
-                  <div class="col-12 col-sm-6">
-                    <label for="pickup-start">From *</label>
+                <!-- Pickup day -->
+                <fieldset :disabled="locked" class="border-0 p-0 m-0">
+                  <!-- First: choose a day -->
+                  <legend class="fs-6 fw-bold mb-2">Pickup day *</legend>
+
+                  <div class="d-flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      class="btn editor-button"
+                      :class="
+                        pickupDaySelected && pickupDay === pickupToday
+                          ? 'btn-dark'
+                          : 'btn-outline-dark'
+                      "
+                      :aria-pressed="
+                        pickupDaySelected && pickupDay === pickupToday
+                      "
+                      :disabled="!pickupDayAllowed(pickupToday)"
+                      @click="selectPickupDay(pickupToday)"
+                    >
+                      Today
+                    </button>
+
+                    <button
+                      v-if="pickupDayAllowed(pickupTomorrow)"
+                      type="button"
+                      class="btn editor-button"
+                      :class="
+                        pickupDaySelected && pickupDay === pickupTomorrow
+                          ? 'btn-dark'
+                          : 'btn-outline-dark'
+                      "
+                      :aria-pressed="
+                        pickupDaySelected && pickupDay === pickupTomorrow
+                      "
+                      @click="selectPickupDay(pickupTomorrow)"
+                    >
+                      Tomorrow
+                    </button>
+
+                    <button
+                      type="button"
+                      class="btn btn-outline-dark editor-button"
+                      :aria-expanded="showPickupCalendar"
+                      @click="showPickupCalendar = !showPickupCalendar"
+                    >
+                      Choose date
+                    </button>
+                  </div>
+
+                  <div v-if="showPickupCalendar" class="mt-2">
+                    <label for="pickup-day" class="visually-hidden">
+                      Pickup date
+                    </label>
 
                     <input
-                      id="pickup-start"
-                      v-model="form.pickupStart"
+                      id="pickup-day"
+                      :value="pickupDaySelected ? pickupDay : ''"
                       class="form-control"
-                      type="datetime-local"
-                      :min="minDatetime"
+                      type="date"
+                      :min="pickupToday"
                       :max="form.expiresAt || undefined"
-                      required
+                      @change="selectPickupDay($event.target.value)"
                     />
                   </div>
 
-                  <div class="col-12 col-sm-6">
-                    <label for="pickup-end">Until *</label>
+                  <!-- Second: time options appear after selecting a day -->
+                  <div v-if="pickupDaySelected" class="mt-3">
+                    <p class="fw-bold mb-2">Pickup time *</p>
 
-                    <input
-                      id="pickup-end"
-                      v-model="form.pickupEnd"
-                      class="form-control"
-                      type="datetime-local"
-                      :min="form.pickupStart || minDatetime"
-                      :max="form.expiresAt || undefined"
-                      required
-                    />
+                    <div class="row g-2">
+                      <div
+                        v-for="option in pickupTimeOptions"
+                        :key="option.id"
+                        class="col-12 col-sm-4"
+                      >
+                        <button
+                          type="button"
+                          class="btn editor-button w-100 h-100 py-2"
+                          :class="
+                            pickupPreset === option.id
+                              ? 'btn-dark'
+                              : 'btn-outline-dark'
+                          "
+                          :disabled="!pickupPresetWindow(option)"
+                          :aria-pressed="pickupPreset === option.id"
+                          @click="selectPickupPreset(option)"
+                        >
+                          <span class="d-block fw-bold">
+                            {{ option.label }}
+                          </span>
+
+                          <small class="d-block">
+                            {{ option.timeLabel }}
+                          </small>
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="btn btn-link editor-link p-0 mt-2"
+                      :aria-expanded="pickupPreset === 'custom'"
+                      @click="pickupPreset = pickupPreset === 'custom' ? '' : 'custom'"
+                    >
+                      {{
+                        pickupPreset === 'custom'
+                          ? 'Hide custom times'
+                          : 'Choose my own times'
+                      }}
+                    </button>
+
+                    <!-- Third: custom inputs appear only when requested -->
+                    <div
+                      v-if="pickupPreset === 'custom'"
+                      class="row g-2 mt-1"
+                    >
+                      <div class="col-6">
+                        <label for="pickup-start-time" class="form-label">
+                          From *
+                        </label>
+
+                        <input
+                          id="pickup-start-time"
+                          v-model="pickupStartTime"
+                          class="form-control"
+                          type="time"
+                          required
+                        />
+                      </div>
+
+                      <div class="col-6">
+                        <label for="pickup-end-time" class="form-label">
+                          Until *
+                        </label>
+
+                        <input
+                          id="pickup-end-time"
+                          v-model="pickupEndTime"
+                          class="form-control"
+                          type="time"
+                          :min="pickupStartTime || undefined"
+                          required
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <p class="field-hint mt-2">
+                  <!-- Confirmation appears once both times are set -->
+                  <div
+                    v-if="pickupDaySelected && pickupSummary"
+                    class="linked-note rounded-3 p-3 mt-3"
+                    role="status"
+                  >
+                    <strong class="d-block">Your pickup window</strong>
+
+                    <p class="mb-0 mt-1">
+                      {{ pickupSummary }}
+                    </p>
+                  </div>
+
+                  <p class="small text-muted mb-0 mt-2">
+                    Singapore time. Neighbours can request this window or suggest another.
+                  </p>
+                </fieldset>
+
+                <p class="small text-muted mb-0 mt-2">
                   Neighbours can request this window or propose another
                   time before expiry.
                 </p>
@@ -1527,13 +1887,13 @@ async function loadSavedLocation() {
                   <div
                     class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
                   >
-                    <label for="pickup-address-search" class="mb-0">
+                    <label for="pickup-address-search" class="form-label mb-0">
                       Pickup address *
                     </label>
 
                     <button
                       type="button"
-                      class="editor-link"
+                      class="btn btn-link p-0 editor-link"
                       :disabled="locked || geolocating || addressLoading"
                       @click="useMyLocation"
                     >
@@ -1561,7 +1921,7 @@ async function loadSavedLocation() {
                     <div class="col-auto">
                       <button
                         type="button"
-                        class="editor-button"
+                        class="btn btn-outline-dark editor-button"
                         :disabled="
                           addressLoading ||
                           geolocating ||
@@ -1574,13 +1934,13 @@ async function loadSavedLocation() {
                     </div>
                   </div>
 
-                  <p class="field-hint mt-2">
+                  <p class="small text-muted mb-0 mt-2">
                     Search and select an address, or use your current location.
                   </p>
 
                   <p
                     v-if="geolocating"
-                    class="field-hint mt-2"
+                    class="small text-muted mb-0 mt-2"
                     role="status"
                   >
                     Finding your current location and nearby addresses…
@@ -1588,7 +1948,7 @@ async function loadSavedLocation() {
 
                   <p
                     v-if="addressError"
-                    class="field-hint mt-2"
+                    class="small text-muted mb-0 mt-2"
                     role="status"
                   >
                     {{ addressError }}
@@ -1619,7 +1979,7 @@ async function loadSavedLocation() {
 
                   <p
                     v-if="addressResults.length && !addressTotalPages"
-                    class="field-hint mt-2"
+                    class="small text-muted mb-0 mt-2"
                   >
                     The nearest address has been selected. Choose another
                     nearby result if needed.
@@ -1632,7 +1992,7 @@ async function loadSavedLocation() {
                   >
                     <button
                       type="button"
-                      class="editor-button"
+                      class="btn btn-outline-dark editor-button"
                       :disabled="
                         addressLoading ||
                         geolocating ||
@@ -1643,13 +2003,13 @@ async function loadSavedLocation() {
                       Previous
                     </button>
 
-                    <span class="field-hint">
+                    <span class="small text-muted mb-0">
                       Page {{ addressPage }} of {{ addressTotalPages }}
                     </span>
 
                     <button
                       type="button"
-                      class="editor-button"
+                      class="btn btn-outline-dark editor-button"
                       :disabled="
                         addressLoading ||
                         geolocating ||
@@ -1664,7 +2024,7 @@ async function loadSavedLocation() {
                   <!-- Selected address -->
                   <p
                     v-if="savedLocationLoading"
-                    class="field-hint mt-2"
+                    class="small text-muted mb-0 mt-2"
                     role="status"
                   >
                     Loading your usual pickup address…
@@ -1672,7 +2032,7 @@ async function loadSavedLocation() {
 
                   <p
                     v-if="savedLocationError"
-                    class="field-hint mt-2"
+                    class="small text-muted mb-0 mt-2"
                     role="status"
                   >
                     {{ savedLocationError }}
@@ -1681,7 +2041,7 @@ async function loadSavedLocation() {
                   <!-- Selected address -->
                   <div
                     v-if="selectedAddress"
-                    class="linked-note p-3 mt-3"
+                    class="linked-note rounded-3 p-3 mt-3"
                     aria-live="polite"
                   >
                     <strong class="d-block">
@@ -1692,11 +2052,11 @@ async function loadSavedLocation() {
                       }}
                     </strong>
 
-                    <p class="mt-1">
+                    <p class="mb-0 mt-1">
                       {{ selectedAddress.address }}
                     </p>
 
-                    <p v-if="!editing" class="field-hint mt-2">
+                    <p v-if="!editing" class="small text-muted mb-0 mt-2">
                       {{
                         usingSavedLocation
                           ? 'Already selected. Search above to choose a different address.'
@@ -1707,7 +2067,7 @@ async function loadSavedLocation() {
                 </div>
 
                 <!-- Instructions -->
-                <label class="mt-3" for="pickup-instructions">
+                <label class="form-label mt-3" for="pickup-instructions">
                   Pickup instructions
                 </label>
 
@@ -1722,20 +2082,21 @@ async function loadSavedLocation() {
               </section>
             </div>
           </div>
+          </template>
         </fieldset>
 
         <!-- Footer -->
         <footer
           class="editor-footer d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 pt-3 pb-2"
         >
-          <p class="field-hint">
+          <p v-if="showListingDetails" class="small text-muted mb-0">
             {{ saving ? savePhase : '* Required fields' }}
           </p>
 
           <div class="d-flex flex-wrap gap-2 ms-auto">
             <button
               type="button"
-              class="editor-button"
+              class="btn btn-outline-dark editor-button"
               :disabled="saving"
               @click="close"
             >
@@ -1743,9 +2104,9 @@ async function loadSavedLocation() {
             </button>
 
             <button
-              v-if="!persisted && !uncertainCreate"
+              v-if="showListingDetails && !persisted && !uncertainCreate"
               type="submit"
-              class="editor-button primary"
+              class="btn btn-primary editor-button"
               :disabled="saving"
             >
               {{
@@ -1798,23 +2159,12 @@ async function loadSavedLocation() {
   font-size: 23px;
 }
 
-.food-editor p {
-  margin: 0;
-}
 
-.food-editor fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
 
 .editor-close {
   width: 40px;
   height: 40px;
-  padding: 0;
   border: 1.5px solid var(--ink);
-  border-radius: 50%;
   background: var(--paper-bright);
   color: var(--ink);
   font-size: 28px;
@@ -1825,16 +2175,9 @@ async function loadSavedLocation() {
 .editor-section {
   min-width: 0;
   border: 1.5px solid var(--line, var(--ink));
-  border-radius: 16px;
   background: var(--paper-bright);
 }
 
-.editor-section label {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 0.94rem;
-  font-weight: 500;
-}
 
 .food-editor .form-control,
 .food-editor .form-select {
@@ -1851,58 +2194,37 @@ async function loadSavedLocation() {
   background-color: var(--aqua-soft);
 }
 
-.field-hint,
-.picker-muted {
-  color: var(--muted);
-  line-height: 1.45;
-}
 
-.field-hint {
-  font-size: 0.82rem;
-}
 
-.picker-muted {
-  font-size: 0.85rem;
-}
 
 /* Buttons */
+/* Bootstrap handles button layout and states; these variables preserve the theme. */
 .editor-button {
+  --bs-btn-color: var(--ink);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-bg: var(--paper-bright);
+  --bs-btn-hover-bg: var(--aqua-soft);
+  --bs-btn-hover-color: var(--ink);
+  --bs-btn-hover-border-color: var(--ink);
   min-height: 44px;
-  padding: 8px 16px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--paper-bright);
-  color: var(--ink);
-  font: inherit;
 }
 
-.editor-button.primary {
-  background: var(--aqua);
-  color: white;
+.editor-button.btn-primary {
+  --bs-btn-color: white;
+  --bs-btn-bg: var(--aqua);
+  --bs-btn-hover-bg: #0d968b;
+  --bs-btn-hover-color: white;
+  --bs-btn-active-bg: #0d968b;
+  --bs-btn-active-color: white;
+  --bs-btn-disabled-bg: var(--aqua);
+  --bs-btn-disabled-border-color: var(--ink);
   box-shadow: 2px 2px 0 var(--ink);
 }
 
-.editor-button.primary:hover:not(:disabled) {
-  background: #0d968b;
-}
-
 .editor-link {
-  padding: 5px 0;
-  border: 0;
-  background: transparent;
-  color: var(--aqua);
-  font: inherit;
+  --bs-btn-color: var(--aqua);
+  --bs-btn-hover-color: #0d968b;
   font-size: 0.9rem;
-  text-decoration: underline;
-}
-
-.food-editor button {
-  cursor: pointer;
-}
-
-.food-editor button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 /* Food picker */
@@ -1914,9 +2236,9 @@ async function loadSavedLocation() {
 }
 
 .food-editor .food-choice {
+  border-radius: 13px;
   min-width: 0;
   border: 1.5px solid var(--line, var(--ink));
-  border-radius: 13px;
   background: var(--paper);
   color: var(--ink);
   cursor: pointer;
@@ -1946,10 +2268,6 @@ async function loadSavedLocation() {
   cursor: not-allowed;
 }
 
-.food-storage {
-  color: var(--muted);
-  font-size: 0.72rem;
-}
 
 .choice-indicator {
   width: 20px;
@@ -1984,10 +2302,6 @@ async function loadSavedLocation() {
   line-height: 1.2;
 }
 
-.food-meta {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
 
 .food-expiry {
   color: var(--aqua);
@@ -1995,13 +2309,9 @@ async function loadSavedLocation() {
   line-height: 1.35;
 }
 
-.food-unavailable {
-  color: var(--muted);
-}
 
 .selection-bar {
   border: 1.5px solid var(--aqua);
-  border-radius: 13px;
   background: var(--aqua-soft);
 }
 
@@ -2022,7 +2332,6 @@ async function loadSavedLocation() {
 .picker-feedback,
 .picker-empty {
   border: 1px dashed var(--line, var(--ink));
-  border-radius: 12px;
   background: var(--paper);
 }
 
@@ -2088,7 +2397,6 @@ async function loadSavedLocation() {
 .photo-box {
   min-height: 140px;
   border: 1.5px dashed var(--line, var(--ink));
-  border-radius: 12px;
   background: var(--paper);
 }
 
@@ -2097,10 +2405,6 @@ async function loadSavedLocation() {
   object-fit: contain;
 }
 
-.check-label input {
-  width: 18px;
-  height: 18px;
-}
 
 /* Address results */
 .address-results {
@@ -2125,7 +2429,6 @@ async function loadSavedLocation() {
 .linked-note,
 .photo-recovery {
   border: 1px solid var(--line, var(--ink));
-  border-radius: 12px;
   background: var(--aqua-soft);
   font-size: 0.9rem;
 }
