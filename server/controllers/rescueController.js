@@ -4,6 +4,7 @@ import FoodListing from '../models/foodListingModel.js'
 import RescueRequest from '../models/rescueRequestModel.js'
 import RescuePhoto from '../models/rescuePhotoModel.js'
 import InventoryItem from '../models/inventoryItemModel.js'
+import User from '../models/userModel.js'
 import {fail,has,id,objectBody,listingFields,validateListingWindow,requestFields,pagination,browseFilter} from '../services/rescueValidation.js'
 import {compressRescueImage} from '../services/rescueImage.js'
 
@@ -102,6 +103,24 @@ const createListing = wrap(async (req,res) => {
       data.inventorySnapshotUpdatedAt = inventory.updatedAt
     }
     const [created] = await FoodListing.create([data],{session})
+    const [longitude, latitude] = fields.location.coordinates
+
+    await User.updateOne(
+      { _id: req.userId },
+      {
+        $set: {
+          pickupLocation: {
+            address: fields.pickupLabel,
+            latitude,
+            longitude,
+          },
+        },
+      },
+      {
+        session,
+        runValidators: true,
+      },
+    )
     return created
   })
   res.status(201).json({listing:publicListing(listing)})

@@ -3,6 +3,8 @@ import {
   reverseAddresses,
 } from '../services/oneMapService.js'
 
+import User from '../models/userModel.js'
+
 async function search(req, res) {
   const query =
     typeof req.query.q === 'string'
@@ -81,4 +83,24 @@ async function reverse(req, res) {
   }
 }
 
-export default { search, reverse }
+async function getSavedLocation(req, res, next) {
+  try {
+    const user = await User.findById(req.userId)
+      .select('pickupLocation')
+      .lean()
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found.',
+      })
+    }
+
+    res.json({
+      location: user.pickupLocation || null,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export default { search, reverse, getSavedLocation }

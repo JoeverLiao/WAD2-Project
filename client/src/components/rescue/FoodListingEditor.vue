@@ -420,6 +420,8 @@ function choosePickupAddress(address) {
     return
   }
 
+  usingSavedLocation.value = false
+
   selectedAddress.value = {
     address: address.address,
     latitude: Number(address.latitude),
@@ -626,7 +628,9 @@ async function save() {
       payload.expiresAt = linkedExpiry.value
     }
   } catch (err) {
-    error.value = err.message
+    error.value =
+    err.response?.data?.details ||
+    apiError(err)
     return
   }
 
@@ -707,6 +711,7 @@ onMounted(async () => {
   await Promise.all([
     inventory.loadInventory(),
     loadExistingPhoto(),
+    loadSavedLocation(),
   ])
 })
 
@@ -822,6 +827,63 @@ async function useMyLocation() {
             : apiError(err, 'Could not locate your address.')
   } finally {
     if (alive) geolocating.value = false
+  }
+}
+
+const savedLocationLoading = ref(false)
+const savedLocationError = ref('')
+const usingSavedLocation = ref(false)
+
+async function loadSavedLocation() {
+  // Editing must retain this listing's own pickup address.
+  if (editing.value) return
+
+  savedLocationLoading.value = true
+  savedLocationError.value = ''
+
+  try {
+    const { data } = await api.get('/locations/saved')
+
+    if (!alive || locked.value) return
+
+    const location = data.location
+
+    // Don't overwrite an address the user selected while loading.
+    if (
+      !location ||
+      selectedAddress.value ||
+      addressQuery.value.trim() ||
+      geolocating.value ||
+      addressLoading.value
+    ) {
+      return
+    }
+
+    if (
+      !location.address ||
+      !validCoordinates(location.latitude, location.longitude)
+    ) {
+      return
+    }
+
+    selectedAddress.value = {
+      address: location.address,
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+    }
+
+    form.pickupLabel = selectedAddress.value.address
+    form.latitude = selectedAddress.value.latitude
+    form.longitude = selectedAddress.value.longitude
+
+    usingSavedLocation.value = true
+  } catch {
+    if (alive) {
+      savedLocationError.value =
+        'Could not load your saved address. You can still choose one below.'
+    }
+  } finally {
+    if (alive) savedLocationLoading.value = false
   }
 }
 </script>
@@ -1600,15 +1662,46 @@ async function useMyLocation() {
                   </div>
 
                   <!-- Selected address -->
+                  <p
+                    v-if="savedLocationLoading"
+                    class="field-hint mt-2"
+                    role="status"
+                  >
+                    Loading your usual pickup address…
+                  </p>
+
+                  <p
+                    v-if="savedLocationError"
+                    class="field-hint mt-2"
+                    role="status"
+                  >
+                    {{ savedLocationError }}
+                  </p>
+
+                  <!-- Selected address -->
                   <div
                     v-if="selectedAddress"
                     class="linked-note p-3 mt-3"
                     aria-live="polite"
                   >
-                    <strong class="d-block">Selected meeting point</strong>
+                    <strong class="d-block">
+                      {{
+                        usingSavedLocation
+                          ? 'Your usual pickup address'
+                          : 'Selected meeting point'
+                      }}
+                    </strong>
 
                     <p class="mt-1">
                       {{ selectedAddress.address }}
+                    </p>
+
+                    <p v-if="!editing" class="field-hint mt-2">
+                      {{
+                        usingSavedLocation
+                          ? 'Already selected. Search above to choose a different address.'
+                          : 'Posting this listing will save this as your usual pickup address.'
+                      }}
                     </p>
                   </div>
                 </div>

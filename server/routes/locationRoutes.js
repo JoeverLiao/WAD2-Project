@@ -16,4 +16,10 @@ router.get(
   locationController.reverse,
 )
 
+router.get(
+  '/saved',
+  auth.authenticate,
+  locationController.getSavedLocation,
+)
+
 export default router

@@ -8,6 +8,32 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 8 },
     loginStatus: { type: Boolean, default: false },
     lastLogin: { type: Date, default: null },
+    pickupLocation: {
+    type: new mongoose.Schema(
+      {
+        address: {
+          type: String,
+          required: true,
+          trim: true,
+          maxlength: 160,
+        },
+        latitude: {
+          type: Number,
+          required: true,
+          min: -90,
+          max: 90,
+        },
+        longitude: {
+          type: Number,
+          required: true,
+          min: -180,
+          max: 180,
+        },
+      },
+      { _id: false },
+    ),
+    default: null,
+  },
   },
   { timestamps: true },
 )
@@ -28,6 +54,13 @@ userSchema.methods.toPublicJSON = function () {
     email: this.email,
     loginStatus: this.loginStatus,
     lastLogin: this.lastLogin,
+    pickupLocation: this.pickupLocation
+    ? {
+        address: this.pickupLocation.address,
+        latitude: this.pickupLocation.latitude,
+        longitude: this.pickupLocation.longitude,
+      }
+    : null,
   }
 }
 
