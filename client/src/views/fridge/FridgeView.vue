@@ -1987,7 +1987,7 @@ onBeforeUnmount(cancelActionReaction)
             <p><strong>Tip:</strong> Food closest to its expiry date appears first. Click any shelf or drawer to see its complete inventory, then drag an item to Consume or Discard.</p>
         </section>
 
-        <section v-if="!embedded || storageRecommendations.length" class="recommendation-section">
+        <section v-if="!embedded" class="recommendation-section">
             <h2>Storage Guidance</h2>
             <p>Some foods may need a different storage location. Check product packaging and food-specific guidance.</p>
             <div class="recommendation-list">
