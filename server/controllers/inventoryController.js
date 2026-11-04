@@ -1,5 +1,8 @@
 import mongoose from 'mongoose'
 import InventoryItem from '../models/inventoryItemModel.js'
+import FoodListing from '../models/foodListingModel.js'
+import RescueRequest from '../models/rescueRequestModel.js'
+import RescuePhoto from '../models/rescuePhotoModel.js'
 //Thahesh
 // // ============================================================
 // INVENTORY API CONTROLLER
@@ -301,23 +304,100 @@ async function updateItem(req, res, next) {
 }
 
 // DELETE /api/inventory/:id
-// Delete an item only if it belongs to the signed-in user.
+// Delete an item only if it belongs to the signed-in user. It will update the rescue listing to withdrawn
 async function deleteItem(req, res, next) {
   try {
     if (!validItemId(req.params.id)) {
-      return res.status(400).json({ error: 'Invalid inventory item ID.' })
+      return res.status(400).json({
+        error: 'Invalid inventory item ID.',
+      })
     }
 
-    const item = await InventoryItem.findOneAndDelete({
-      _id: req.params.id,
-      user: req.userId,
+    const deleted = await mongoose.connection.transaction(
+      async (session) => {
+        const item = await InventoryItem.findOne({
+          _id: req.params.id,
+          user: req.userId,
+        }).session(session)
+
+        if (!item) return false
+
+        const listings = await FoodListing.find({
+          inventoryItem: item._id,
+          user: req.userId,
+          status: { $in: ['available', 'claimed'] },
+        })
+          .select('_id')
+          .session(session)
+
+        const listingIds = listings.map((listing) => listing._id)
+
+        if (listingIds.length) {
+          // Updating the listings also coordinates with concurrent
+          // rescue actions that write to the same documents.
+          await FoodListing.updateMany(
+            {
+              _id: { $in: listingIds },
+              user: req.userId,
+              status: { $in: ['available', 'claimed'] },
+            },
+            {
+              $set: {
+                status: 'withdrawn',
+                hasPhoto: false,
+              },
+              $unset: {
+                activeInventoryItem: 1,
+                acceptedRequest: 1,
+                claimedBy: 1,
+              },
+              $inc: {
+                revision: 1,
+              },
+            },
+            { session },
+          )
+
+          await RescueRequest.updateMany(
+            {
+              listing: { $in: listingIds },
+              status: { $in: ['pending', 'accepted'] },
+            },
+            {
+              $set: {
+                status: 'cancelled',
+              },
+              $unset: {
+                pickupProposal: 1,
+              },
+            },
+            { session },
+          )
+
+          await RescuePhoto.deleteMany(
+            {
+              listing: { $in: listingIds },
+            },
+            { session },
+          )
+        }
+
+        await item.deleteOne({ session })
+
+        return true
+      },
+    )
+
+    if (!deleted) {
+      return res.status(404).json({
+        error: 'Inventory item not found.',
+      })
+    }
+
+    res.json({
+      message:
+        'Inventory item deleted. Any linked active listings were withdrawn and their requests cancelled.',
     })
-
-    if (!item) {
-      return res.status(404).json({ error: 'Inventory item not found.' })
-    }
-
-    res.json({ message: 'Inventory item deleted successfully.' })
   } catch (error) {
     next(error)
   }

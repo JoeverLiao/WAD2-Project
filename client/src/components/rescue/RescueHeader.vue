@@ -128,27 +128,6 @@ onBeforeUnmount(() => {
           <div
             class="d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center gap-3"
           >
-            <button
-              type="button"
-              class="primary-button"
-              @click="emit('post-listing')"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                fill="currentColor"
-                class="bi bi-plus flex-shrink-0"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <path
-                  d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"
-                />
-              </svg>
-
-              Post item on board
-            </button>
 
             <a
               href="#explore-map"
@@ -185,75 +164,55 @@ onBeforeUnmount(() => {
               </span>
             </div>
 
-            <!-- Loading -->
-            <p
-              v-if="nearbyLoading"
-              class="small text-muted my-3"
-              role="status"
-            >
-              Checking the current map results…
-            </p>
-
-            <!-- Error -->
-            <div v-else-if="nearbyError" class="small my-3" role="alert">
-              <p class="text-muted mb-2">
-                {{ nearbyError }}
-              </p>
-
-              <button
-                type="button"
-                class="secondary-button compact-btn"
-                @click="emit('refresh-nearby')"
-              >
-                Retry nearby food
-              </button>
-            </div>
-
             <!-- Available expiring food -->
-            <template v-else-if="preview.length">
+            <template v-if="canShowResults && preview.length">
               <p class="small text-muted mb-3">
-                Available food from neighbours in your current map results:
+                A little help today could save these from going to waste.
               </p>
 
               <div class="d-flex flex-column gap-2 mb-3">
                 <div
                   v-for="item in preview"
                   :key="item._id"
-                  class="p-2 bg-white rounded border border-dark d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
+                  class="p-3 bg-white rounded-3 border border-dark"
                 >
-                  <div class="urgent-item-copy">
-                    <strong class="d-flex align-items-center gap-2 small">
-                      <span
-                        class="urgent-food-icon flex-shrink-0"
-                        aria-hidden="true"
-                      >
-                        <FoodIcon :food="item.title" />
-                      </span>
-
-                      <span>{{ item.title }}</span>
-                    </strong>
-
-                    <span class="d-block small text-muted">
-                      {{ item.quantity }} {{ item.unit }} ·
-                      {{ distanceLabel(item.distanceKm) }}
+                  <div class="d-flex align-items-start gap-2">
+                    <span
+                      class="urgent-food-icon flex-shrink-0"
+                      aria-hidden="true"
+                    >
+                      <FoodIcon :food="item.title" />
                     </span>
 
-                    <span class="d-block small text-muted">
-                      Use by {{ expiryTime(item.expiresAt) }}
-                    </span>
+                    <div class="flex-grow-1">
+                      <strong class="d-block">
+                        {{ item.title }}
+                      </strong>
+
+                      <p class="small text-muted mb-1">
+                        {{ item.quantity }} {{ item.unit }} ·
+                        {{ distanceLabel(item.distanceKm) }}
+                      </p>
+
+                      <p class="small mb-0">
+                        Use by {{ expiryTime(item.expiresAt) }}
+                      </p>
+                    </div>
                   </div>
 
-                  <button
-                    type="button"
-                    class="primary-button urgent-action align-self-end align-self-sm-center flex-shrink-0"
-                    @click="emit('request-listing', String(item._id))"
-                  >
-                    {{
-                      item.hasActiveRequest
-                        ? 'View request'
-                        : 'Request pickup'
-                    }}
-                  </button>
+                  <div class="d-flex justify-content-end mt-2">
+                    <button
+                      type="button"
+                      class="primary-button urgent-action"
+                      @click="emit('request-listing', String(item._id))"
+                    >
+                      {{
+                        item.hasActiveRequest
+                          ? 'View request'
+                          : 'Request pickup →'
+                      }}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -263,22 +222,34 @@ onBeforeUnmount(() => {
                 class="more-food-button small mb-3"
                 @click="emit('explore')"
               >
-                {{ expiringToday.length - preview.length }} more expiring today
-                in these results →
+                See {{ expiringToday.length - preview.length }} more
+                expiring today →
               </button>
 
-              <p
-                class="p-2 bg-light border border-dark rounded text-center small fw-bold"
-              >
-                Pickup is confirmed when the owner accepts.
+              <p class="small text-muted text-center mb-0">
+                The owner will confirm your pickup request.
               </p>
             </template>
 
-            <!-- Empty state -->
-            <template v-else>
-              <p class="small text-muted my-3">
-                No food expiring today in your current map results. Try another
-                area or explore other food nearby.
+            <!-- Positive empty state -->
+            <div
+              v-else-if="canShowResults"
+              class="text-center py-3"
+            >
+              <span
+                class="expiry-clear-icon d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
+                aria-hidden="true"
+              >
+                ✓
+              </span>
+
+              <h4 class="mb-2">
+                Nothing urgent today!
+              </h4>
+
+              <p class="small text-muted mx-auto mb-3">
+                No available food in this area is expiring today.
+                That’s a little less food needing a last-minute rescue.
               </p>
 
               <button
@@ -286,9 +257,9 @@ onBeforeUnmount(() => {
                 class="secondary-button compact-btn"
                 @click="emit('explore')"
               >
-                Explore nearby food ↓
+                Discover nearby food ↓
               </button>
-            </template>
+            </div>
 
             <!-- Current search area -->
             <p
