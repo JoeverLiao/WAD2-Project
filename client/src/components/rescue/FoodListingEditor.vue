@@ -1194,41 +1194,53 @@ async function useMyLocation() {
           </div>
 
           <div class="row g-3">
-            <!-- Food details -->
-            <div class="col-12 col-md-6">
-              <section class="editor-section p-3 h-100">
-                <h3 class="mb-3">1. What are you sharing?</h3>
+            <!-- Step 1: Full-width food details -->
+            <div class="col-12">
+              <section
+                class="editor-section p-3 p-md-4"
+                aria-labelledby="food-details-heading"
+              >
+                <h3 id="food-details-heading" class="mb-3">
+                  1. What are you sharing?
+                </h3>
 
-                <label for="listing-title">Food name *</label>
-                <input
-                  id="listing-title"
-                  v-model="form.title"
-                  class="form-control"
-                  maxlength="120"
-                  required
-                  placeholder="e.g. Apples"
-                />
+                <div class="row g-3">
+                  <!-- Name and category -->
+                  <div class="col-12 col-md-8">
+                    <label for="listing-title">Food name *</label>
 
-                <label class="mt-3" for="listing-category">
-                  Category
-                </label>
-                <select
-                  id="listing-category"
-                  v-model="form.category"
-                  class="form-select"
-                >
-                  <option
-                    v-for="option in CATEGORY_OPTIONS"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
+                    <input
+                      id="listing-title"
+                      v-model="form.title"
+                      class="form-control"
+                      maxlength="120"
+                      required
+                      placeholder="e.g. Apples"
+                    />
+                  </div>
 
-                <div class="row g-3 mt-0">
-                  <div class="col-6">
+                  <div class="col-12 col-md-4">
+                    <label for="listing-category">Category</label>
+
+                    <select
+                      id="listing-category"
+                      v-model="form.category"
+                      class="form-select"
+                    >
+                      <option
+                        v-for="option in CATEGORY_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <!-- Quantity, unit and expiry -->
+                  <div class="col-6 col-md-3">
                     <label for="listing-quantity">Quantity *</label>
+
                     <input
                       id="listing-quantity"
                       v-model.number="form.quantity"
@@ -1246,8 +1258,9 @@ async function useMyLocation() {
                     />
                   </div>
 
-                  <div class="col-6">
+                  <div class="col-6 col-md-3">
                     <label for="listing-unit">Unit *</label>
+
                     <input
                       id="listing-unit"
                       v-model="form.unit"
@@ -1269,42 +1282,61 @@ async function useMyLocation() {
                       <option value="litres" />
                     </datalist>
                   </div>
+
+                  <div class="col-12 col-md-6">
+                    <label for="listing-expiry">Use-by date and time *</label>
+
+                    <input
+                      id="listing-expiry"
+                      v-model="form.expiresAt"
+                      class="form-control"
+                      type="datetime-local"
+                      :min="minDatetime"
+                      :max="
+                        linkedExpiry
+                          ? toLocalInput(linkedExpiry)
+                          : undefined
+                      "
+                      required
+                    />
+
+                    <p class="field-hint mt-2">
+                      All dates and times use your device timezone:
+                      {{ localTimezone }}.
+                    </p>
+                  </div>
+
+                  <!-- Description -->
+                  <div class="col-12">
+                    <label for="listing-description">Short description</label>
+
+                    <textarea
+                      id="listing-description"
+                      v-model="form.description"
+                      class="form-control"
+                      rows="2"
+                      maxlength="1000"
+                      placeholder="Condition, packaging, allergens or anything useful to know…"
+                    ></textarea>
+                  </div>
                 </div>
+              </section>
+            </div>
 
-                <label class="mt-3" for="listing-description">
-                  Short description
-                </label>
-                <textarea
-                  id="listing-description"
-                  v-model="form.description"
-                  class="form-control"
-                  rows="3"
-                  maxlength="1000"
-                  placeholder="Condition, packaging, allergens or anything useful to know…"
-                ></textarea>
+            <!-- Step 2: Photo -->
+            <div class="col-12 col-lg-5">
+              <section
+                class="editor-section p-3 p-md-4 h-100"
+                aria-labelledby="food-photo-heading"
+              >
+                <h3 id="food-photo-heading" class="mb-2">
+                  2. Add a photo
+                </h3>
 
-                <label class="mt-3" for="listing-expiry">
-                  Use-by date and time *
-                </label>
-                <input
-                  id="listing-expiry"
-                  v-model="form.expiresAt"
-                  class="form-control"
-                  type="datetime-local"
-                  :min="minDatetime"
-                  :max="
-                    linkedExpiry ? toLocalInput(linkedExpiry) : undefined
-                  "
-                  required
-                />
-
-                <p class="field-hint mt-2">
-                  All dates and times use your device timezone:
-                  {{ localTimezone }}.
+                <p class="field-hint mb-3">
+                  Optional, but a clear photo helps neighbours know what
+                  they are collecting.
                 </p>
-
-                <!-- Photo -->
-                <h3 class="mt-4 mb-3">2. Add a photo</h3>
 
                 <div
                   class="photo-box d-flex align-items-center justify-content-center p-3 text-center"
@@ -1327,7 +1359,7 @@ async function useMyLocation() {
                     {{
                       hasExistingPhoto && !photoLoaded
                         ? 'Loading current photo…'
-                        : 'A clear photo helps neighbours know what they are collecting.'
+                        : 'Show the food and its packaging clearly.'
                     }}
                   </p>
                 </div>
@@ -1335,24 +1367,24 @@ async function useMyLocation() {
                 <label class="visually-hidden" for="listing-photo">
                   Choose a food photo
                 </label>
+
                 <input
                   id="listing-photo"
                   ref="photoInput"
-                  class="form-control mt-2"
+                  class="form-control mt-3"
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   @change="choosePhoto"
                 />
 
                 <p class="field-hint mt-2">
-                  A Photo is optional, but strongly reccomanded. 
-                  Format accepted: JPEG, PNG or WebP, up to 8 MiB.
+                  JPEG, PNG or WebP, up to 8 MiB.
                 </p>
 
                 <button
                   v-if="photo"
                   type="button"
-                  class="editor-link"
+                  class="editor-link mt-2"
                   @click="clearPhoto"
                 >
                   Clear selected photo
@@ -1360,26 +1392,34 @@ async function useMyLocation() {
 
                 <label
                   v-if="listing?.hasPhoto && !photo"
-                  class="check-label d-flex align-items-center gap-2 mt-2"
+                  class="check-label d-flex align-items-center gap-2 mt-3"
                 >
                   <input
                     v-model="removeExistingPhoto"
                     class="flex-shrink-0"
                     type="checkbox"
                   />
+
                   Remove the current photo when saving
                 </label>
               </section>
             </div>
 
-            <!-- Pickup details -->
-            <div class="col-12 col-md-6">
-              <section class="editor-section p-3 h-100">
-                <h3 class="mb-3">3. Arrange pickup</h3>
+            <!-- Step 3: Pickup -->
+            <div class="col-12 col-lg-7">
+              <section
+                class="editor-section p-3 p-md-4 h-100"
+                aria-labelledby="food-pickup-heading"
+              >
+                <h3 id="food-pickup-heading" class="mb-3">
+                  3. Arrange pickup
+                </h3>
 
+                <!-- Pickup window -->
                 <div class="row g-3">
                   <div class="col-12 col-sm-6">
                     <label for="pickup-start">From *</label>
+
                     <input
                       id="pickup-start"
                       v-model="form.pickupStart"
@@ -1393,6 +1433,7 @@ async function useMyLocation() {
 
                   <div class="col-12 col-sm-6">
                     <label for="pickup-end">Until *</label>
+
                     <input
                       id="pickup-end"
                       v-model="form.pickupEnd"
@@ -1410,25 +1451,28 @@ async function useMyLocation() {
                   time before expiry.
                 </p>
 
-                <!-- Address search -->
-                <div class="mt-3">
-                  <div class="d-flex justify-content-between">
-                    <label for="pickup-address-search">
-                      Search a Singapore address *
+                <!-- Address -->
+                <div class="mt-4">
+                  <div
+                    class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+                  >
+                    <label for="pickup-address-search" class="mb-0">
+                      Pickup address *
                     </label>
 
-                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-                      <button
-                        type="button"
-                        class="editor-button"
-                        :disabled="locked || geolocating || addressLoading"
-                        @click="useMyLocation"
-                      >
-                        {{ geolocating ? 'Finding your address…' : '⌖ Get my location' }}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      class="editor-link"
+                      :disabled="locked || geolocating || addressLoading"
+                      @click="useMyLocation"
+                    >
+                      {{
+                        geolocating
+                          ? 'Finding your address…'
+                          : '⌖ Get my location'
+                      }}
+                    </button>
                   </div>
-                  
 
                   <div class="row g-2">
                     <div class="col">
@@ -1457,21 +1501,18 @@ async function useMyLocation() {
                         {{ addressLoading ? 'Searching…' : 'Search' }}
                       </button>
                     </div>
-                    <p v-if="geolocating" class="field-hint mt-2" role="status">
-                      Finding your current location and nearby addresses…
-                    </p>
-
-                    <p
-                      v-if="addressResults.length && !addressTotalPages"
-                      class="field-hint mt-2"
-                    >
-                      The nearest address has been selected. Choose another nearby result
-                      if needed.
-                    </p>
                   </div>
 
                   <p class="field-hint mt-2">
-                    Search, then select a result to set your pickup address.
+                    Search and select an address, or use your current location.
+                  </p>
+
+                  <p
+                    v-if="geolocating"
+                    class="field-hint mt-2"
+                    role="status"
+                  >
+                    Finding your current location and nearby addresses…
                   </p>
 
                   <p
@@ -1482,6 +1523,7 @@ async function useMyLocation() {
                     {{ addressError }}
                   </p>
 
+                  <!-- Address results -->
                   <div
                     v-if="addressResults.length"
                     class="address-results list-group overflow-auto mt-2"
@@ -1504,6 +1546,15 @@ async function useMyLocation() {
                     </button>
                   </div>
 
+                  <p
+                    v-if="addressResults.length && !addressTotalPages"
+                    class="field-hint mt-2"
+                  >
+                    The nearest address has been selected. Choose another
+                    nearby result if needed.
+                  </p>
+
+                  <!-- Result pages -->
                   <div
                     v-if="addressTotalPages > 1"
                     class="d-flex align-items-center justify-content-between gap-2 mt-2"
@@ -1511,7 +1562,11 @@ async function useMyLocation() {
                     <button
                       type="button"
                       class="editor-button"
-                      :disabled="addressLoading || addressPage <= 1"
+                      :disabled="
+                        addressLoading ||
+                        geolocating ||
+                        addressPage <= 1
+                      "
                       @click="searchPickupAddresses(addressPage - 1)"
                     >
                       Previous
@@ -1526,6 +1581,7 @@ async function useMyLocation() {
                       class="editor-button"
                       :disabled="
                         addressLoading ||
+                        geolocating ||
                         addressPage >= addressTotalPages
                       "
                       @click="searchPickupAddresses(addressPage + 1)"
@@ -1534,15 +1590,13 @@ async function useMyLocation() {
                     </button>
                   </div>
 
-                  <!-- Read-only selected address -->
+                  <!-- Selected address -->
                   <div
                     v-if="selectedAddress"
                     class="linked-note p-3 mt-3"
                     aria-live="polite"
                   >
-                    <strong class="d-block">
-                      Selected meeting point
-                    </strong>
+                    <strong class="d-block">Selected meeting point</strong>
 
                     <p class="mt-1">
                       {{ selectedAddress.address }}
@@ -1550,9 +1604,11 @@ async function useMyLocation() {
                   </div>
                 </div>
 
+                <!-- Instructions -->
                 <label class="mt-3" for="pickup-instructions">
                   Pickup instructions
                 </label>
+
                 <textarea
                   id="pickup-instructions"
                   v-model="form.pickupInstructions"
