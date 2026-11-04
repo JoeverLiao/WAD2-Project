@@ -7,9 +7,6 @@ import FoodIcon from '../FoodIcon.vue'
 import { distanceLabel } from '@/services/rescueMap.js'
 
 // Props and events
-
-// The main view forwards the current map results.
-// This avoids another API query or geolocation prompt.
 const props = defineProps({
   nearbyListings: { type: Array, default: () => [] },
   nearbyLoading: { type: Boolean, default: true },
@@ -25,16 +22,13 @@ const emit = defineEmits([
 ])
 
 // Authentication and clock
-
 const authStore = useAuthStore()
 const { user, isAuthenticated } = storeToRefs(authStore)
 
 const clock = ref(Date.now())
-
 let timer
 
 // Community board heading
-
 const boardOwner = computed(() =>
   isAuthenticated.value && user.value?.name
     ? `${String(user.value.name).toUpperCase()}'S`
@@ -42,7 +36,6 @@ const boardOwner = computed(() =>
 )
 
 // Nearby food expiring today
-
 const expiringToday = computed(() => {
   const now = new Date(clock.value)
 
@@ -79,7 +72,6 @@ const canShowResults = computed(
 )
 
 // Formatting
-
 function expiryTime(value) {
   return new Intl.DateTimeFormat('en-SG', {
     hour: 'numeric',
@@ -88,7 +80,6 @@ function expiryTime(value) {
 }
 
 // Lifecycle
-
 onMounted(() => {
   timer = setInterval(() => {
     clock.value = Date.now()
@@ -102,17 +93,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="container py-4">
-    <div class="bulletin-board-container my-4">
+    <div class="bulletin-board-container position-relative my-4 p-3 p-sm-4 p-lg-5">
       <div class="row align-items-center gy-4">
         <!-- Community board introduction -->
         <div class="col-12 col-lg-7 col-xl-6">
-          <div class="eyebrow mb-2">
+          <div class="eyebrow d-inline-flex align-items-center gap-2 mb-2">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="16"
               height="16"
               fill="currentColor"
-              class="bi bi-heart"
+              class="bi bi-heart flex-shrink-0"
               viewBox="0 0 16 16"
               aria-hidden="true"
             >
@@ -121,7 +112,7 @@ onBeforeUnmount(() => {
               />
             </svg>
 
-            {{ boardOwner }} COMMUNITY BOARD
+            <span>{{ boardOwner }} COMMUNITY BOARD</span>
           </div>
 
           <h1 class="board-title">
@@ -134,7 +125,9 @@ onBeforeUnmount(() => {
             down the block.
           </p>
 
-          <div class="d-flex flex-wrap align-items-center gap-3">
+          <div
+            class="d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center gap-3"
+          >
             <button
               type="button"
               class="primary-button"
@@ -145,7 +138,7 @@ onBeforeUnmount(() => {
                 width="24"
                 height="24"
                 fill="currentColor"
-                class="bi bi-plus"
+                class="bi bi-plus flex-shrink-0"
                 viewBox="0 0 16 16"
                 aria-hidden="true"
               >
@@ -170,7 +163,7 @@ onBeforeUnmount(() => {
         <!-- Expiring food sticky note -->
         <div class="col-12 col-lg-5 col-xl-5 offset-xl-1">
           <section
-            class="sticky-note-card"
+            class="sticky-note-card position-relative p-3 p-sm-4"
             aria-labelledby="urgent-food-title"
             :aria-busy="nearbyLoading"
           >
@@ -202,11 +195,7 @@ onBeforeUnmount(() => {
             </p>
 
             <!-- Error -->
-            <div
-              v-else-if="nearbyError"
-              class="small my-3"
-              role="alert"
-            >
+            <div v-else-if="nearbyError" class="small my-3" role="alert">
               <p class="text-muted mb-2">
                 {{ nearbyError }}
               </p>
@@ -230,11 +219,14 @@ onBeforeUnmount(() => {
                 <div
                   v-for="item in preview"
                   :key="item._id"
-                  class="urgent-item p-2 bg-white rounded border border-dark d-flex align-items-center justify-content-between gap-2"
+                  class="p-2 bg-white rounded border border-dark d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
                 >
                   <div class="urgent-item-copy">
                     <strong class="d-flex align-items-center gap-2 small">
-                      <span class="urgent-food-icon" aria-hidden="true">
+                      <span
+                        class="urgent-food-icon flex-shrink-0"
+                        aria-hidden="true"
+                      >
                         <FoodIcon :food="item.title" />
                       </span>
 
@@ -253,7 +245,7 @@ onBeforeUnmount(() => {
 
                   <button
                     type="button"
-                    class="primary-button urgent-action"
+                    class="primary-button urgent-action align-self-end align-self-sm-center flex-shrink-0"
                     @click="emit('request-listing', String(item._id))"
                   >
                     {{
@@ -318,17 +310,15 @@ onBeforeUnmount(() => {
   background: var(--paper);
   border: 3px solid var(--ink);
   border-radius: 24px;
-  padding: 36px;
   box-shadow: var(--shadow-paper);
-  position: relative;
 }
 
 .board-title {
-  font-size: clamp(24px, 4vw, 45px);
+  font-size: clamp(26px, 4vw, 45px);
 }
 
 .board-intro {
-  font-size: 20px;
+  font-size: clamp(18px, 2vw, 20px);
 }
 
 /* Sticky note pin */
@@ -388,9 +378,7 @@ onBeforeUnmount(() => {
   background: var(--yellow-sticky);
   border: 3px solid var(--ink);
   border-radius: 20px;
-  padding: 24px;
   box-shadow: 6px 8px 0 var(--ink);
-  position: relative;
   animation: subtleFloat 6s ease-in-out infinite;
   transition:
     transform 250ms ease,
@@ -420,9 +408,6 @@ onBeforeUnmount(() => {
 
 /* Board label */
 .eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
   color: #11847b;
   font-size: 13px;
   font-weight: 800;
@@ -431,24 +416,30 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 
-/* Primary buttons */
-.primary-button {
+/* Shared button layout */
+.primary-button,
+.secondary-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  max-width: 100%;
+  border: 2px solid var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* Primary buttons */
+.primary-button {
   gap: 9px;
   padding: 13px 22px;
-  border: 2px solid var(--ink);
   border-radius: 14px 11px 16px 10px;
   background: var(--aqua);
   color: white;
   font-size: 16px;
-  font-weight: 800;
   box-shadow: var(--shadow-small);
-  transition:
-    transform 150ms ease,
-    box-shadow 150ms ease;
-  cursor: pointer;
   text-decoration: none;
 }
 
@@ -473,22 +464,13 @@ onBeforeUnmount(() => {
 
 /* Secondary buttons */
 .secondary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   gap: 8px;
   padding: 12px 22px;
-  border: 2px solid var(--ink);
   border-radius: 13px;
   background: white;
   color: var(--ink);
   font-size: 17px;
-  font-weight: 800;
   box-shadow: 2px 3px 0 var(--ink);
-  transition:
-    transform 150ms ease,
-    box-shadow 150ms ease;
-  cursor: pointer;
 }
 
 .secondary-button:hover:not(:disabled) {
@@ -513,12 +495,9 @@ onBeforeUnmount(() => {
   place-items: center;
   width: 26px;
   height: 26px;
-  flex-shrink: 0;
 }
 
 .urgent-action {
-  flex-shrink: 0;
-  max-width: 120px;
   line-height: 1.25;
 }
 
@@ -542,39 +521,6 @@ button:focus-visible,
 a:focus-visible {
   outline: 3px solid var(--ink);
   outline-offset: 4px;
-}
-
-/* Responsive layout */
-@media (max-width: 575px) {
-  .bulletin-board-container {
-    padding: 20px;
-  }
-
-  .sticky-note-card {
-    padding: 18px;
-  }
-
-  .board-intro {
-    font-size: 18px;
-  }
-
-  .primary-button,
-  .secondary-button {
-    max-width: 100%;
-  }
-
-  .urgent-item {
-    flex-wrap: wrap;
-  }
-
-  .urgent-action {
-    margin-left: auto;
-    max-width: none;
-  }
-
-  .board-title {
-    font-size: clamp(26px, 7vw, 36px);
-  }
 }
 
 /* Reduced motion */

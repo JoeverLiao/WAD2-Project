@@ -70,6 +70,9 @@ const myListings = wrap(async (req,res) => {
 const createListing = wrap(async (req,res) => {
   const fields = listingFields(req.body,true)
   validateListingWindow(fields)
+  if (!Number.isInteger(fields.quantity) || fields.quantity < 1) {
+    fail(400, 'Quantity must be a whole number greater than zero.')
+  }
   const inventoryId = has(req.body,'inventoryItem') ? id(req.body.inventoryItem,'inventory item ID') : undefined
   const listing = await tx(async session => {
     const data = {...fields,user:req.userId}
@@ -78,7 +81,20 @@ const createListing = wrap(async (req,res) => {
       if (!inventory) fail(404,'Inventory item not found or not owned by you.')
       // Whole-item rescue only. A listing must describe the entire linked record.
       if (!(inventory.quantity>0) || !inventory.unit?.trim()) fail(400,'Set a quantity and unit on this inventory item before sharing it.')
-      if (fields.quantity!==inventory.quantity || fields.unit!==inventory.unit.trim()) fail(400,'Linked listings must use the entire inventory quantity and its unit.')
+      if (
+          !Number.isFinite(fields.quantity) ||
+          fields.quantity <= 0 ||
+          fields.quantity > inventory.quantity
+        ) {
+          fail(
+            400,
+            'Choose a quantity greater than zero and no greater than your inventory quantity.',
+          )
+        }
+
+      if (fields.unit !== inventory.unit.trim()) {
+        fail(400, 'The unit must match your inventory item.')
+      }
       if (!inventory.updatedAt) fail(409,'Update this legacy inventory item before sharing it.')
       if (inventory.expiresAt && fields.expiresAt>inventory.expiresAt) fail(400,'Listing expiry cannot be later than inventory expiry.')
       data.inventoryItem = inventory._id
@@ -99,6 +115,12 @@ const getListing = wrap(async (req,res) => {
 const updateListing = wrap(async (req,res) => {
   id(req.params.id,'listing ID')
   const fields = listingFields(req.body)
+  if (
+    fields.quantity !== undefined &&
+    (!Number.isInteger(fields.quantity) || fields.quantity < 1)
+  ) {
+    fail(400, 'Quantity must be a whole number greater than zero.')
+  }
   if (!Object.keys(fields).length) fail(400,'No editable listing fields provided.')
   const listing = await tx(async session => {
     const existing = await ownedListing(req.params.id,req.userId,session)
@@ -245,14 +267,63 @@ const collectListing = wrap(async (req,res) => {
     if (!request) fail(409,'Accepted request is inconsistent. Collection was not completed.')
     let inventoryRemoved=false, inventoryAlreadyMissing=false
     if (listing.inventoryItem) {
-      // Conditional delete prevents deleting newly added/replaced food from an old listing.
-      if (!listing.inventorySnapshotUpdatedAt) fail(409,'Legacy listing has no inventory snapshot. Cancel, withdraw and relist it.')
-      const removed = await InventoryItem.deleteOne({_id:listing.inventoryItem,user:req.userId,updatedAt:listing.inventorySnapshotUpdatedAt},{session})
-      inventoryRemoved=removed.deletedCount===1
-      if (!inventoryRemoved) {
-        const current = await InventoryItem.exists({_id:listing.inventoryItem,user:req.userId}).session(session)
-        if (current) fail(409,'Inventory changed after listing. Cancel the request, withdraw this listing and create a new one. Nothing was removed.')
-        inventoryAlreadyMissing=true
+      if (!listing.inventorySnapshotUpdatedAt) {
+        fail(
+          409,
+          'Legacy listing has no inventory snapshot. Cancel, withdraw and relist it.',
+        )
+      }
+
+      const inventoryItem = await InventoryItem.findOne({
+        _id: listing.inventoryItem,
+        user: req.userId,
+      }).session(session)
+
+      if (!inventoryItem) {
+        inventoryAlreadyMissing = true
+      } else {
+        if (
+          inventoryItem.updatedAt?.getTime() !==
+          new Date(listing.inventorySnapshotUpdatedAt).getTime()
+        ) {
+          fail(
+            409,
+            'Inventory changed after listing. Cancel the request, withdraw this listing and create a new one. Nothing was deducted.',
+          )
+        }
+
+        const available = inventoryItem.quantity
+        const shared = listing.quantity
+
+        if (
+          !Number.isFinite(available) ||
+          !Number.isFinite(shared) ||
+          shared <= 0 ||
+          available < shared ||
+          inventoryItem.unit?.trim() !== listing.unit?.trim()
+        ) {
+          fail(
+            409,
+            'Your inventory no longer contains enough food in the listed unit.',
+          )
+        }
+
+        // Round to avoid floating-point results such as 0.30000000000000004.
+        const remaining = Number((available - shared).toFixed(12))
+
+        if (remaining === 0) {
+          await inventoryItem.deleteOne({ session })
+          inventoryRemoved = true
+        } else {
+          inventoryItem.quantity = remaining
+
+          // Keep the total weight consistent with the remaining quantity.
+          if (Number.isFinite(inventoryItem.weightKg)) {
+            inventoryItem.weightKg *= remaining / available
+          }
+
+          await inventoryItem.save({ session })
+        }
       }
     }
     const now=new Date()
