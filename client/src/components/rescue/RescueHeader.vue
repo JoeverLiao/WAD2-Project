@@ -1,4 +1,5 @@
 <script setup>
+import '@/assets/rescue.css'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
@@ -92,7 +93,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="container py-4">
+  <div class="rescue-header container py-4">
     <div class="bulletin-board-container position-relative my-4 p-3 p-sm-4 p-lg-5">
       <div class="row align-items-center gy-4">
         <!-- Community board introduction -->
@@ -131,7 +132,7 @@ onBeforeUnmount(() => {
 
             <a
               href="#explore-map"
-              class="secondary-button text-decoration-none"
+              class="secondary-button text-decoration-none d-inline-flex align-items-center justify-content-center btn rescue-button btn-outline-dark"
               @click.prevent="emit('explore')"
             >
               See what's nearby ↓
@@ -146,7 +147,7 @@ onBeforeUnmount(() => {
             aria-labelledby="urgent-food-title"
             :aria-busy="nearbyLoading"
           >
-            <div class="push-pin" aria-hidden="true"></div>
+            <div class="push-pin position-absolute" aria-hidden="true"></div>
 
             <div
               class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2"
@@ -203,13 +204,13 @@ onBeforeUnmount(() => {
                   <div class="d-flex justify-content-end mt-2">
                     <button
                       type="button"
-                      class="primary-button urgent-action"
+                      class="primary-button urgent-action d-inline-flex align-items-center justify-content-center btn rescue-button btn-primary"
                       @click="emit('request-listing', String(item._id))"
                     >
                       {{
-                        item.hasActiveRequest
-                          ? 'View request'
-                          : 'Request pickup →'
+                      item.hasActiveRequest
+                      ? 'View request'
+                      : 'Request pickup →'
                       }}
                     </button>
                   </div>
@@ -219,7 +220,7 @@ onBeforeUnmount(() => {
               <button
                 v-if="expiringToday.length > preview.length"
                 type="button"
-                class="more-food-button small mb-3"
+                class="more-food-button small mb-3 border-0 p-0 text-start"
                 @click="emit('explore')"
               >
                 See {{ expiringToday.length - preview.length }} more
@@ -254,7 +255,7 @@ onBeforeUnmount(() => {
 
               <button
                 type="button"
-                class="secondary-button compact-btn"
+                class="secondary-button compact-btn d-inline-flex align-items-center justify-content-center btn rescue-button btn-outline-dark"
                 @click="emit('explore')"
               >
                 Discover nearby food ↓
@@ -274,251 +275,3 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Community board */
-.bulletin-board-container {
-  background: var(--paper);
-  border: 3px solid var(--ink);
-  border-radius: 24px;
-  box-shadow: var(--shadow-paper);
-}
-
-.board-title {
-  font-size: clamp(26px, 4vw, 45px);
-}
-
-.board-intro {
-  font-size: clamp(18px, 2vw, 20px);
-}
-
-/* Sticky note pin */
-.push-pin {
-  position: absolute;
-  top: -12px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 22px;
-  height: 22px;
-  background: var(--coral);
-  border: 2px solid var(--ink);
-  border-radius: 50%;
-  box-shadow: 1px 2px 0 rgba(0, 0, 0, 0.25);
-  z-index: 10;
-}
-
-.push-pin::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 4px;
-  width: 6px;
-  height: 6px;
-  background: white;
-  border-radius: 50%;
-  opacity: 0.8;
-}
-
-/* Urgency badge */
-.urgency-badge {
-  background: #ff6b6b;
-  color: white;
-  border: 1.5px solid var(--ink);
-  border-radius: 20px;
-  padding: 2px 10px;
-  font-size: 12px;
-  font-weight: bold;
-  animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
-}
-
-/* Sticky note */
-.sticky-note-card {
-  background: var(--yellow-sticky);
-  border: 3px solid var(--ink);
-  border-radius: 20px;
-  box-shadow: 6px 8px 0 var(--ink);
-  animation: subtleFloat 6s ease-in-out infinite;
-  transition:
-    transform 250ms ease,
-    box-shadow 250ms ease;
-  transform-origin: 50% -1px;
-}
-
-.sticky-note-card:hover {
-  animation-play-state: paused;
-  box-shadow: 6px 10px 0 rgba(18, 63, 59, 0.2);
-}
-
-@keyframes subtleFloat {
-  0%,
-  100% {
-    transform: rotate(-2deg);
-  }
-
-  50% {
-    transform: rotate(2deg);
-  }
-}
-
-.sticky-note-card h2 {
-  font-family: var(--font-display);
-}
-
-/* Board label */
-.eyebrow {
-  color: #11847b;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  overflow-wrap: anywhere;
-}
-
-/* Shared button layout */
-.primary-button,
-.secondary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  max-width: 100%;
-  border: 2px solid var(--ink);
-  font-weight: 800;
-  cursor: pointer;
-  transition:
-    transform 150ms ease,
-    box-shadow 150ms ease;
-}
-
-/* Primary buttons */
-.primary-button {
-  gap: 9px;
-  padding: 13px 22px;
-  border-radius: 14px 11px 16px 10px;
-  background: var(--aqua);
-  color: white;
-  font-size: 16px;
-  box-shadow: var(--shadow-small);
-  text-decoration: none;
-}
-
-.sticky-note-card .primary-button {
-  font-size: 14px;
-  padding: 8px 12px;
-}
-
-.primary-button:hover:not(:disabled) {
-  box-shadow: 1px 2px 0 var(--ink);
-  transform: translate(2px, 2px);
-  background: #0d968b;
-  color: white;
-}
-
-.primary-button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: 2px 2px 0 var(--ink);
-}
-
-/* Secondary buttons */
-.secondary-button {
-  gap: 8px;
-  padding: 12px 22px;
-  border-radius: 13px;
-  background: white;
-  color: var(--ink);
-  font-size: 17px;
-  box-shadow: 2px 3px 0 var(--ink);
-}
-
-.secondary-button:hover:not(:disabled) {
-  box-shadow: 1px 2px 0 var(--ink);
-  transform: translate(1px, 1px);
-  background: #fdfdfd;
-}
-
-.compact-btn {
-  padding: 8px 16px;
-  font-size: 15px;
-}
-
-/* Expiring food items */
-.urgent-item-copy {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.urgent-food-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-}
-
-.urgent-action {
-  line-height: 1.25;
-}
-
-.more-food-button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--ink);
-  text-align: left;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.search-context {
-  font-size: 12px !important;
-  line-height: 1.4;
-}
-
-/* Keyboard focus */
-button:focus-visible,
-a:focus-visible {
-  outline: 3px solid var(--ink);
-  outline-offset: 4px;
-}
-
-.expiry-clear-icon {
-  width: 56px;
-  height: 56px;
-  border: 2px solid var(--ink);
-  background: var(--aqua-soft);
-  color: var(--ink);
-  font-size: 30px;
-}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  .sticky-note-card,
-  .urgency-badge {
-    animation: none;
-  }
-
-  .sticky-note-card,
-  .primary-button,
-  .secondary-button {
-    transition: none;
-  }
-
-  .primary-button:hover,
-  .secondary-button:hover {
-    transform: none;
-  }
-}
-</style>

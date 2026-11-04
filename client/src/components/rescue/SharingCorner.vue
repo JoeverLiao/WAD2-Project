@@ -1,20 +1,15 @@
 <script setup>
+import '@/assets/rescue.css'
+import ConversationListingSummary from './ConversationListingSummary.vue'
+import ConversationPickup from './ConversationPickup.vue'
+import ConversationSidebar from './ConversationSidebar.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch, reactive } from 'vue'
 
-import FoodIcon from '../FoodIcon.vue'
 import { useInventoryStore } from '@/stores/inventory.js'
 import { allPages, api, apiError, isCancelled } from '@/services/rescueApi.js'
 import { toLocalInput, toISO } from '@/services/rescueForm.js'
 import { lockBodyScroll } from '@/services/rescueModal.js'
-import {
-  entityId,
-  groupRequests,
-  dateTimeLabel,
-  windowLabel,
-  makeClientKey,
-  isPastRequest,
-  statusText,
-} from '@/services/rescueConversations.js'
+import { entityId, groupRequests, dateTimeLabel, makeClientKey, isPastRequest, statusText } from '@/services/rescueConversations.js'
 
 // Props, events and store
 
@@ -899,6 +894,12 @@ onBeforeUnmount(() => {
 
   releaseScroll?.()
 })
+function setSectionOpen(sectionId, isOpen) {
+  sectionOpen[sectionId] = isOpen
+}
+function markPhotoFailed(listingId) {
+  failedImages.value.add(listingId)
+}
 </script>
 
 <template>
@@ -917,14 +918,14 @@ onBeforeUnmount(() => {
       >
         <div>
           <h2 id="sharing-corner-title">Your sharing corner</h2>
-          <p class="muted mt-1">
+          <p class="muted mt-1 text-muted">
             Messages, requests and pickup plans.
           </p>
         </div>
 
         <button
           type="button"
-          class="modal-close d-flex align-items-center justify-content-center flex-shrink-0"
+          class="modal-close d-flex align-items-center justify-content-center flex-shrink-0 btn rescue-close rounded-circle d-inline-flex p-0"
           aria-label="Close sharing corner"
           :disabled="busy"
           @click="close"
@@ -939,7 +940,7 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="filter-button px-3 py-2 ms-2"
+          class="filter-button px-3 py-2 ms-2 btn rescue-button btn-outline-dark"
           :disabled="busy"
           @click="refresh"
         >
@@ -963,161 +964,24 @@ onBeforeUnmount(() => {
       <div class="sharing-inbox overflow-hidden" :aria-busy="loading">
         <div class="row g-0">
           <!-- Sidebar -->
-          <aside class="conversation-sidebar col-12 col-lg-4">
-            <div class="d-flex flex-column gap-3 p-3 p-md-4">
-              <h3>Your conversations</h3>
-
-              <div class="d-flex gap-2">
-                <button
-                  v-for="tab in ['received', 'sent']"
-                  :key="tab"
-                  type="button"
-                  class="filter-button flex-fill px-2 py-2"
-                  :class="{ active: activeTab === tab }"
-                  :aria-pressed="activeTab === tab"
-                  :disabled="busy || loading"
-                  @click="switchTab(tab)"
-                >
-                  {{ tab === 'received' ? 'Received' : 'Sent' }} ·
-                  {{ countRequests(tab) }}
-                </button>
-              </div>
-
-              <label class="d-block">
-                <span class="visually-hidden">
-                  Find food or a neighbour
-                </span>
-
-                <input
-                  v-model="search"
-                  class="conversation-search form-control"
-                  :disabled="busy"
-                  type="search"
-                  placeholder="Find food or a neighbour…"
-                />
-              </label>
-
-              <!-- Active and past conversations -->
-              <div
-                class="item-groups d-flex flex-column gap-3 overflow-auto p-1"
-                aria-label="Conversations grouped by person"
-              >
-                <details
-                  v-for="section in conversationSections"
-                  :key="section.id"
-                  :open="
-                    sectionOpen[section.id] ||
-                    Boolean(search.trim())
-                  "
-                  class="conversation-section p-2"
-                  @toggle="
-                    sectionOpen[section.id] = $event.target.open
-                  "
-                >
-                  <summary class="conversation-section-heading">
-                    <span>{{ section.title }}</span>
-
-                    <span
-                      class="conversation-count d-inline-block rounded-pill px-2 ms-1"
-                    >
-                      {{ section.count }}
-                    </span>
-                  </summary>
-
-                  <div class="d-flex flex-column gap-2 pt-2">
-                    <div
-                      v-for="group in section.groups"
-                      :key="group.id"
-                      class="item-group p-2"
-                    >
-                      <!-- Person -->
-                      <button
-                        type="button"
-                        class="group-heading d-flex align-items-center gap-2 w-100 p-2 text-start"
-                        :class="{
-                          selected: selectedPerson?.id === group.id,
-                        }"
-                        :aria-expanded="expandedIds.includes(`${section.id}-${group.id}`)"
-                        :aria-controls="
-                          `person-${section.id}-${group.id}`
-                        "
-                        :disabled="busy"
-                        @click="togglePerson(section.id, group)"
-                      >
-                        <span
-                          class="conversation-avatar d-flex align-items-center justify-content-center flex-shrink-0 rounded-circle"
-                          aria-hidden="true"
-                        >
-                          {{ group.person.charAt(0).toUpperCase() }}
-                        </span>
-
-                        <span class="group-copy d-flex flex-column gap-1">
-                          <strong>{{ group.person }}</strong>
-                          <small>{{ groupSummary(group) }}</small>
-                        </span>
-
-                        <span class="group-chevron ms-auto" aria-hidden="true">
-                          {{
-                            expandedIds.includes(`${section.id}-${group.id}`)
-                              ? '⌄'
-                              : '›'
-                          }}
-                        </span>
-                      </button>
-
-                      <!-- Food conversations -->
-                      <div
-                        v-if="expandedIds.includes(`${section.id}-${group.id}`)"
-                        :id="`person-${section.id}-${group.id}`"
-                        class="d-flex flex-column gap-1 mt-2"
-                      >
-                        <button
-                          v-for="request in group.requests"
-                          :key="request.id"
-                          type="button"
-                          class="request-person d-flex align-items-start gap-2 w-100 px-3 py-2 text-start"
-                          :class="{
-                            selected:
-                              selectedRequest?.id === request.id,
-                          }"
-                          :aria-pressed="
-                            selectedRequest?.id === request.id
-                          "
-                          :disabled="busy"
-                          @click="selectRequest(group, request)"
-                        >
-                          <span
-                            class="conversation-food-icon flex-shrink-0"
-                            aria-hidden="true"
-                          >
-                            <FoodIcon :food="request.food" />
-                          </span>
-
-                          <span class="d-flex flex-column gap-1">
-                            <strong>{{ request.food }}</strong>
-                            <small>{{ request.preview }}</small>
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <p
-                      v-if="!section.groups.length"
-                      class="muted p-3"
-                    >
-                      {{
-                        search.trim()
-                          ? 'No matching conversations.'
-                          : section.id === 'active'
-                            ? 'No active conversations.'
-                            : 'No past conversations.'
-                      }}
-                    </p>
-                  </div>
-                </details>
-              </div>
-            </div>
-          </aside>
+          <ConversationSidebar
+            :active-tab="activeTab"
+            :busy="busy"
+            :conversation-sections="conversationSections"
+            :count-requests="countRequests"
+            :expanded-ids="expandedIds"
+            :group-summary="groupSummary"
+            :loading="loading"
+            :search="search"
+            :section-open="sectionOpen"
+            :selected-person="selectedPerson"
+            :selected-request="selectedRequest"
+            @switch-tab="switchTab"
+            @toggle-person="togglePerson"
+            @select-request="selectRequest"
+            @update:search="search = $event"
+            @toggle-section="setSectionOpen"
+          />
 
           <!-- Selected conversation -->
           <main
@@ -1137,55 +1001,25 @@ onBeforeUnmount(() => {
                 <div>
                   <h3>{{ selectedRequest.person }}</h3>
 
-                  <p class="muted mt-1">
+                  <p class="muted mt-1 text-muted">
                     {{ selectedGroup.food }} /
                     {{
-                      activeTab === 'received'
-                        ? `${selectedRequest.person.split(' ')[0]}’s request`
-                        : 'Your request'
+                    activeTab === 'received'
+                    ? `${selectedRequest.person.split(' ')[0]}’s request`
+                    : 'Your request'
                     }}
                   </p>
                 </div>
               </div>
 
               <!-- Listing -->
-              <div
-                class="listing-summary d-flex align-items-center gap-3 p-3"
-              >
-                <img
-                  v-if="
-                    selectedGroup.image &&
-                    !failedImages.has(selectedRequest.listingId)
-                  "
-                  :src="selectedGroup.image"
-                  :alt="selectedGroup.food"
-                  class="listing-photo flex-shrink-0 rounded"
-                  @error="
-                    failedImages.add(selectedRequest.listingId)
-                  "
-                />
-
-                <span
-                  v-else
-                  class="listing-placeholder d-flex align-items-center justify-content-center flex-shrink-0 rounded"
-                  aria-hidden="true"
-                >
-                  <FoodIcon :food="selectedGroup.food" />
-                </span>
-
-                <div>
-                  <h4>
-                    {{ selectedGroup.food }} ·
-                    {{ selectedGroup.quantity }}
-                  </h4>
-
-                  <p class="muted mt-2">
-                    {{ activeTab === 'received' ? 'Your' : 'Owner’s' }}
-                    pickup window:
-                    {{ selectedGroup.preferredPickup }}
-                  </p>
-                </div>
-              </div>
+              <ConversationListingSummary
+                :active-tab="activeTab"
+                :failed-images="failedImages"
+                :selected-group="selectedGroup"
+                :selected-request="selectedRequest"
+                @photo-error="markPhotoFailed"
+              />
 
               <!-- Message errors -->
               <div
@@ -1197,7 +1031,7 @@ onBeforeUnmount(() => {
 
                 <button
                   type="button"
-                  class="filter-button px-3 py-2 mt-2"
+                  class="filter-button px-3 py-2 mt-2 btn rescue-button btn-outline-dark"
                   @click="loadMessages()"
                 >
                   Retry messages
@@ -1220,9 +1054,9 @@ onBeforeUnmount(() => {
                   :key="message.id"
                   class="message-bubble p-3"
                   :class="
-                    message.own
-                      ? 'own align-self-end'
-                      : 'align-self-start'
+                  message.own
+                  ? 'own align-self-end'
+                  : 'align-self-start'
                   "
                 >
                   <p>{{ message.text }}</p>
@@ -1235,267 +1069,37 @@ onBeforeUnmount(() => {
 
               <p
                 v-if="
-                  !messagesLoading &&
-                  !selectedRequest.messages.length
+                !messagesLoading &&
+                !selectedRequest.messages.length
                 "
-                class="muted"
+                class="muted text-muted"
               >
                 No messages yet.
               </p>
 
               <!-- Pickup -->
-              <div
-                class="pickup-proposal d-flex flex-column gap-3 p-3"
-              >
-                <div
-                  class="d-flex flex-wrap align-items-center justify-content-between gap-3"
-                >
-                  <div>
-                    <p class="pickup-label muted mb-1">
-                      {{
-                        activeTab === 'received'
-                          ? 'Requested pickup'
-                          : 'Your requested pickup'
-                      }}
-                    </p>
-
-                    <h4>{{ selectedRequest.requestedPickup }}</h4>
-                  </div>
-
-                  <span
-                    class="pickup-status px-3 py-1 rounded"
-                    :class="{
-                      changed:
-                        selectedRequest.differentTime &&
-                        selectedRequest.status === 'pending' &&
-                        !selectedRequest.past,
-                    }"
-                    role="status"
-                  >
-                    {{ statusLabel }}
-                  </span>
-                </div>
-
-                <!-- Existing time proposal -->
-                <div v-if="proposal" class="time-change-note p-3">
-                  <p>
-                    <strong>
-                      {{
-                        ownProposal
-                          ? 'Your proposed time'
-                          : 'New time suggested'
-                      }}
-                    </strong>
-                  </p>
-
-                  <p class="mt-1">
-                    {{
-                      windowLabel(
-                        proposal.pickupStart,
-                        proposal.pickupEnd,
-                      )
-                    }}
-                  </p>
-
-                  <p class="muted mt-1">
-                    A time agreement does not reserve the food.
-                  </p>
-
-                  <div
-                    v-if="!selectedRequest.past"
-                    class="d-flex flex-column flex-sm-row flex-wrap gap-2 mt-2"
-                  >
-                    <button
-                      v-if="ownProposal"
-                      type="button"
-                      class="action-button secondary"
-                      :disabled="busy"
-                      @click="respondProposal('withdraw')"
-                    >
-                      Withdraw suggestion
-                    </button>
-
-                    <template v-else>
-                      <button
-                        type="button"
-                        class="action-button"
-                        :disabled="busy || !timeNegotiable"
-                        @click="respondProposal('accept')"
-                      >
-                        Agree to this time
-                      </button>
-
-                      <button
-                        type="button"
-                        class="action-button secondary"
-                        :disabled="busy || !timeNegotiable"
-                        @click="respondProposal('decline')"
-                      >
-                        Keep previous time
-                      </button>
-                    </template>
-                  </div>
-                </div>
-
-                <!-- Pending actions -->
-                <template
-                  v-if="
-                    selectedRequest.status === 'pending' &&
-                    !selectedRequest.past
-                  "
-                >
-                  <div
-                    class="d-flex flex-column flex-sm-row flex-wrap gap-2"
-                  >
-                    <button
-                      v-if="activeTab === 'received'"
-                      type="button"
-                      class="action-button"
-                      :disabled="busy || !canAccept"
-                      @click="updateStatus('accepted')"
-                    >
-                      Accept pickup
-                    </button>
-
-                    <button
-                      v-if="!proposal"
-                      type="button"
-                      class="action-button secondary"
-                      :disabled="busy || !timeNegotiable"
-                      @click="suggestTime"
-                    >
-                      Suggest another time
-                    </button>
-                  </div>
-
-                  <p
-                    v-if="selectedRaw.listing?.status === 'claimed'"
-                    class="muted"
-                  >
-                    Another request currently reserves this listing.
-                  </p>
-
-                  <!-- Suggest a time -->
-                  <form
-                    v-if="isProposalOpen && !proposal"
-                    class="pickup-time-form"
-                    @submit.prevent="submitProposal"
-                  >
-                    <div class="row g-2">
-                      <div class="col-12 col-sm-6">
-                        <label
-                          for="proposal-start"
-                          class="form-label"
-                        >
-                          From
-                        </label>
-
-                        <input
-                          id="proposal-start"
-                          v-model="proposalStart"
-                          class="form-control"
-                          type="datetime-local"
-                          :disabled="busy"
-                          required
-                        />
-                      </div>
-
-                      <div class="col-12 col-sm-6">
-                        <label
-                          for="proposal-end"
-                          class="form-label"
-                        >
-                          Until
-                        </label>
-
-                        <input
-                          id="proposal-end"
-                          v-model="proposalEnd"
-                          class="form-control"
-                          type="datetime-local"
-                          :disabled="busy"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <p class="muted mt-2">
-                      Use your device's local time. The window
-                      must end by
-                      {{
-                        dateTimeLabel(
-                          selectedRaw.listing?.expiresAt,
-                        )
-                      }}.
-                    </p>
-
-                    <div
-                      class="d-flex flex-column flex-sm-row flex-wrap gap-2 mt-2"
-                    >
-                      <button
-                        class="action-button"
-                        type="submit"
-                        :disabled="busy"
-                      >
-                        Send time suggestion
-                      </button>
-
-                      <button
-                        class="action-button secondary"
-                        type="button"
-                        :disabled="busy"
-                        @click="isProposalOpen = false"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-
-                  <button
-                    type="button"
-                    class="text-button align-self-start"
-                    :disabled="busy"
-                    @click="
-                      updateStatus(
-                        activeTab === 'received'
-                          ? 'declined'
-                          : 'cancelled',
-                      )
-                    "
-                  >
-                    {{
-                      activeTab === 'received'
-                        ? 'Decline request'
-                        : 'Cancel request'
-                    }}
-                  </button>
-                </template>
-
-                <!-- Accepted actions, including past pickup windows -->
-                <div
-                  v-if="selectedRequest.status === 'accepted'"
-                  class="d-flex flex-column flex-sm-row flex-wrap gap-2"
-                >
-                  <button
-                    v-if="activeTab === 'received'"
-                    type="button"
-                    class="action-button"
-                    :disabled="busy"
-                    @click="openCollectionConfirmation"
-                  >
-                    Confirm collection
-                  </button>
-
-                  <button
-                    type="button"
-                    class="action-button secondary"
-                    :disabled="busy"
-                    @click="updateStatus('cancelled')"
-                  >
-                    Cancel pickup
-                  </button>
-                </div>
-              </div>
+              <ConversationPickup
+                :active-tab="activeTab"
+                :busy="busy"
+                :can-accept="canAccept"
+                :is-proposal-open="isProposalOpen"
+                :own-proposal="ownProposal"
+                :proposal="proposal"
+                :proposal-end="proposalEnd"
+                :proposal-start="proposalStart"
+                :selected-raw="selectedRaw"
+                :selected-request="selectedRequest"
+                :status-label="statusLabel"
+                :time-negotiable="timeNegotiable"
+                @respond-proposal="respondProposal"
+                @update-status="updateStatus"
+                @suggest-time="suggestTime"
+                @submit-proposal="submitProposal"
+                @open-collection-confirmation="openCollectionConfirmation"
+                @update:isProposalOpen="isProposalOpen = $event"
+                @update:proposalStart="proposalStart = $event"
+                @update:proposalEnd="proposalEnd = $event"
+              />
 
               <!-- Reply -->
               <form
@@ -1518,7 +1122,7 @@ onBeforeUnmount(() => {
                       class="form-control"
                       maxlength="1000"
                       :disabled="
-                        busy || !chatWritable || messagesLoading
+                      busy || !chatWritable || messagesLoading
                       "
                       placeholder="Write a reply…"
                       autocomplete="off"
@@ -1528,12 +1132,12 @@ onBeforeUnmount(() => {
                   <div class="col-auto">
                     <button
                       type="submit"
-                      class="action-button"
+                      class="action-button btn rescue-button btn-primary"
                       :disabled="
-                        !reply.trim() ||
-                        busy ||
-                        !chatWritable ||
-                        messagesLoading
+                      !reply.trim() ||
+                      busy ||
+                      !chatWritable ||
+                      messagesLoading
                       "
                     >
                       Send →
@@ -1542,7 +1146,7 @@ onBeforeUnmount(() => {
                 </div>
               </form>
 
-              <p v-if="!chatWritable" class="muted">
+              <p v-if="!chatWritable" class="muted text-muted">
                 This conversation is in your history.
                 Messages are read-only.
 
@@ -1565,7 +1169,7 @@ onBeforeUnmount(() => {
             <div>
               <h3>No conversation selected</h3>
 
-              <p class="muted mt-2">
+              <p class="muted mt-2 text-muted">
                 Choose a neighbour and a food item to view
                 the conversation.
               </p>
@@ -1605,7 +1209,7 @@ onBeforeUnmount(() => {
       >
         <button
           type="button"
-          class="action-button secondary"
+          class="action-button secondary btn rescue-button btn-outline-dark"
           :disabled="busy"
           @click="closeCollectionConfirmation"
         >
@@ -1614,7 +1218,7 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="action-button"
+          class="action-button btn rescue-button btn-primary"
           :disabled="busy"
           @click="confirmCollection"
         >
@@ -1624,364 +1228,3 @@ onBeforeUnmount(() => {
     </dialog>
   </Teleport>
 </template>
-
-<style scoped>
-/* Base */
-.sharing-corner {
-  color: var(--ink);
-  font: 18px/1.4 var(--font-sans);
-}
-
-.sharing-corner h2,
-.sharing-corner h3,
-.sharing-corner h4,
-.sharing-corner p {
-  margin: 0;
-}
-
-.sharing-corner h2,
-.sharing-corner h3,
-.sharing-corner h4 {
-  font-family: var(--font-display);
-  font-weight: 700;
-}
-
-.sharing-corner h2 {
-  font-size: clamp(28px, 3vw, 36px);
-}
-
-.sharing-corner h3 {
-  font-size: 24px;
-}
-
-.sharing-corner h4 {
-  font-size: 22px;
-}
-
-.sharing-corner button,
-.sharing-corner input {
-  font: inherit;
-}
-
-.sharing-corner button {
-  cursor: pointer;
-}
-
-.sharing-corner button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-/* Native dialogs */
-.sharing-modal,
-.sharing-confirm {
-  margin: auto;
-  border: 2px solid var(--ink);
-  background: var(--paper);
-}
-
-.sharing-modal {
-  width: min(1360px, calc(100vw - 24px));
-  max-height: calc(100dvh - 24px);
-  border-radius: 22px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  box-shadow: var(--shadow-paper);
-}
-
-.sharing-confirm {
-  width: min(520px, calc(100vw - 24px));
-  max-height: calc(100dvh - 24px);
-  overflow-y: auto;
-  border-radius: 18px;
-}
-
-.sharing-modal::backdrop,
-.sharing-confirm::backdrop {
-  background: rgba(18, 63, 59, 0.45);
-}
-
-.sharing-modal:not([open]),
-.sharing-confirm:not([open]) {
-  display: none;
-}
-
-.modal-close {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 1.5px solid var(--ink);
-  border-radius: 50%;
-  background: var(--paper-bright);
-  color: var(--ink);
-  font-size: 30px !important;
-  line-height: 1;
-}
-
-.modal-close:hover {
-  background: var(--aqua-soft);
-}
-
-/* Inbox surfaces */
-.sharing-inbox {
-  min-height: 600px;
-  border: 2px solid var(--ink);
-  border-radius: 18px;
-  background: var(--paper-bright);
-}
-
-.conversation-sidebar {
-  min-width: 0;
-  background: var(--paper);
-}
-
-.conversation-content {
-  min-width: 0;
-}
-
-.item-groups {
-  max-height: 510px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--aqua) var(--aqua-soft);
-}
-
-.conversation-section {
-  border: 1.5px solid var(--line);
-  border-radius: 12px;
-  background: var(--paper-bright);
-}
-
-.conversation-section-heading {
-  cursor: pointer;
-  font-family: var(--font-display);
-  font-size: 21px;
-  font-weight: 700;
-}
-
-.conversation-count {
-  background: var(--aqua-soft);
-  font-family: var(--font-sans);
-  font-size: 15px;
-}
-
-.item-group {
-  border: 1.5px solid var(--ink);
-  border-radius: 12px;
-  background: var(--paper-bright);
-}
-
-.group-heading,
-.request-person {
-  min-width: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink);
-}
-
-.group-heading.selected,
-.request-person.selected {
-  background: var(--aqua-soft);
-}
-
-.group-copy,
-.request-person > span:last-child {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.group-copy strong,
-.request-person strong {
-  font-family: var(--font-display);
-  font-size: 21px;
-  line-height: 1.2;
-}
-
-.group-copy small,
-.request-person small {
-  color: var(--muted);
-  font-size: 16px;
-}
-
-.group-chevron {
-  font-size: 24px;
-}
-
-.conversation-avatar,
-.person-avatar {
-  background: var(--coral);
-  font-family: var(--font-display);
-}
-
-.conversation-avatar {
-  width: 40px;
-  height: 40px;
-  font-size: 23px;
-}
-
-.person-avatar {
-  width: 52px;
-  height: 52px;
-  border: 1.5px solid var(--ink);
-  font-size: 24px;
-}
-
-.conversation-food-icon {
-  width: 28px;
-  font-size: 25px;
-}
-
-/* Form controls and buttons */
-.sharing-corner .form-control {
-  min-width: 0;
-  min-height: 44px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background-color: var(--paper-bright);
-  color: var(--ink);
-  font: inherit;
-  font-size: 16px;
-}
-
-.filter-button {
-  min-height: 44px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--ink);
-  font-size: 16px !important;
-}
-
-.filter-button.active {
-  background: var(--aqua);
-  color: var(--paper-bright);
-}
-
-.filter-button:hover:not(.active) {
-  background: var(--aqua-soft);
-}
-
-.action-button {
-  min-height: 44px;
-  padding: 9px 16px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--aqua);
-  color: var(--paper-bright);
-  font-size: 16px !important;
-}
-
-.action-button.secondary {
-  background: var(--paper);
-  color: var(--ink);
-}
-
-.text-button {
-  min-height: 44px;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* Listing preview */
-.listing-summary {
-  min-width: 0;
-  border: 1.5px solid var(--ink);
-  border-radius: 12px;
-  background: var(--paper);
-}
-
-.listing-summary > div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.listing-photo,
-.listing-placeholder {
-  width: clamp(64px, 7vw, 86px);
-  height: clamp(70px, 7vw, 82px);
-  object-fit: cover;
-}
-
-.listing-placeholder {
-  background: var(--aqua-soft);
-  font-size: 40px;
-}
-
-/* Messages */
-.message-list {
-  max-height: 270px;
-}
-
-.message-bubble {
-  max-width: 90%;
-  border: 1.5px solid var(--ink);
-  border-radius: 18px;
-  background: var(--aqua-soft);
-  overflow-wrap: anywhere;
-}
-
-.message-bubble.own {
-  background: var(--paper);
-}
-
-.message-bubble small {
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.reply-form {
-  border: 1.5px solid var(--ink);
-  border-radius: 12px;
-  background: var(--paper);
-}
-
-.sharing-corner .reply-form input {
-  border: 0;
-  background: transparent;
-}
-
-/* Pickup details */
-.pickup-proposal {
-  border: 1.5px solid var(--ink);
-  border-radius: 14px;
-  background: var(--yellow-sticky);
-}
-
-.pickup-label,
-.pickup-status {
-  font-size: 16px;
-}
-
-.pickup-status {
-  background: var(--aqua-soft);
-}
-
-.pickup-status.changed {
-  background: var(--coral);
-}
-
-.time-change-note {
-  border: 1px dashed var(--ink);
-  border-radius: 10px;
-  background: var(--paper-bright);
-}
-
-.refresh-note,
-.pickup-time-form p {
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.sharing-corner :focus-visible {
-  outline: 3px solid var(--aqua);
-  outline-offset: 3px;
-}
-</style>
