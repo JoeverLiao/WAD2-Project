@@ -1,157 +1,355 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import Header from "@/components/rescue/RescueHeader.vue";
-import SharingCorner from "@/components/rescue/SharingCorner.vue";
-import MyListings from "@/components/rescue/MyListings.vue";
-import RescueMap from "@/components/rescue/RescueMap.vue";
-import FoodListingEditor from '@/components/rescue/FoodListingEditor.vue'
-import { allPages, api, apiError, isCancelled } from "@/services/rescueApi.js";
-import { displayStatus } from "@/services/rescueForm.js";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+} from 'vue'
 
-const sharingSection = ref(null);
-const initialListingId = ref(null);
-const mapRefreshKey = ref(0);
-const rescueMap = ref(null);
+import Header from '@/components/rescue/RescueHeader.vue'
+import SharingCorner from '@/components/rescue/SharingCorner.vue'
+import MyListings from '@/components/rescue/MyListings.vue'
+import RescueMap from '@/components/rescue/RescueMap.vue'
+import FoodListingEditor from '@/components/rescue/FoodListingEditor.vue'
+
+import {
+  allPages,
+  api,
+  apiError,
+  isCancelled,
+} from '@/services/rescueApi.js'
+
+import {
+  entityId,
+  isPastRequest,
+  windowLabel,
+} from '@/services/rescueConversations.js'
+
+// Navigation
+const sharingSection = ref(null)
+const initialListingId = ref(null)
+const mapRefreshKey = ref(0)
+const rescueMap = ref(null)
+
 const nearbyState = reactive({
   listings: [],
   loading: true,
-  error: "",
-  searchLabel: "",
-});
-const summaryLoading = ref(false);
-const summaryError = ref("");
-const hasSummary = ref(false);
-const sharingSummary = reactive({
-  received: 0,
-  needsReply: 0,
-  sent: 0,
-  awaitingReply: 0,
-  listings: 0,
-  available: 0,
-});
-let summaryController = null;
-let alive = true;
+  error: '',
+  searchLabel: '',
+})
 
-// Keep the last successful counts during refresh; never show invented zeros on error.
-function countLabel(value) {
-  return hasSummary.value ? value : summaryError.value ? "—" : "…";
+// Dashboard data
+const receivedRequests = ref([])
+const sentRequests = ref([])
+const ownListings = ref([])
+
+const summaryLoading = ref(false)
+const summaryError = ref('')
+const hasSummary = ref(false)
+const now = ref(Date.now())
+
+let summaryController = null
+let refreshTimer = null
+let alive = true
+
+// Active listings exclude expired pickup windows and food.
+function isActiveListing(item) {
+  return (
+    ['available', 'claimed'].includes(item.status) &&
+    Date.parse(item.expiresAt) > now.value &&
+    Date.parse(item.pickupEnd) > now.value
+  )
 }
+
+const activeReceived = computed(() =>
+  receivedRequests.value.filter(
+    (request) => !isPastRequest(request, now.value),
+  ),
+)
+
+const activeSent = computed(() =>
+  sentRequests.value.filter(
+    (request) => !isPastRequest(request, now.value),
+  ),
+)
+
+const activeListings = computed(() =>
+  ownListings.value.filter(isActiveListing),
+)
+
+const activeInventoryIds = computed(() =>
+  ownListings.value
+    .filter(
+      (item) =>
+        ['available', 'claimed'].includes(item.status) &&
+        item.inventoryItem,
+    )
+    .map((item) => entityId(item.inventoryItem)),
+)
+
+const sharingSummary = computed(() => ({
+  received: activeReceived.value.length,
+
+  needsReply: activeReceived.value.filter(
+    (request) => request.status === 'pending',
+  ).length,
+
+  sent: activeSent.value.length,
+
+  awaitingReply: activeSent.value.filter(
+    (request) => request.status === 'pending',
+  ).length,
+
+  listings: activeListings.value.length,
+
+  available: activeListings.value.filter(
+    (item) => item.status === 'available',
+  ).length,
+
+  reserved: activeListings.value.filter(
+    (item) => item.status === 'claimed',
+  ).length,
+}))
+
+function countLabel(value) {
+  return hasSummary.value
+    ? value
+    : summaryError.value
+      ? '—'
+      : '…'
+}
+
+const unavailableDetail = computed(() =>
+  summaryError.value ? 'Summary unavailable' : 'Loading…',
+)
+
 const receivedDetail = computed(() =>
   !hasSummary.value
-    ? summaryError.value
-      ? "Summary unavailable"
-      : "Loading…"
-    : sharingSummary.needsReply > 0
-      ? `${sharingSummary.needsReply} awaiting reply`
-      : "All caught up",
-);
+    ? unavailableDetail.value
+    : sharingSummary.value.needsReply
+      ? `${sharingSummary.value.needsReply} awaiting reply`
+      : 'All caught up',
+)
+
 const sentDetail = computed(() =>
   !hasSummary.value
-    ? summaryError.value
-      ? "Summary unavailable"
-      : "Loading…"
-    : sharingSummary.awaitingReply > 0
-      ? `${sharingSummary.awaitingReply} awaiting reply`
-      : "No replies pending",
-);
+    ? unavailableDetail.value
+    : sharingSummary.value.awaitingReply
+      ? `${sharingSummary.value.awaitingReply} awaiting reply`
+      : 'No replies pending',
+)
+
 const listingsDetail = computed(() =>
   !hasSummary.value
-    ? summaryError.value
-      ? "Summary unavailable"
-      : "Loading…"
-    : `${sharingSummary.available} available`,
-);
+    ? unavailableDetail.value
+    : `${sharingSummary.value.available} available · ${sharingSummary.value.reserved} reserved`,
+)
 
 async function refreshSummary() {
-  summaryController?.abort();
-  const controller = new AbortController();
-  summaryController = controller;
-  summaryLoading.value = true;
-  summaryError.value = "";
+  summaryController?.abort()
+
+  const controller = new AbortController()
+  summaryController = controller
+
+  summaryLoading.value = true
+  summaryError.value = ''
 
   try {
-    const requestCount = async (direction, status) => {
-      const { data } = await api.get("/rescue/requests", {
-        params: { direction, ...(status ? { status } : {}), limit: 1 },
-        signal: controller.signal,
-      });
-      if (!Number.isInteger(data.total) || data.total < 0) {
-        throw new Error("The server returned an invalid sharing summary.");
-      }
-      return data.total;
-    };
-    const [received, needsReply, sent, awaitingReply, listings] =
-      await Promise.all([
-        requestCount("received"),
-        requestCount("received", "pending"),
-        requestCount("sent"),
-        requestCount("sent", "pending"),
-        allPages("/rescue/mine", "listings", {}, controller.signal),
-      ]);
-    if (!alive || controller.signal.aborted) return;
+    const [received, sent, listings] = await Promise.all([
+      allPages(
+        '/rescue/requests',
+        'requests',
+        { direction: 'received' },
+        controller.signal,
+      ),
+      allPages(
+        '/rescue/requests',
+        'requests',
+        { direction: 'sent' },
+        controller.signal,
+      ),
+      allPages(
+        '/rescue/mine',
+        'listings',
+        {},
+        controller.signal,
+      ),
+    ])
 
-    Object.assign(sharingSummary, {
-      received,
-      needsReply,
-      sent,
-      awaitingReply,
-      listings: listings.length,
-      available: listings.filter((item) => displayStatus(item) === "available")
-        .length,
-    });
-    hasSummary.value = true;
+    if (!alive || controller.signal.aborted) return
+
+    receivedRequests.value = received
+    sentRequests.value = sent
+    ownListings.value = listings
+
+    now.value = Date.now()
+    hasSummary.value = true
   } catch (error) {
-    if (alive && !controller.signal.aborted && !isCancelled(error)) {
+    if (
+      alive &&
+      !controller.signal.aborted &&
+      !isCancelled(error)
+    ) {
       summaryError.value = apiError(
         error,
-        "Unable to load your sharing summary.",
-      );
+        'Unable to load your sharing summary.',
+      )
     }
   } finally {
-    if (alive && summaryController === controller) summaryLoading.value = false;
+    if (alive && summaryController === controller) {
+      summaryLoading.value = false
+    }
   }
 }
 
+// Today's pickup prompts
+const dayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Singapore',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+function singaporeDay(value) {
+  const date = new Date(value)
+
+  return Number.isFinite(date.getTime())
+    ? dayFormatter.format(date)
+    : ''
+}
+
+const todaysPickups = computed(() => {
+  const today = singaporeDay(now.value)
+
+  return receivedRequests.value
+    .filter(
+      (request) =>
+        request.status === 'accepted' &&
+        request.listing?.status === 'claimed' &&
+        singaporeDay(request.pickupStart) === today,
+    )
+    .slice()
+    .sort(
+      (a, b) =>
+        Date.parse(a.pickupStart) - Date.parse(b.pickupStart),
+    )
+})
+
+const pickupBusyId = ref('')
+const pickupError = ref('')
+const pickupNotice = ref('')
+
+function pickupHasStarted(request) {
+  return Date.parse(request.pickupStart) <= now.value
+}
+
+async function answerPickup(request, collected) {
+  if (pickupBusyId.value) return
+
+  pickupBusyId.value = entityId(request)
+  pickupError.value = ''
+  pickupNotice.value = ''
+
+  let saved = false
+
+  try {
+    if (collected) {
+      await api.post(
+        `/rescue/${entityId(request.listing)}/collect`,
+      )
+    } else {
+      await api.post(
+        `/rescue/requests/${entityId(request)}/cancel`,
+      )
+    }
+
+    saved = true
+
+    // Remove the resolved prompt immediately.
+    receivedRequests.value = receivedRequests.value.map(
+      (item) =>
+        entityId(item) === entityId(request)
+          ? {
+              ...item,
+              status: collected ? 'completed' : 'cancelled',
+            }
+          : item,
+    )
+
+    pickupNotice.value = collected
+      ? 'Collection confirmed. The shared quantity was deducted from any linked inventory.'
+      : 'Pickup cancelled and reservation released. If the expiry and pickup window are still valid, the food is available again.'
+  } catch (error) {
+    pickupError.value = apiError(
+      error,
+      'Could not update this pickup. Please refresh before trying again.',
+    )
+  } finally {
+    // Refresh even after an error to reconcile an uncertain response.
+    await refreshSummary()
+
+    if (saved) {
+      mapRefreshKey.value += 1
+    }
+
+    if (alive) pickupBusyId.value = ''
+  }
+}
+
+// Map and modal navigation
 function updateNearbyResults(state) {
-  Object.assign(nearbyState, state);
+  Object.assign(nearbyState, state)
 }
+
 function exploreNearby() {
-  const section = document.getElementById("explore-map");
-  section?.scrollIntoView({
-    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ? "auto"
-      : "smooth",
-    block: "start",
-  });
-  document.getElementById("explore-title")?.focus({ preventScroll: true });
+  document.getElementById('explore-map')?.scrollIntoView({
+    behavior: window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches
+      ? 'auto'
+      : 'smooth',
+    block: 'start',
+  })
+
+  document.getElementById('explore-title')?.focus({
+    preventScroll: true,
+  })
 }
+
 async function requestFromHeader(listingId) {
-  exploreNearby();
-  await rescueMap.value?.requestListing(listingId);
+  exploreNearby()
+  await rescueMap.value?.requestListing(listingId)
 }
+
 function refreshNearby() {
-  rescueMap.value?.refresh();
+  rescueMap.value?.refresh()
 }
+
 function openSharingSection(section) {
-  initialListingId.value = null;
-  sharingSection.value = section;
+  initialListingId.value = null
+  sharingSection.value = section
 }
+
 function openReceivedRequests(listingId) {
-  initialListingId.value = listingId;
-  sharingSection.value = "received";
+  initialListingId.value = listingId
+  sharingSection.value = 'received'
 }
+
 function openSentRequests(listingId) {
-  initialListingId.value = listingId;
-  sharingSection.value = "sent";
+  initialListingId.value = listingId
+  sharingSection.value = 'sent'
 }
+
 function onRescueChanged() {
-  mapRefreshKey.value += 1;
-  refreshSummary();
+  mapRefreshKey.value += 1
+  refreshSummary()
 }
+
 function closeSharingSection() {
-  sharingSection.value = null;
-  initialListingId.value = null;
-  onRescueChanged();
+  sharingSection.value = null
+  initialListingId.value = null
+  onRescueChanged()
 }
 
 function closeNewListing() {
@@ -162,11 +360,28 @@ function onNewListingSaved() {
   sharingSection.value = null
 }
 
-onMounted(refreshSummary);
+// Lifecycle
+onMounted(() => {
+  refreshSummary()
+
+  refreshTimer = setInterval(() => {
+    now.value = Date.now()
+
+    if (
+      !document.hidden &&
+      !summaryLoading.value &&
+      !pickupBusyId.value
+    ) {
+      refreshSummary()
+    }
+  }, 30000)
+})
+
 onBeforeUnmount(() => {
-  alive = false;
-  summaryController?.abort();
-});
+  alive = false
+  clearInterval(refreshTimer)
+  summaryController?.abort()
+})
 </script>
 
 <template>
@@ -212,6 +427,117 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </header>
+
+      <!-- Today's pickups -->
+      <section
+        v-if="todaysPickups.length"
+        class="pickup-check p-3 mb-4"
+        aria-labelledby="todays-pickups-title"
+      >
+        <div
+          class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
+        >
+          <h3 id="todays-pickups-title" class="pickup-check-title m-0">
+            Today’s pickups
+          </h3>
+
+          <span class="small">
+            {{ todaysPickups.length }}
+            {{ todaysPickups.length === 1 ? 'pickup' : 'pickups' }}
+            to confirm
+          </span>
+        </div>
+
+        <div class="d-flex flex-column gap-2">
+          <article
+            v-for="request in todaysPickups"
+            :key="request._id"
+            class="pickup-check-item p-3"
+            :aria-busy="pickupBusyId === String(request._id)"
+          >
+            <div class="row g-3 align-items-center">
+              <div class="col-12 col-md">
+                <p class="pickup-check-question mb-1">
+                  Did {{ request.requester?.name || 'your neighbour' }}
+                  pick up {{ request.listing.title }}?
+                </p>
+
+                <p class="small mb-1">
+                  {{ request.listing.quantity }}
+                  {{ request.listing.unit }}
+                </p>
+
+                <p class="small text-muted mb-0">
+                  {{ windowLabel(request.pickupStart, request.pickupEnd) }}
+                </p>
+              </div>
+
+              <div class="col-12 col-md-auto">
+                <div class="d-flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    class="pickup-answer pickup-answer--yes px-3 py-2"
+                    :disabled="
+                      Boolean(pickupBusyId) ||
+                      summaryLoading ||
+                      !pickupHasStarted(request)
+                    "
+                    @click="answerPickup(request, true)"
+                  >
+                    {{
+                      pickupBusyId === String(request._id)
+                        ? 'Saving…'
+                        : 'Yes, collected'
+                    }}
+                  </button>
+
+                  <button
+                    type="button"
+                    class="pickup-answer px-3 py-2"
+                    :disabled="
+                      Boolean(pickupBusyId) ||
+                      summaryLoading ||
+                      !pickupHasStarted(request)
+                    "
+                    @click="answerPickup(request, false)"
+                  >
+                    No, release food
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p
+              v-if="!pickupHasStarted(request)"
+              class="small text-muted mt-2 mb-0"
+            >
+              You can confirm once the pickup window starts.
+            </p>
+          </article>
+        </div>
+
+        <p class="small mt-3 mb-0">
+          Choose Yes only after handing over the food.
+          No cancels this pickup and releases its reservation.
+        </p>
+      </section>
+
+      <!-- Keep feedback outside the banner so it remains after the last pickup -->
+      <p
+        v-if="pickupNotice"
+        class="alert alert-success"
+        role="status"
+      >
+        {{ pickupNotice }}
+      </p>
+
+      <div
+        v-if="pickupError"
+        class="alert alert-danger"
+        role="alert"
+      >
+        {{ pickupError }}
+      </div>
 
       <!-- Summary error -->
       <div v-if="summaryError" class="alert alert-danger" role="alert">
@@ -414,6 +740,7 @@ onBeforeUnmount(() => {
 
   <FoodListingEditor
     v-if="sharingSection === 'add'"
+    :active-inventory-ids="activeInventoryIds"
     @close="closeNewListing"
     @committed="onRescueChanged"
     @saved="onNewListingSaved"
@@ -556,6 +883,52 @@ onBeforeUnmount(() => {
   line-height: 1.3;
 }
 
+.pickup-check {
+  border: 1.5px solid var(--ink);
+  border-radius: 16px;
+  background: var(--yellow-sticky);
+}
+
+.pickup-check-title,
+.pickup-check-question {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.pickup-check-title {
+  font-size: 25px;
+}
+
+.pickup-check-question {
+  font-size: 22px;
+}
+
+.pickup-check-item {
+  border: 1px solid var(--line, var(--ink));
+  border-radius: 12px;
+  background: var(--paper-bright);
+}
+
+.pickup-answer {
+  min-height: 44px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pickup-answer--yes {
+  background: var(--aqua);
+  color: white;
+}
+
+.pickup-answer:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Focus and motion */
 .sharing-dashboard button:focus-visible {
   outline: 3px solid var(--ink);
@@ -581,4 +954,6 @@ onBeforeUnmount(() => {
     transform: none;
   }
 }
+
+
 </style>

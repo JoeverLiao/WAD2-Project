@@ -975,7 +975,6 @@ defineExpose({
           <option value="5">Within 5 km</option>
           <option value="10">Within 10 km</option>
           <option value="25">Within 25 km</option>
-          <option value="100">Within 100 km</option>
         </select>
       </label>
 
@@ -1223,19 +1222,6 @@ defineExpose({
       role="status"
     >
       {{ mapNotice }}
-    </p>
-
-    <p class="refresh-note">
-      Only available, unexpired listings are shown.
-
-      <button
-        type="button"
-        class="refresh-button"
-        :disabled="loading"
-        @click="refreshResults"
-      >
-        Refresh food
-      </button>
     </p>
 
     <!-- Collection request dialog -->
