@@ -118,7 +118,8 @@ watch(
             form.weightKg = props.item.weightKg ?? ''
             form.unit = props.item.unit
             form.storage = props.item.storage
-            form.storageZone = props.item.storageZone
+            form.storageZone = ['upper-shelf', 'lower-shelf'].includes(props.item.storageZone)
+                ? 'middle-shelf' : props.item.storageZone
             form.expiresAt = props.item.expiresAt || ''
         } else {
             // Adding: start with an empty form.
@@ -127,7 +128,8 @@ watch(
             form.weightKg = ''
             form.unit = 'pieces'
             form.storage = props.defaultStorage
-            form.storageZone = props.defaultStorageZone || getDefaultZone(props.defaultStorage)
+            form.storageZone = ['upper-shelf', 'lower-shelf'].includes(props.defaultStorageZone)
+                ? 'middle-shelf' : props.defaultStorageZone || getDefaultZone(props.defaultStorage)
             form.expiresAt = ''
         }
     },
@@ -323,16 +325,8 @@ function submitForm() {
                         v-model="form.storageZone"
                     >
                         <template v-if="form.storage === 'fridge'">
-                            <option value="upper-shelf">
-                                Upper Shelf
-                            </option>
-
                             <option value="middle-shelf">
-                                Middle Shelf
-                            </option>
-
-                            <option value="lower-shelf">
-                                Lower Shelf
+                                Shelves
                             </option>
 
                             <option value="crisper">

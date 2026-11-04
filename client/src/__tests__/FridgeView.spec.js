@@ -320,14 +320,37 @@ describe('single-portion actions', () => {
 describe('unified fridge interior', () => {
   it('shows foods from all legacy shelves together in the main area and its dialog', async () => {
     request.mockResolvedValue({ ok: true, json: async () => ['upper-shelf', 'middle-shelf', 'lower-shelf'].map((storageZone, i) => ({ ...food, _id: `shelf-${i}`, name: `Food ${i}`, storageZone })) })
-    await openFridge()
+    wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.fridge-door').trigger('click')
     expect(wrapper.findAll('.shelf-compartment')).toHaveLength(1)
     const shelf = wrapper.get('.shelf-compartment')
     expect(shelf.findAll('.mini-food')).toHaveLength(3)
+    expect(shelf.findAll('.mini-food').every(icon => !icon.element.style.gridRow)).toBe(true)
     expect(shelf.findAll('.food-quantity-badge').map(badge => badge.text())).toEqual(['×3', '×3', '×3'])
     expect(shelf.text()).toContain('Shelves')
     await shelf.trigger('click')
     expect(wrapper.findAll('.food-card')).toHaveLength(3)
+  })
+
+  it.each([150, 250, 350])('uses one shelves destination when dropping at y=%i', async clientY => {
+    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, storage: 'freezer', storageZone: 'freezer-main' }] })
+    wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.fridge-door').trigger('click')
+    const shelf = wrapper.get('.shelf-compartment')
+    shelf.get('.food-preview').element.getBoundingClientRect = () => ({ top: 100, bottom: 400, height: 300 })
+    await wrapper.get('.freezer-compartment .mini-food').trigger('dragstart', { dataTransfer: transfer(), clientX: 100, clientY: 50 })
+    await shelf.trigger('dragover', { clientY })
+    expect(document.querySelector('.drag-placement-hint').textContent).toBe('Place at Shelves')
+    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storageZone: 'middle-shelf' } }) })
+    await shelf.trigger('drop', { dataTransfer: transfer(), clientY })
+    await flushPromises()
+    expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
+      method: 'PATCH', body: expect.any(String),
+    }))
+    const patch = request.mock.calls.find(([, options]) => options?.method === 'PATCH')
+    expect(JSON.parse(patch[1].body).storageZone).toBe('middle-shelf')
   })
 })
 

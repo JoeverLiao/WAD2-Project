@@ -1088,32 +1088,15 @@ function trackFoodDrag(event) {
     dragPosition.value = { x: event.clientX, y: event.clientY }
     windowWidth.value = window.innerWidth
     const target = event.target.closest?.('[data-drop-zone]')
-    let zone = target?.dataset.dropZone
-    if (zone === 'middle-shelf') zone = shelfZoneAt(target, event.clientY) || zone
+    const zone = target?.dataset.dropZone
     const names = {
-        'upper-shelf': 'Upper shelf', 'middle-shelf': 'Middle shelf', 'lower-shelf': 'Lower shelf',
+        'upper-shelf': 'Shelves', 'middle-shelf': 'Shelves', 'lower-shelf': 'Shelves',
         'freezer-main': 'Freezer', crisper: 'Crisper drawer',
         door: 'Upper door shelf', 'door-lower': 'Lower door shelf', 'dry-storage': 'Pantry',
     }
     dragPlacement.value = target ? names[zone] || '' : ''
 }
 
-// The shelf preview is drawn as three rows, each with its own storage zone.
-// Drops on the heading keep the middle-shelf default.
-function shelfZoneAt(target, clientY) {
-    const shelf = target?.closest?.('.shelf-compartment')
-    if (!shelf || !Number.isFinite(clientY)) return null
-    const preview = shelf.querySelector('.food-preview')
-    const bounds = preview?.getBoundingClientRect()
-    if (!bounds || bounds.height <= 0 || clientY < bounds.top || clientY > bounds.bottom) return null
-    const row = Math.min(2, Math.floor(((clientY - bounds.top) / bounds.height) * 3))
-    return ['upper-shelf', 'middle-shelf', 'lower-shelf'][row]
-}
-
-function shelfFoodStyle(item) {
-    const row = { 'upper-shelf': 1, 'middle-shelf': 2, 'lower-shelf': 3 }[item.storageZone] || 2
-    return { gridRow: String(row) }
-}
 onMounted(() => document.addEventListener('dragover', trackFoodDrag))
 onBeforeUnmount(() => document.removeEventListener('dragover', trackFoodDrag))
 const draggingFromModal = ref(false)
@@ -1416,10 +1399,8 @@ async function dropOnArea(area, event, onSuccess) {
     if (!item) { finishDrag(); return }
     // Resolve both fields from the exact destination zone so they cannot drift
     // apart when an item is moved between fridge, freezer and pantry.
-    const shelfZone = area.storage === 'fridge' && area.storageZone === 'middle-shelf'
-        ? shelfZoneAt(area.targetElement || event.currentTarget, event.clientY)
-        : null
-    const requestedZone = shelfZone || area.storageZone
+    // All three visual rows belong to the same shelves location.
+    const requestedZone = area.storageZone
     const storageZone = storageForZone(requestedZone) ? requestedZone : defaultZoneFor(area.storage)
     const storage = storageForZone(storageZone) || area.storage
     const group = selectedFoodsFor(item).filter(food => food.storage !== storage || food.storageZone !== storageZone)
@@ -1458,8 +1439,8 @@ function getRecommendation(item) {
     const allowedLocations = Array.isArray(item.allowedLocations) ? item.allowedLocations : []
     if (allowedLocations.length > 0 && !allowedLocations.includes(item.storageZone)) {
         const zoneLabels = {
-            'upper-shelf': 'Upper shelf', 'middle-shelf': 'Middle shelf',
-            'lower-shelf': 'Lower shelf', door: 'Upper door shelf',
+            'upper-shelf': 'Shelves', 'middle-shelf': 'Shelves',
+            'lower-shelf': 'Shelves', door: 'Upper door shelf',
             'door-lower': 'Lower door shelf', crisper: 'Crisper drawer',
             'freezer-main': 'Freezer', 'dry-storage': 'Pantry'
         }
@@ -1686,9 +1667,9 @@ function locationLabel(item) {
     if (item.storage === 'pantry') return 'Pantry'
     if (item.storage === 'freezer') return 'Freezer'
     const names = {
-        'upper-shelf': 'Upper shelf',
-        'middle-shelf': 'Middle shelf',
-        'lower-shelf': 'Lower shelf',
+        'upper-shelf': 'Shelves',
+        'middle-shelf': 'Shelves',
+        'lower-shelf': 'Shelves',
         door: 'Upper door shelf',
         'door-lower': 'Lower door shelf',
         crisper: 'Crisper drawer'
@@ -1942,7 +1923,7 @@ onBeforeUnmount(cancelActionReaction)
                                         ]" :key="compartment.id" type="button" class="compartment shelf-compartment" @wheel="scrollCompartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon :kind="compartment.icon" /> {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :style="shelfFoodStyle(item)" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
