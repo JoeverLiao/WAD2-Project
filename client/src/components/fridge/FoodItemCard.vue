@@ -21,7 +21,11 @@ const props = defineProps({
     item: {
         type: Object,
         required: true
-    }
+    },
+    amount: { type: String, default: '' },
+    storageWarning: { type: String, default: '' },
+    dietLabel: { type: String, default: '' },
+    dragging: { type: Boolean, default: false },
 })
 
 // ------------------------------------------------------------
@@ -49,7 +53,7 @@ const emit = defineEmits([
 // ------------------------------------------------------------
 
 const foodEmoji = computed(() => {
-    const name = props.item.name.toLowerCase()
+    const name = String(props.item.name || '').toLowerCase()
 
     if (name.includes('milk')) return '🥛'
     if (name.includes('egg')) return '🥚'
@@ -65,6 +69,17 @@ const foodEmoji = computed(() => {
 
     // Use a generic food emoji if there is no matching rule.
     return '🍱'
+})
+
+const itemAmount = computed(() => {
+    if (props.amount) return props.amount
+    const quantity = Number(props.item.quantity)
+    if (Number.isFinite(quantity) && quantity > 0) {
+        return `${props.item.quantity} ${props.item.unit || 'items'}`
+    }
+    const weight = Number(props.item.weightKg)
+    if (Number.isFinite(weight) && weight > 0) return `${props.item.weightKg} kg`
+    return 'Quantity not recorded'
 })
 
 // ------------------------------------------------------------
@@ -148,7 +163,7 @@ function handleDragStart(event) {
     event.dataTransfer.effectAllowed = 'move'
 
     // Notify FridgeView.vue that dragging has started.
-    emit('drag-start', props.item)
+    emit('drag-start', props.item, event)
 }
 
 function handleDragEnd() {
@@ -164,11 +179,12 @@ function handleDragEnd() {
     -->
     <article
         class="food-card"
+        :class="{ 'food-is-held': dragging }"
         draggable="true"
         @dragstart="handleDragStart"
         @dragend="handleDragEnd"
     >
-        <!-- Food emoji and action buttons -->
+        <!-- Food emoji and edit/remove controls -->
         <div class="card-top">
             <span class="food-emoji">
                 {{ foodEmoji }}
@@ -203,8 +219,11 @@ function handleDragEnd() {
         <h4>{{ item.name }}</h4>
 
         <p class="quantity">
-            {{ item.quantity }} {{ item.unit }}
+            {{ itemAmount }}
         </p>
+
+        <p v-if="dietLabel" class="diet-badge">{{ dietLabel }}</p>
+        <p v-if="storageWarning" class="storage-warning" role="note">{{ storageWarning }}</p>
 
         <!-- Colour-coded expiry status -->
         <span
@@ -307,6 +326,32 @@ h4 {
     margin: 0 0 12px;
     color: #78877d;
     font-size: 12px;
+}
+
+.diet-badge {
+    display: inline-block;
+    margin: 0 0 8px;
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: #edf3e9;
+    color: #52664e;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.storage-warning {
+    margin: 0 0 10px;
+    padding: 8px 9px;
+    border: 1px solid #e6bd66;
+    border-radius: 8px;
+    background: #fff5d9;
+    color: #704d13;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.food-card.food-is-held {
+    opacity: 0.35;
 }
 
 /* Common appearance for expiry labels. */

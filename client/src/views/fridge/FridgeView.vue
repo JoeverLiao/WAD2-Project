@@ -53,6 +53,25 @@ const emit = defineEmits(['inventory-change', 'reload'])
 const router = inject(routerKey, null)
 const route = inject(routeLocationKey, null)
 const localItems = ref([])
+const itemStorageAssignmentsKey = 'full-circle-item-storage-assignments'
+
+function readItemStorageAssignments() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(itemStorageAssignmentsKey) || '{}')
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {}
+        return Object.fromEntries(Object.entries(saved).flatMap(([id, assignment]) => {
+            if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) return []
+            const clean = {}
+            if (typeof assignment.fridgeName === 'string') clean.fridgeName = assignment.fridgeName
+            if (typeof assignment.pantryName === 'string') clean.pantryName = assignment.pantryName
+            return Object.keys(clean).length ? [[id, clean]] : []
+        }))
+    } catch {
+        return {}
+    }
+}
+
+const itemStorageAssignments = ref(readItemStorageAssignments())
 const activeStorage = ref('fridge')
 const storageSettingsOpen = ref(false)
 const storageSettingsGear = ref(null)
@@ -121,10 +140,12 @@ function toDateInputValue(value) {
 
 // Convert the API's item shape into the shape used by this Vue page.
 function normaliseItem(apiItem) {
+    const id = String(apiItem._id || apiItem.id)
     return {
+        ...itemStorageAssignments.value[id],
         ...apiItem,
         // MongoDB uses _id; our existing Vue template uses id.
-        id: String(apiItem._id || apiItem.id),
+        id,
         // Date inputs need YYYY-MM-DD rather than a full ISO timestamp.
         expiresAt: toDateInputValue(apiItem.expiresAt),
         purchasedAt: toDateInputValue(apiItem.purchasedAt),
@@ -224,8 +245,12 @@ onMounted(async () => {
         openLinkedCompartment()
     }
 })
-watch(() => [route?.query?.location, route?.query?.highlight], () => {
-    if (!props.embedded) openLinkedCompartment()
+watch(() => [
+  route?.query?.location,
+  route?.query?.highlight,
+  route?.query?.storageName
+], () => {
+  if (!props.embedded) openLinkedCompartment()
 })
 function openLinkedCompartment() {
     const queryIds = route?.query?.highlight
@@ -236,7 +261,9 @@ function openLinkedCompartment() {
         return
     }
     const locations = {
+        'upper-shelf': { title: 'Upper shelf', storage: 'fridge' },
         'middle-shelf': { title: 'Shelves', storage: 'fridge' },
+        'lower-shelf': { title: 'Lower shelf', storage: 'fridge' },
         'freezer-main': { title: 'Freezer', storage: 'freezer' },
         crisper: { title: 'Crisper drawer', storage: 'fridge' },
         door: { title: 'Upper door shelf', storage: 'fridge' },
@@ -436,6 +463,40 @@ const mainNames = { fridge: mainFridge, pantry: mainPantry }
 const assignmentFields = { fridge: 'fridgeName', pantry: 'pantryName' }
 const activeNames = { fridge: activeFridge, pantry: activePantry }
 const mainLabels = ref(readStorageNames('full-circle-main-storage-labels'))
+
+// Keep custom storage placement in the fridge UI because the shared inventory
+// schema currently drops fridgeName and pantryName from API records.
+function rememberItemStorage(itemId, type, name) {
+    const id = String(itemId || '')
+    if (!id || id === 'undefined' || !mainNames[type]) return
+
+    const assignments = { ...itemStorageAssignments.value }
+    const field = assignmentFields[type]
+    const assignment = name && name !== mainNames[type] ? { [field]: name } : null
+    if (assignment) assignments[id] = assignment
+    else delete assignments[id]
+
+    itemStorageAssignments.value = assignments
+    try {
+        localStorage.setItem(itemStorageAssignmentsKey, JSON.stringify(assignments))
+    } catch {
+        // Keep the current session usable if browser storage is unavailable.
+    }
+}
+
+function forgetItemStorage(itemId) {
+    const id = String(itemId || '')
+    if (!id || id === 'undefined' || !itemStorageAssignments.value[id]) return
+    const assignments = { ...itemStorageAssignments.value }
+    delete assignments[id]
+    itemStorageAssignments.value = assignments
+    try {
+        localStorage.setItem(itemStorageAssignmentsKey, JSON.stringify(assignments))
+    } catch {
+        // The API deletion still succeeds when browser storage is unavailable.
+    }
+}
+
 const storageOptions = computed(() => ['fridge', 'pantry'].flatMap(type =>
     [...new Set([mainNames[type], ...extraNames[type].value, ...items.value.map(item => item[assignmentFields[type]]).filter(Boolean)])]
         .map(name => ({
@@ -714,14 +775,17 @@ async function saveItem(formData) {
     saving.value = true
     errorMessage.value = ''
 
-    const isEditing = Boolean(editingItem.value)
-    const itemId = editingItem.value?.id
-    const payload = prepareItemForApi(formData)
-    if (!isEditing || editingItem.value.storage !== payload.storage) {
-        const type = payload.storage === 'pantry' ? 'pantry' : 'fridge'
-        if (activeNames[type].value !== mainNames[type]) payload[assignmentFields[type]] = activeNames[type].value
-    }
     const originalItem = editingItem.value
+    const isEditing = Boolean(originalItem)
+    const itemId = originalItem?.id
+    const payload = prepareItemForApi(formData)
+    const storageType = payload.storage === 'pantry' ? 'pantry' : 'fridge'
+    const assignmentField = assignmentFields[storageType]
+    const originalStorageType = originalItem?.storage === 'pantry' ? 'pantry' : 'fridge'
+    const assignedStorageName = originalItem && originalStorageType === storageType
+        ? originalItem[assignmentField] || mainNames[storageType]
+        : activeNames[storageType].value || mainNames[storageType]
+    payload[assignmentField] = assignedStorageName
     const origins = originalItem ? foodTransfer.capture([originalItem]) : []
 
     try {
@@ -749,6 +813,7 @@ async function saveItem(formData) {
         const responseData = await response.json()
         // Support either a direct item response or { item: ... }.
         const savedApiItem = responseData.item || responseData
+        rememberItemStorage(savedApiItem._id || savedApiItem.id || itemId, storageType, assignedStorageName)
         const savedItem = normaliseItem(savedApiItem)
 
         if (isEditing) {
@@ -800,6 +865,7 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
             if (!response.ok) throw new Error(`Could not ${actionLabel} food (HTTP ${response.status}).`)
 
             items.value = items.value.filter(existingItem => existingItem.id !== item.id)
+            forgetItemStorage(item.id)
             await nextTick()
             if (selectedCompartment.value) dialogRef.value?.focus()
             const amount = Number(item.weightKg) || 1
@@ -896,6 +962,7 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
             items.value = items.value.filter(
                 existingItem => existingItem.id !== item.id
             )
+            forgetItemStorage(item.id)
             await nextTick()
             if (selectedCompartment.value) dialogRef.value?.focus()
         } else {
@@ -960,6 +1027,7 @@ async function removeItem(item) {
 
         // Only update the screen after the backend confirms deletion.
         items.value = items.value.filter(existingItem => existingItem.id !== item.id)
+        forgetItemStorage(item.id)
         await nextTick()
         if (selectedCompartment.value) dialogRef.value?.focus()
     } catch (error) {
@@ -987,11 +1055,31 @@ function trackFoodDrag(event) {
     dragPosition.value = { x: event.clientX, y: event.clientY }
     windowWidth.value = window.innerWidth
     const target = event.target.closest?.('[data-drop-zone]')
+    let zone = target?.dataset.dropZone
+    if (zone === 'middle-shelf') zone = shelfZoneAt(target, event.clientY) || zone
     const names = {
-        'middle-shelf': 'Shelves', 'freezer-main': 'Freezer', crisper: 'Crisper drawer',
+        'upper-shelf': 'Upper shelf', 'middle-shelf': 'Middle shelf', 'lower-shelf': 'Lower shelf',
+        'freezer-main': 'Freezer', crisper: 'Crisper drawer',
         door: 'Upper door shelf', 'door-lower': 'Lower door shelf', 'dry-storage': 'Pantry',
     }
-    dragPlacement.value = target ? names[target.dataset.dropZone] || '' : ''
+    dragPlacement.value = target ? names[zone] || '' : ''
+}
+
+// The shelf preview is drawn as three rows, each with its own storage zone.
+// Drops on the heading keep the middle-shelf default.
+function shelfZoneAt(target, clientY) {
+    const shelf = target?.closest?.('.shelf-compartment')
+    if (!shelf || !Number.isFinite(clientY)) return null
+    const preview = shelf.querySelector('.food-preview')
+    const bounds = preview?.getBoundingClientRect()
+    if (!bounds || bounds.height <= 0 || clientY < bounds.top || clientY > bounds.bottom) return null
+    const row = Math.min(2, Math.floor(((clientY - bounds.top) / bounds.height) * 3))
+    return ['upper-shelf', 'middle-shelf', 'lower-shelf'][row]
+}
+
+function shelfFoodStyle(item) {
+    const row = { 'upper-shelf': 1, 'middle-shelf': 2, 'lower-shelf': 3 }[item.storageZone] || 2
+    return { gridRow: String(row) }
 }
 onMounted(() => document.addEventListener('dragover', trackFoodDrag))
 onBeforeUnmount(() => document.removeEventListener('dragover', trackFoodDrag))
@@ -1123,6 +1211,7 @@ function startModalDrag(item, event) {
     if (event) {
         dragPosition.value = { x: event.clientX, y: event.clientY }
         dragAnchor.value = foodActionAnchor(item, event)
+        setEmojiDragImage(event)
     }
     // Starting a drag must NOT hide the popup. It stays visible until the pointer
     // actually leaves the popup's bounds.
@@ -1193,7 +1282,7 @@ function dropFromModalBackdrop(event) {
 
     // Close the popup only after a valid storage destination has been found.
     selectedCompartment.value = null
-    dropOnArea({ storage, storageZone }, event)
+    dropOnArea({ storage, storageZone, targetElement: target }, event)
 }
 
 function selectedFoodsFor(item) {
@@ -1210,7 +1299,22 @@ async function saveFoodGroup(group, method, payload) {
         if (!response.ok) throw new Error(`Could not update ${item.name}.`)
         if (method === 'DELETE') return item
         const data = await response.json()
-        return normaliseItem(data.item || data)
+        const savedApiItem = data.item || data
+        const storageType = Object.prototype.hasOwnProperty.call(payload || {}, 'pantryName')
+            ? 'pantry'
+            : Object.prototype.hasOwnProperty.call(payload || {}, 'fridgeName')
+                ? 'fridge'
+                : (payload?.storage || savedApiItem.storage || item.storage) === 'pantry' ? 'pantry' : 'fridge'
+        const field = assignmentFields[storageType]
+        const hasExplicitName = Object.prototype.hasOwnProperty.call(payload || {}, field)
+        const wasInSameStorage = (item.storage === 'pantry') === (storageType === 'pantry')
+        const storageName = hasExplicitName
+            ? payload[field]
+            : wasInSameStorage
+                ? item[field] || mainNames[storageType]
+                : activeNames[storageType].value || mainNames[storageType]
+        rememberItemStorage(savedApiItem._id || savedApiItem.id || item.id, storageType, storageName)
+        return normaliseItem(savedApiItem)
     }))
     const succeeded = new Set()
     const updates = new Map()
@@ -1219,6 +1323,7 @@ async function saveFoodGroup(group, method, payload) {
         const id = group[index].id
         succeeded.add(id)
         updates.set(id, result.value)
+        if (method === 'DELETE') forgetItemStorage(id)
     })
     // Commit the whole group once so an embedded parent's props cannot lag between items.
     if (succeeded.size) items.value = method === 'DELETE'
@@ -1254,7 +1359,11 @@ async function dropOnArea(area, event, onSuccess) {
     if (!item) { finishDrag(); return }
     // Resolve both fields from the exact destination zone so they cannot drift
     // apart when an item is moved between fridge, freezer and pantry.
-    const storageZone = storageForZone(area.storageZone) ? area.storageZone : defaultZoneFor(area.storage)
+    const shelfZone = area.storage === 'fridge' && area.storageZone === 'middle-shelf'
+        ? shelfZoneAt(area.targetElement || event.currentTarget, event.clientY)
+        : null
+    const requestedZone = shelfZone || area.storageZone
+    const storageZone = storageForZone(requestedZone) ? requestedZone : defaultZoneFor(area.storage)
     const storage = storageForZone(storageZone) || area.storage
     const group = selectedFoodsFor(item).filter(food => food.storage !== storage || food.storageZone !== storageZone)
     const origins = foodTransfer.capture(group, event)
@@ -1327,7 +1436,9 @@ function getRecommendation(item) {
 // Compute guidance once per inventory/search change so rendering the cards
 // and empty state does not repeat the same keyword checks.
 const storageRecommendations = computed(() =>
-    filteredItems.value.filter(item => getRecommendation(item))
+    filteredItems.value.filter(item =>
+        (!props.embedded || item.storage !== 'pantry') && getRecommendation(item)
+    )
 )
 
 // Display a count when recorded, otherwise show the item's optional total weight.
@@ -1337,6 +1448,19 @@ function amountLabel(item) {
     const weight = Number(item.weightKg)
     if (Number.isFinite(weight) && weight > 0) return `${item.weightKg} kg`
     return 'Quantity not recorded'
+}
+
+function dietTypeLabel(dietType) {
+    return ({
+        vegan: 'Vegan',
+        vegetarian: 'Vegetarian',
+        other: 'Contains meat or fish',
+        unknown: 'Check the label',
+    })[dietType] || ''
+}
+
+function foodDescription(item) {
+    return [expiryBadge(item), getRecommendation(item)].filter(Boolean).join('. ')
 }
 
 // ============================================================
@@ -1761,7 +1885,7 @@ onBeforeUnmount(cancelActionReaction)
                                         ]" :key="compartment.id" type="button" class="compartment shelf-compartment" @wheel="scrollCompartment" :data-drop-storage="compartment.storage" :data-drop-zone="compartment.zone" @click="openCompartment(compartment)" @dragover.prevent @drop.stop="dropOnArea({ storage: compartment.storage, storageZone: compartment.zone }, $event)">
                                             <span class="compartment-heading"><span><FoodIcon :kind="compartment.icon" /> {{ compartment.title }}</span><small>{{ itemCount(compartment) }} items</small></span>
                                             <span class="food-preview">
-                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :title="item.name" :aria-label="item.name" :aria-description="expiryBadge(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
+                                                <span v-for="item in itemsInZone(compartment.storage, compartment.zone)" :key="item.id" class="mini-food" :data-food-id="item.id" tabindex="0" role="button" :aria-pressed="selectedFoodIds.has(item.id)" :class="{ 'food-being-dragged': draggedItemId === item.id, 'food-selected': selectedFoodIds.has(item.id) }" :style="shelfFoodStyle(item)" :title="item.name" :aria-label="item.name" :aria-description="foodDescription(item)" @pointerenter="$event.pointerType === 'mouse' && showFoodName(item, $event)" @pointerleave="foodTooltip = null" draggable="true" @dragstart="startDrag(item, $event); $event.dataTransfer.setData('text/plain', String(item.id))" @dragend="finishDrag"><FoodIcon :item="item" /><span v-if="expiryBadge(item)" class="food-expiry-badge" :class="{ expired: expiryBadge(item) === 'Expired' }" aria-hidden="true">!</span><span v-if="Number(item.quantity) > 1" class="food-quantity-badge">×{{ item.quantity }}</span></span>
                                                 <span v-if="itemsInZone(compartment.storage, compartment.zone).length === 0" class="empty-mini">{{ searchQuery ? 'No matches' : 'Empty' }}</span>
                                             </span>
                                         </button>
@@ -1839,7 +1963,7 @@ onBeforeUnmount(cancelActionReaction)
             <p><strong>Tip:</strong> Food closest to its expiry date appears first. Click any shelf or drawer to see its complete inventory, then drag an item to Consume or Discard.</p>
         </section>
 
-        <section v-if="!embedded" class="recommendation-section">
+        <section v-if="!embedded || storageRecommendations.length" class="recommendation-section">
             <h2>Storage Guidance</h2>
             <p>Some foods may need a different storage location. Check product packaging and food-specific guidance.</p>
             <div class="recommendation-list">
@@ -1866,6 +1990,9 @@ onBeforeUnmount(cancelActionReaction)
                         v-for="item in compartmentItems"
                         :key="item.id"
                         :item="item"
+                        :amount="amountLabel(item)"
+                        :diet-label="dietTypeLabel(item.dietType)"
+                        :storage-warning="getRecommendation(item)"
                         :dragging="draggedItemId === item.id"
                         @edit="openEditForm"
                         @remove="removeItem"
