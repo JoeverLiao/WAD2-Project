@@ -1,5 +1,4 @@
 <script setup>
-import CartoonEgg from '../components/CartoonEgg.vue'
 import { usePageLoading } from '../utils/pageLoading.js'
 import { ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -120,7 +119,7 @@ async function handleLogin() {
 
       <aside class="fun-fact" aria-label="Fun food fact">
         <button type="button" class="fact-egg-button" aria-label="Show another food fact" @click="showAnotherFact">
-          <CartoonEgg class="fact-egg" />
+          <span class="fact-egg" aria-hidden="true"></span>
           <span class="fact-egg-hint" aria-hidden="true">Click me</span>
         </button>
         <button ref="factBubble" type="button" class="fact-bubble" @click="showAnotherFact">
@@ -306,8 +305,21 @@ h1 {
 }
 .fact-copy, .fun-fact-label, .fun-fact-text { display: block; }
 .fact-egg {
+  display:block;
+  aspect-ratio:1;
   width: clamp(76px, 18vw, 180px);
   flex-shrink: 0;
+  background:url('/images/analytics/food-companions-expressions.png') no-repeat;
+  background-size:400% 384%;
+  background-position:0 100%;
+  transform-origin:50% 90%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fact-egg { animation:home-egg-sway 4s ease-in-out infinite; }
+}
+@keyframes home-egg-sway {
+  0%,100% { rotate:-3deg; }
+  50% { rotate:3deg; }
 }
 .fact-bubble {
   animation: fact-bob 3s ease-in-out infinite;
