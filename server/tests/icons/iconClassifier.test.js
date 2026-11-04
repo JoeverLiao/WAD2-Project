@@ -9,7 +9,7 @@ const manifest = JSON.parse(
 )
 const RED = manifest.palette.red.toUpperCase()
 const YELLOW = manifest.palette.yellow.toUpperCase()
-const env = { ANTHROPIC_API_KEY: 'test-key', ICON_AI_MODEL: 'claude-sonnet-5-5' }
+const env = { ICON_AI_API_KEY: 'test-key', ICON_AI_MODEL: 'claude-sonnet-5-5' }
 
 // A fake Anthropic client whose answer is built by `answer(names)` from the numbered user message.
 function fakeAnthropic(answer, { stop_reason = 'end_turn' } = {}) {

@@ -9,7 +9,8 @@ const number = (value, fallback) => {
 
 export function iconConfig(env = process.env) {
   return {
-    apiKey: env.ANTHROPIC_API_KEY || '',
+    // Icons use their own key, separate from ANTHROPIC_API_KEY (used by other features).
+    apiKey: env.ICON_AI_API_KEY || '',
     model: env.ICON_AI_MODEL || env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
     maxTokens: number(env.ICON_AI_MAX_TOKENS, 8000),
     // low suits a quick classification; raise it if answers look careless.
