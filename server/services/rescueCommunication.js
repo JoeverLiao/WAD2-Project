@@ -8,6 +8,7 @@ export async function storeInitialMessage(request, session) {
         {
           request: request._id,
           sender: request.requester,
+          readBy: request.initialReadBy || [],
           text: request.message,
           clientMessageId: `initial-${new Date(request.submittedAt || request.createdAt).toISOString()}`,
           createdAt: request.submittedAt || request.createdAt,

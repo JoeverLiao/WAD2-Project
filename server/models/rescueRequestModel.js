@@ -21,6 +21,7 @@ const schema = new Schema(
     },
     message: { type: String, default: "", maxlength: 1000 },
     submittedAt: Date,
+    initialReadBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
     initialMessageStored: { type: Boolean, default: false },
     pickupProposal: {
       type: new Schema({

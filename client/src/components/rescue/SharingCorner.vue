@@ -32,6 +32,17 @@ function close() {
   emit('close')
 }
 
+let pressedBackdrop = false
+function outsideMessageModal(event) {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  return event.clientX < bounds.left || event.clientX > bounds.right ||
+    event.clientY < bounds.top || event.clientY > bounds.bottom
+}
+function closeFromBackdrop(event) {
+  if (pressedBackdrop && outsideMessageModal(event)) close()
+  pressedBackdrop = false
+}
+
 // Element references
 
 const dialog = ref(null)
@@ -514,6 +525,15 @@ async function loadMessages({ silent = false } = {}) {
     legacyInitial.value = initial
     messageError.value = ''
 
+    if (!document.hidden) {
+      const incoming = chatMessages.value.filter(message => entityId(message.sender) !== currentUserId.value)
+      for (let offset = 0; offset < incoming.length || offset === 0; offset += 100) {
+        await api.post(`/rescue/requests/${requestId}/messages/read`,
+          { messageIds: incoming.slice(offset, offset + 100).map(message => message._id), initial: Boolean(initial) },
+          { signal: controller.signal })
+      }
+    }
+
     if (!silent || nearBottom) {
       await nextTick()
 
@@ -888,6 +908,8 @@ onBeforeUnmount(() => {
       class="sharing-modal sharing-corner p-3 p-md-4"
       aria-labelledby="sharing-corner-title"
       @cancel.prevent="close"
+      @pointerdown="pressedBackdrop = outsideMessageModal($event)"
+      @click="closeFromBackdrop"
     >
       <!-- Heading -->
       <header

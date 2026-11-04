@@ -42,6 +42,32 @@ const listMessages=wrap(async(req,res)=>{
   }:null
   res.json({messages,hasMore,nextCursor:messages.at(-1)?._id ?? req.query.after ?? null,initialMessage})
 })
+const unreadCount = wrap(async (req, res) => {
+  const requests = await Request.find({ $or: [{ owner: req.userId }, { requester: req.userId }] })
+    .select('_id requester initialMessageStored initialReadBy message').lean()
+  const count = await Message.countDocuments({
+    request: { $in: requests.map(request => request._id) },
+    sender: { $ne: req.userId },
+    readBy: { $ne: req.userId },
+  })
+  const initial = requests.filter(request => !request.initialMessageStored && request.message?.trim() &&
+    !same(request.requester, req.userId) && !(request.initialReadBy || []).some(user => same(user, req.userId))).length
+  res.json({ count: count + initial })
+})
+const markRead = wrap(async (req, res) => {
+  const request = await requestFor(req, null)
+  const ids = req.body.messageIds
+  if (!Array.isArray(ids) || ids.length > 100) fail(400, 'Supply up to 100 message IDs.')
+  const messageIds = ids.map(value => id(value, 'message ID'))
+  await Message.updateMany({ request: request._id, _id: { $in: messageIds }, sender: { $ne: req.userId } },
+    { $addToSet: { readBy: req.userId } })
+  if (req.body.initial === true && !same(request.requester, req.userId)) {
+    await Request.updateOne(participant(request._id, req.userId), { $addToSet: { initialReadBy: req.userId } })
+    await Message.updateMany({ request: request._id, sender: request.requester, clientMessageId: /^initial-/ },
+      { $addToSet: { readBy: req.userId } })
+  }
+  res.json({ ok: true })
+})
 const sendMessage=wrap(async(req,res)=>{
   objectBody(req.body)
   const messageText=text(req.body.text,'text',1000),clientMessageId=validateClientKey(req.body.clientMessageId)
@@ -105,4 +131,4 @@ const withdrawProposal=wrap(async(req,res)=>{
   })
   res.json({request})
 })
-export default {listMessages,sendMessage,proposePickup,acceptProposal:decision(true),declineProposal:decision(false),withdrawProposal}
+export default {unreadCount,markRead,listMessages,sendMessage,proposePickup,acceptProposal:decision(true),declineProposal:decision(false),withdrawProposal}

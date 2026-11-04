@@ -5,7 +5,9 @@ import {
   onMounted,
   reactive,
   ref,
+  watch,
 } from 'vue'
+import { useRoute } from 'vue-router'
 
 import Header from '@/components/rescue/RescueHeader.vue'
 import SharingCorner from '@/components/rescue/SharingCorner.vue'
@@ -28,6 +30,10 @@ import {
 
 // Navigation
 const sharingSection = ref(null)
+const route = useRoute()
+watch(() => route.query.inbox, value => {
+  if (value === 'received' || value === 'sent') sharingSection.value = value
+}, { immediate: true })
 const initialListingId = ref(null)
 const mapRefreshKey = ref(0)
 const rescueMap = ref(null)

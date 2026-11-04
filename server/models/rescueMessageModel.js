@@ -11,6 +11,7 @@ const schema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     text: { type: String, required: true, trim: true, maxlength: 1000 },
     // Client-generated key makes retries safe; the server always supplies sender.
     clientMessageId: { type: String, required: true, maxlength: 100 },

@@ -7,6 +7,8 @@ import rescueError from '../middleware/rescueError.js'
 const router=Router()
 router.use(auth.authenticate)
 // Specific paths must precede /:id.
+router.get('/messages/unread-count',communication.unreadCount)
+router.post('/requests/:requestId/messages/read',communication.markRead)
 router.get('/mine',controller.myListings)
 router.get('/requests',controller.listRequests)
 router.get('/requests/:requestId/messages',communication.listMessages)

@@ -28,13 +28,39 @@ async function loadImpact() {
 onMounted(loadImpact)
 
 import { navbarBusy, pageIsLoading, usePageLoading } from '../../utils/pageLoading.js'
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useInventoryStore, storageAreas, isInArea } from '../../stores/inventory.js'
 import { getDaysRemaining, getExpiryStatus } from '../../utils/expiryUtils.js'
 import { useAuthStore } from '../../stores/auth.js'
 import SmartKitchen from '../fridge/FridgeView.vue'
+
+const unreadMessages = ref(0)
+let unreadTimer
+let unreadRequest
+async function refreshUnreadMessages() {
+  if (document.hidden || unreadRequest) return
+  unreadRequest = new AbortController()
+  try {
+    const response = await fetch('/api/rescue/messages/unread-count', {
+      credentials: 'include', signal: unreadRequest.signal,
+    })
+    if (response.ok) {
+      const data = await response.json()
+      unreadMessages.value = Number(data.count) || 0
+    }
+  } catch { /* Retry on the next poll. */ }
+  finally { unreadRequest = null }
+}
+onMounted(() => {
+  refreshUnreadMessages()
+  unreadTimer = setInterval(refreshUnreadMessages, 30000)
+})
+onBeforeUnmount(() => {
+  clearInterval(unreadTimer)
+  unreadRequest?.abort()
+})
 
 const dashboardFridge = ref(null)
 import FoodIcon from '../../components/FoodIcon.vue'
@@ -317,6 +343,11 @@ const vReveal = {
             <svg class="donate-heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" /></svg>
             <h2 id="donate-heading" class="donate-title">A little extra? <span class="scribble">Pass it on.</span></h2>
             <p class="donate-sub">Good food deserves a home, not a bin.</p>
+            <RouterLink class="neighbour-message-link" :to="{ name: 'food-rescue', query: { inbox: 'received' } }">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+              Neighbour messages
+              <span v-if="unreadMessages" class="message-count" :aria-label="`${unreadMessages} unread messages`">{{ unreadMessages > 99 ? '99+' : unreadMessages }}</span>
+            </RouterLink>
             <RouterLink :to="{ name: 'food-rescue' }" class="btn-cta">
               Neighbour rescue <span aria-hidden="true">→</span>
             </RouterLink>
@@ -333,6 +364,14 @@ const vReveal = {
 </template>
 
 <style scoped>
+.message-count { display:inline-grid; place-items:center; min-width:24px; height:24px; padding:0 5px; border-radius:14px; background:#b7352f; color:white; font-size:14px; font-weight:700; }
+
+.neighbour-message-link {
+  display:flex; align-items:center; justify-content:center; gap:8px; width:fit-content;
+  margin:0 auto 14px; min-height:44px; padding:7px 13px; border:1.5px solid var(--ink);
+  border-radius:12px; color:var(--ink); background:var(--paper-bright); text-decoration:none;
+}
+.neighbour-message-link svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .dashboard-recipe-grid {
   display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%, 150px),1fr));
   gap:12px; margin:0; padding:0; list-style:none;
