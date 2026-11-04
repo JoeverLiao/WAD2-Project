@@ -32,6 +32,16 @@ const props = defineProps({
     defaultStorage: {
         type: String,
         default: 'fridge'
+    },
+
+    defaultStorageZone: {
+        type: String,
+        default: ''
+    },
+
+    saving: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -94,7 +104,8 @@ watch(
     () => [
         props.visible,
         props.item,
-        props.defaultStorage
+        props.defaultStorage,
+        props.defaultStorageZone
     ],
     () => {
         if (!props.visible) return
@@ -113,7 +124,7 @@ watch(
             form.quantity = 1
             form.unit = 'pieces'
             form.storage = props.defaultStorage
-            form.storageZone = getDefaultZone(props.defaultStorage)
+            form.storageZone = props.defaultStorageZone || getDefaultZone(props.defaultStorage)
             form.expiresAt = ''
         }
     },
@@ -304,7 +315,11 @@ function submitForm() {
                             </option>
 
                             <option value="door">
-                                Door Shelves
+                                Upper Door Shelf
+                            </option>
+
+                            <option value="door-lower">
+                                Lower Door Shelf
                             </option>
                         </template>
 
@@ -346,8 +361,9 @@ function submitForm() {
                     <button
                         type="submit"
                         class="save-button"
+                        :disabled="saving"
                     >
-                        {{ item ? 'Save Changes' : 'Add Food' }}
+                        {{ saving ? 'Saving…' : item ? 'Save Changes' : 'Add Food' }}
                     </button>
                 </footer>
             </form>
@@ -494,6 +510,11 @@ function submitForm() {
 
 .save-button:hover {
     background: #105c4d;
+}
+
+.save-button:disabled {
+    opacity: 0.65;
+    cursor: wait;
 }
 
 @media (max-width: 480px) {
