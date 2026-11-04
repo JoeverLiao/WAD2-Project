@@ -183,13 +183,14 @@ function compatibleZone(storage, zone) {
     return ['upper-shelf', 'middle-shelf', 'lower-shelf', 'door', 'door-lower', 'crisper'].includes(zone) ? zone : 'middle-shelf'
 }
 
-// Turn the form's date fields into values that can safely be sent to the API.
-// Sending null for an empty date avoids trying to save an empty string as a date.
+// Normalize optional form values before sending them to the API.
+// Null clears an amount when switching between count and weight-only tracking.
 function prepareItemForApi(formData) {
     const storageZone = formData.storageZone || defaultZoneFor(formData.storage)
     return {
         name: formData.name,
-        quantity: formData.quantity === '' || formData.quantity == null ? undefined : Number(formData.quantity),
+        quantity: formData.quantity === '' || formData.quantity == null ? null : Number(formData.quantity),
+        weightKg: formData.weightKg === '' || formData.weightKg == null ? null : Number(formData.weightKg),
         unit: formData.unit,
         storage: storageForZone(storageZone) || formData.storage,
         storageZone,
@@ -464,8 +465,8 @@ const assignmentFields = { fridge: 'fridgeName', pantry: 'pantryName' }
 const activeNames = { fridge: activeFridge, pantry: activePantry }
 const mainLabels = ref(readStorageNames('full-circle-main-storage-labels'))
 
-// Keep custom storage placement in the fridge UI because the shared inventory
-// schema currently drops fridgeName and pantryName from API records.
+// Keep a browser fallback for older inventory records that predate named
+// fridge and pantry fields in the shared schema.
 function rememberItemStorage(itemId, type, name) {
     const id = String(itemId || '')
     if (!id || id === 'undefined' || !mainNames[type]) return
@@ -786,6 +787,7 @@ async function saveItem(formData) {
         ? originalItem[assignmentField] || mainNames[storageType]
         : activeNames[storageType].value || mainNames[storageType]
     payload[assignmentField] = assignedStorageName
+    payload[assignmentFields[storageType === 'pantry' ? 'fridge' : 'pantry']] = null
     const origins = originalItem ? foodTransfer.capture([originalItem]) : []
 
     try {
@@ -851,25 +853,56 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
     const actionLabel = action === 'consume' ? 'consume' : 'discard'
     const currentQuantity = Number(item.quantity)
 
-    // A weight-only item has no count to decrement, so Consume/Discard removes
-    // the whole inventory record instead of sending an invalid quantity.
+    // Weight-only items use kilograms as the tracked amount for consume/discard.
     if (!Number.isFinite(currentQuantity) || currentQuantity <= 0) {
+        const currentWeight = Number(item.weightKg)
+        if (!Number.isFinite(currentWeight) || currentWeight <= 0) {
+            errorMessage.value = `${item.name} has no quantity or weight recorded.`
+            return
+        }
+
+        const input = await showPrompt({
+            title: `How many kg of ${item.name} would you like to ${actionLabel}?`,
+            message: `Current weight: ${currentWeight} kg`,
+            label: 'Amount (kg)',
+            defaultValue: String(currentWeight),
+            inputMode: 'decimal',
+            confirmLabel: action === 'consume' ? 'Consume' : 'Discard',
+            validate: value => {
+                const amount = Number(value)
+                if (!Number.isFinite(amount) || amount <= 0 || amount > currentWeight) {
+                    return `Enter an amount greater than 0 and no more than ${currentWeight} kg.`
+                }
+                return ''
+            },
+        })
+        if (input === null) return
+
+        const amount = Number(input)
+        const remainingWeight = Math.max(0, currentWeight - amount)
+        const removesItem = amount >= currentWeight
+        const activity = action === 'consume' ? 'consumed' : 'discarded'
         errorMessage.value = ''
         try {
             const response = await fetch(`/api/inventory/${encodeURIComponent(item.id)}`, {
-                method: 'DELETE',
+                method: removesItem ? 'DELETE' : 'PATCH',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ activity: action === 'consume' ? 'consumed' : 'discarded' })
+                body: JSON.stringify(removesItem ? { activity } : { activity, amount })
             })
             if (!response.ok) throw new Error(`Could not ${actionLabel} food (HTTP ${response.status}).`)
 
-            items.value = items.value.filter(existingItem => existingItem.id !== item.id)
-            forgetItemStorage(item.id)
-            await nextTick()
-            if (selectedCompartment.value) dialogRef.value?.focus()
-            const amount = Number(item.weightKg) || 1
-            onAnimationSuccess?.({ amount, originalQuantity: amount, remainingQuantity: 0, proportion: 1 })
+            if (removesItem) {
+                items.value = items.value.filter(existingItem => existingItem.id !== item.id)
+                forgetItemStorage(item.id)
+                await nextTick()
+                if (selectedCompartment.value) dialogRef.value?.focus()
+            } else {
+                const data = await response.json()
+                items.value = items.value.map(existingItem => existingItem.id === item.id
+                    ? normaliseItem(data.item || data) : existingItem)
+            }
+            onAnimationSuccess?.({ amount, originalQuantity: currentWeight, remainingQuantity: remainingWeight, proportion: amount / currentWeight })
         } catch (error) {
             console.error(`Failed to ${actionLabel} food:`, error)
             errorMessage.value = error.message || `Unable to ${actionLabel} ${item.name}. Please try again.`
@@ -1399,13 +1432,13 @@ async function dropOnArea(area, event, onSuccess) {
     if (onSuccess) actionPending.value = true
     try {
         const destination = { storage, storageZone }
-        if (!props.embedded && storage === 'pantry' &&
-            (activePantry.value !== mainPantry || group.some(food => food.pantryName))) {
+        if (!props.embedded && storage === 'pantry') {
             destination.pantryName = activePantry.value
+            destination.fridgeName = null
         }
-        if (!props.embedded && storage !== 'pantry' &&
-            (activeFridge.value !== mainFridge || group.some(food => food.fridgeName))) {
+        if (!props.embedded && storage !== 'pantry') {
             destination.fridgeName = activeFridge.value
+            destination.pantryName = null
         }
         const succeeded = await saveFoodGroup(group, 'PATCH', destination)
         if (succeeded.size) showStorage(storage)

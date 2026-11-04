@@ -17,9 +17,11 @@ import RescuePhoto from '../models/rescuePhotoModel.js'
 // ============================================================
 
 function activitySnapshot(item, action, quantity, fraction = 1) {
+  const hasCount = Number.isFinite(item.quantity) && item.quantity > 0
   return {
     user: item.user, inventoryItem: item._id, name: item.name, action,
-    quantity, unit: item.unit || 'pieces', category: item.category || 'Other',
+    quantity,
+    unit: hasCount ? item.unit || 'pieces' : 'kg', category: item.category || 'Other',
     weightKg: (Number(item.weightKg) || 0) * fraction,
     valueSgd: (Number(item.purchasePrice) || 0) * fraction,
     location: item.storage === 'pantry' ? item.pantryName || 'Pantry' : item.fridgeName || 'Main fridge',
@@ -31,20 +33,23 @@ async function recordPartialActivity(req, res, next) {
   try {
     const amount = req.body.amount
     if (!['consumed', 'discarded'].includes(req.body.activity) || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ error: 'Enter a valid activity and quantity.' })
+      return res.status(400).json({ error: 'Enter a valid activity and amount.' })
     }
     const updated = await mongoose.connection.transaction(async session => {
       const item = await InventoryItem.findOne({ _id: req.params.id, user: req.userId }).session(session)
-      if (!item || !Number.isFinite(item.quantity) || amount >= item.quantity) return null
-      const fraction = amount / item.quantity
+      if (!item) return null
+      const hasCount = Number.isFinite(item.quantity) && item.quantity > 0
+      const totalAmount = hasCount ? item.quantity : Number(item.weightKg)
+      if (!Number.isFinite(totalAmount) || totalAmount <= 0 || amount >= totalAmount) return null
+      const fraction = amount / totalAmount
       await FoodEvent.create([activitySnapshot(item, req.body.activity, amount, fraction)], { session })
-      item.quantity -= amount
+      if (hasCount) item.quantity -= amount
       if (item.weightKg != null) item.weightKg *= 1 - fraction
       if (item.purchasePrice != null) item.purchasePrice *= 1 - fraction
       await item.save({ session })
       return item
     })
-    if (!updated) return res.status(409).json({ error: 'The food quantity has changed. Reload and try again.' })
+    if (!updated) return res.status(409).json({ error: 'The food amount has changed. Reload and try again.' })
     res.json({ item: updated })
   } catch (error) { next(error) }
 }
@@ -55,6 +60,7 @@ async function recordPartialActivity(req, res, next) {
 const editableFields = [
   'name',
   'quantity',
+  'weightKg',
   'unit',
   'storage',
   'storageZone',
@@ -79,12 +85,21 @@ function pickEditableFields(body = {}) {
   return picked
 }
 
+function hasTrackedAmount(item = {}) {
+  return (Number.isFinite(item.quantity) && item.quantity > 0) ||
+    (Number.isFinite(item.weightKg) && item.weightKg > 0)
+}
+
 // Validate fields shared by create and update requests.
 // Returning a message lets each endpoint send a clear HTTP 400 response.
 function validateItemFields(fields, { creating = false } = {}) {
   for (const key of ['fridgeName', 'pantryName']) {
     if (!Object.prototype.hasOwnProperty.call(fields, key)) continue
-    if (typeof fields[key] !== 'string' || !fields[key].trim() || fields[key].trim().length > 60) {
+    if (fields[key] === null || fields[key] === '') {
+      fields[key] = null
+      continue
+    }
+    if (typeof fields[key] !== 'string' || fields[key].trim().length === 0 || fields[key].trim().length > 60) {
       return 'Storage name must be between 1 and 60 characters.'
     }
     fields[key] = fields[key].trim()
@@ -99,13 +114,27 @@ function validateItemFields(fields, { creating = false } = {}) {
   }
 
   if (Object.prototype.hasOwnProperty.call(fields, 'quantity')) {
-    const quantity = Number(fields.quantity)
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      return 'Quantity must be a number greater than zero.'
+    if (fields.quantity == null || fields.quantity === '') {
+      fields.quantity = null
+    } else {
+      const quantity = Number(fields.quantity)
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        return 'Quantity must be a number greater than zero.'
+      }
+      fields.quantity = quantity
     }
-    fields.quantity = quantity
-  } else if (creating) {
-    fields.quantity = 1
+  }
+
+  if (Object.prototype.hasOwnProperty.call(fields, 'weightKg')) {
+    if (fields.weightKg == null || fields.weightKg === '') {
+      fields.weightKg = null
+    } else {
+      const weightKg = Number(fields.weightKg)
+      if (!Number.isFinite(weightKg) || weightKg <= 0) {
+        return 'Weight must be a number greater than zero.'
+      }
+      fields.weightKg = weightKg
+    }
   }
 
   if (Object.prototype.hasOwnProperty.call(fields, 'unit')) {
@@ -218,6 +247,9 @@ async function createItem(req, res, next) {
     if (validationError) {
       return res.status(400).json({ error: validationError })
     }
+    if (!hasTrackedAmount(fields)) {
+      return res.status(400).json({ error: 'Enter a quantity or weight greater than zero.' })
+    }
 
     // Always set owner from the authenticated token, never from the body.
     const item = await InventoryItem.create({
@@ -285,6 +317,7 @@ async function updateItem(req, res, next) {
     const combined = {
       name: existingItem.name,
       quantity: existingItem.quantity,
+      weightKg: existingItem.weightKg,
       unit: existingItem.unit,
       storage: existingItem.storage,
       storageZone: existingItem.storageZone,
@@ -315,6 +348,10 @@ async function updateItem(req, res, next) {
     const validationError = validateItemFields(combined)
     if (validationError) {
       return res.status(400).json({ error: validationError })
+    }
+    if ((Object.prototype.hasOwnProperty.call(fields, 'quantity') ||
+         Object.prototype.hasOwnProperty.call(fields, 'weightKg')) && !hasTrackedAmount(combined)) {
+      return res.status(400).json({ error: 'An item must keep a quantity or weight greater than zero.' })
     }
 
     // Copy normalized/validated fields back into the actual update object.
@@ -422,7 +459,7 @@ async function deleteItem(req, res, next) {
         }
 
         if (req.body?.activity) {
-          await FoodEvent.create([activitySnapshot(item, req.body.activity, item.quantity || 1)], { session })
+          await FoodEvent.create([activitySnapshot(item, req.body.activity, item.quantity ?? item.weightKg ?? 1)], { session })
         }
         await item.deleteOne({ session })
 
