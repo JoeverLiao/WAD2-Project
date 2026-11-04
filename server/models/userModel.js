@@ -6,6 +6,8 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, lowercase: true, trim: true, unique: true },
     password: { type: String, required: true, minlength: 8 },
+    // The user's preferred pickup/drop-off location (usually home), as a Singapore postal code.
+    postalCode: { type: String, trim: true, match: /^\d{6}$/, default: null },
     loginStatus: { type: Boolean, default: false },
     lastLogin: { type: Date, default: null },
     pickupLocation: {
@@ -52,6 +54,7 @@ userSchema.methods.toPublicJSON = function () {
     id: this._id.toString(),
     name: this.name,
     email: this.email,
+    postalCode: this.postalCode,
     loginStatus: this.loginStatus,
     lastLogin: this.lastLogin,
     pickupLocation: this.pickupLocation

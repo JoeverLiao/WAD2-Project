@@ -12,14 +12,24 @@ const username = ref('')
 const email = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const postalCode = ref('')
 const error = ref('')
 const loading = ref(false)
 usePageLoading(loading, 'Creating account')
 
 async function handleRegister() {
   error.value = ''
-  if (!username.value.trim() || !email.value.trim() || !password.value) {
+  if (
+    !username.value.trim() ||
+    !email.value.trim() ||
+    !password.value ||
+    !postalCode.value.trim()
+  ) {
     error.value = 'All fields are required'
+    return
+  }
+  if (!/^\d{6}$/.test(postalCode.value.trim())) {
+    error.value = 'Postal code must be 6 digits'
     return
   }
   if (password.value.length < 8) {
@@ -32,7 +42,12 @@ async function handleRegister() {
   }
   loading.value = true
   try {
-    await auth.register(username.value.trim(), email.value.trim(), password.value)
+    await auth.register(
+      username.value.trim(),
+      email.value.trim(),
+      password.value,
+      postalCode.value.trim(),
+    )
     // Return to the page the user originally asked for, if it was an in-app path.
     const redirect = route.query.redirect
     const isInternal = typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
@@ -79,6 +94,23 @@ async function handleRegister() {
           autocomplete="new-password"
         />
       </div>
+      <div>
+        <label for="postal-code">Preferred pickup location (postal code)</label>
+        <input
+          id="postal-code"
+          v-model="postalCode"
+          type="text"
+          inputmode="numeric"
+          pattern="\d{6}"
+          maxlength="6"
+          required
+          autocomplete="postal-code"
+          aria-describedby="postal-code-hint"
+        />
+        <p id="postal-code-hint" class="hint">
+          Usually your home. We use it as the starting point for food pickups and drop-offs.
+        </p>
+      </div>
       <button type="submit" :disabled="loading">
         {{ loading ? 'Creating account...' : 'Register' }}
       </button>
@@ -118,6 +150,11 @@ button {
 }
 button:disabled {
   opacity: 0.6;
+}
+.hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: #555;
 }
 .error {
   color: #c00;

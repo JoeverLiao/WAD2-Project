@@ -9,12 +9,14 @@ const router = useRouter()
 const editMode = ref(false)
 const editName = ref('')
 const editEmail = ref('')
+const editPostalCode = ref('')
 const error = ref('')
 const success = ref('')
 
 function startEdit() {
-  editName.value = auth.user?.username || ''
+  editName.value = auth.user?.name || ''
   editEmail.value = auth.user?.email || ''
+  editPostalCode.value = auth.user?.postalCode || ''
   editMode.value = true
   error.value = ''
   success.value = ''
@@ -28,8 +30,17 @@ function cancelEdit() {
 async function saveProfile() {
   error.value = ''
   success.value = ''
+  const postalCode = editPostalCode.value.trim()
+  if (!/^\d{6}$/.test(postalCode)) {
+    error.value = 'Postal code must be 6 digits'
+    return
+  }
   try {
-    await auth.updateProfile({ username: editName.value, email: editEmail.value })
+    await auth.updateProfile({
+      username: editName.value,
+      email: editEmail.value,
+      postalCode,
+    })
     editMode.value = false
     success.value = 'Profile updated'
   } catch (e) {
@@ -50,30 +61,24 @@ async function handleLogout() {
 <template>
   <section class="profile-page" aria-label="Profile">
     <div v-if="auth.user" class="profile-card fc-page-heading">
-      <div class="profile-avatar">
-        <svg viewBox="0 0 120 120" role="img" aria-label="Default profile picture">
-          <circle cx="60" cy="60" r="60" fill="#72d7cc" />
-          <path d="M18 106c6-22 23-34 42-34s36 12 42 34a60 60 0 0 1-84 0Z" fill="#0fa89c" />
-          <circle cx="60" cy="48" r="22" fill="#ffe16a" />
-          <circle cx="52" cy="46" r="2.6" fill="currentColor" />
-          <circle cx="68" cy="46" r="2.6" fill="currentColor" />
-          <path d="M52 56q8 7 16 0" />
-        </svg>
-      </div>
-
       <p class="profile-tag">My account</p>
-      <h1>{{ auth.user.username }}</h1>
+      <h1>{{ auth.user.name }}</h1>
       <p v-if="error" class="profile-alert alert-error" role="alert">{{ error }}</p>
       <p v-if="success" class="profile-alert alert-success" role="status">{{ success }}</p>
 
       <div v-if="!editMode" class="profile-details">
         <div class="profile-field">
           <span class="field-label">Username:</span>
-          <span>{{ auth.user.username }}</span>
+          <span>{{ auth.user.name }}</span>
         </div>
         <div class="profile-field">
           <span class="field-label">Email:</span>
           <span>{{ auth.user.email }}</span>
+        </div>
+        <div class="profile-field">
+          <span class="field-label">Preferred pickup location:</span>
+          <span v-if="auth.user.postalCode">Singapore {{ auth.user.postalCode }}</span>
+          <span v-else class="field-empty">Not set yet. Click "Edit profile" to add one.</span>
         </div>
         <div class="profile-actions">
           <button type="button" class="profile-button button-primary" @click="startEdit">
@@ -93,6 +98,23 @@ async function handleLogout() {
         <div class="profile-input">
           <label for="edit-email">Email:</label>
           <input id="edit-email" v-model="editEmail" type="email" required autocomplete="email" />
+        </div>
+        <div class="profile-input">
+          <label for="edit-postal-code">Preferred pickup location (postal code):</label>
+          <input
+            id="edit-postal-code"
+            v-model="editPostalCode"
+            type="text"
+            inputmode="numeric"
+            pattern="\d{6}"
+            maxlength="6"
+            required
+            autocomplete="postal-code"
+            aria-describedby="edit-postal-code-hint"
+          />
+          <p id="edit-postal-code-hint" class="input-hint">
+            Usually your home. Used as the starting point for pickups and drop-offs.
+          </p>
         </div>
         <div class="profile-actions">
           <button type="submit" class="profile-button button-primary">Save</button>
@@ -124,35 +146,12 @@ async function handleLogout() {
   position: relative;
   max-width: 560px;
   margin: 0 auto;
-  padding: 84px clamp(20px, 4vw, 44px) clamp(28px, 4vw, 44px);
+  padding: clamp(28px, 4vw, 44px) clamp(20px, 4vw, 44px);
   border: 3px solid var(--ink);
   border-radius: 26px;
   background: #fff;
   box-shadow: 6px 8px 0 var(--ink);
   text-align: center;
-}
-.profile-avatar {
-  position: absolute;
-  top: -66px;
-  left: 50%;
-  width: 132px;
-  height: 132px;
-  translate: -50% 0;
-  border: 3px solid var(--ink);
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 4px 5px 0 var(--ink);
-  overflow: hidden;
-  color: var(--ink);
-}
-.profile-avatar svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.6;
-  stroke-linecap: round;
 }
 .profile-tag {
   display: inline-block;
@@ -224,6 +223,15 @@ h1 {
   font: inherit;
   font-size: 1.1rem;
   color: var(--ink);
+}
+.field-empty {
+  color: #5b6b69;
+  font-style: italic;
+}
+.input-hint {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  color: #5b6b69;
 }
 .profile-input input:focus-visible {
   outline: 3px solid #1f7d74;
