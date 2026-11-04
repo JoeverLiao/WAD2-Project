@@ -8,6 +8,7 @@
   --fc-text: var(--text, #24352f);
   --fc-border: var(--border, #cfdcd4);
   --fc-soft: #e8f4ed;
+  --fc-ink: #14423c; /* the dark green used for borders and offset shadows */
   color: var(--fc-text);
   accent-color: var(--fc-primary);
   font-family: inherit;
@@ -75,7 +76,7 @@
   flex-wrap: wrap;
   gap: 0.6rem;
   padding: 0;
-  margin: 0 0 1.5rem;
+  margin: 1.25rem 0 0;
   list-style: none;
 }
 .fc-scope .fc-tab {
@@ -83,13 +84,18 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.7rem 1.3rem;
-  border: 2px solid var(--fc-primary);
-  border-radius: 9px;
+  border: 2px solid var(--fc-ink);
+  border-radius: 12px;
   background: #fff;
   color: var(--fc-primary-dark);
   font-weight: 700;
+  box-shadow: 3px 4px 0 var(--fc-ink);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.15s, color 0.15s, transform 0.1s, box-shadow 0.1s;
+}
+.fc-scope .fc-tab:active {
+  transform: translate(2px, 3px);
+  box-shadow: 1px 1px 0 var(--fc-ink);
 }
 .fc-scope .fc-tab:hover {
   background: var(--fc-soft);
@@ -130,4 +136,56 @@
 .fc-scope .required-mark {
   color: #b42318;
   font-weight: 700;
+}
+
+/* ----- hero card at the top of the page ----- */
+.fc-scope .fc-hero {
+  position: relative;
+  margin-bottom: 1.75rem;
+  padding: 1.5rem 1.75rem 1.6rem;
+  overflow: hidden;
+  background: #fff;
+  border: 3px solid var(--fc-ink);
+  border-radius: 22px;
+  box-shadow: 8px 10px 0 var(--fc-ink);
+}
+.fc-scope .fc-eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--fc-primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fc-scope .fc-hero-title {
+  margin: 0 0 0.4rem;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.1;
+}
+.fc-scope .fc-hero-sub {
+  max-width: 34rem;
+  margin: 0;
+  color: #5b6b64;
+}
+.fc-scope .fc-hero-leaf {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.9rem;
+  width: clamp(64px, 12vw, 110px);
+  height: auto;
+  pointer-events: none;
+}
+
+/* ----- cards with a dark border and a hard offset shadow (upload panel and each item card) ----- */
+.fc-scope .fc-card,
+.fc-scope .item-row {
+  border-top: 3px solid var(--fc-ink) !important;
+  border-right: 3px solid var(--fc-ink) !important;
+  border-bottom: 3px solid var(--fc-ink) !important;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 6px 7px 0 var(--fc-ink) !important;
+}
+.fc-scope .fc-card {
+  border-left: 3px solid var(--fc-ink);
 }

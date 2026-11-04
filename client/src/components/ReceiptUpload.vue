@@ -91,7 +91,7 @@ onBeforeUnmount(clearPreview)
 </script>
 
 <template>
-  <div class="card shadow-sm">
+  <div class="card fc-card">
     <div class="card-body">
       <h2 class="h5 card-title mb-3">Scan a receipt</h2>
 
@@ -121,10 +121,16 @@ onBeforeUnmount(clearPreview)
           <p class="small text-muted mb-0">{{ fileLabel }}</p>
         </template>
         <template v-else>
+          <svg class="drop-icon" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+            <path d="M14 6h36v52l-6-4-6 4-6-4-6 4-6-4-6 4z" fill="#fff" stroke="#14423c" stroke-width="3" stroke-linejoin="round" />
+            <rect x="20" y="14" width="24" height="5" rx="2.5" fill="#7fcfb4" />
+            <path d="M20 27h24M20 34h24M20 41h14" stroke="#14423c" stroke-width="3" stroke-linecap="round" />
+            <circle cx="46" cy="44" r="9" fill="#d9f2e3" stroke="#14423c" stroke-width="3" />
+            <path d="M46 49v-9m-4 4 4-4 4 4" fill="none" stroke="#14423c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
           <p class="mb-1 fw-semibold">Drag &amp; drop your receipt here</p>
-          <p class="small text-muted mb-0">
-            or click to choose a photo (JPG, PNG, WEBP, max {{ MAX_SIZE_MB }} MB)
-          </p>
+          <p class="small mb-2">or click to choose a photo</p>
+          <span class="drop-pill">JPG, PNG, WEBP · max {{ MAX_SIZE_MB }} MB</span>
         </template>
       </div>
 
@@ -178,18 +184,54 @@ onBeforeUnmount(clearPreview)
 
 <style scoped>
 .drop-zone {
-  border: 2px dashed #adb5bd;
+  border: 2px dashed #14423c;
+  background: #fff;
   cursor: pointer;
   transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
     background-color 0.15s,
     border-color 0.15s;
 }
+/* lifts slightly on hover and on keyboard focus */
 .drop-zone:hover,
+.drop-zone:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 0 rgb(20 66 60 / 18%);
+  border-color: #167d68;
+}
+/* tinted pastel green while a file is dragged over it */
 .drop-zone.dragging {
-  background-color: #f1f8f4;
-  border-color: #198754;
+  transform: translateY(-3px);
+  background-color: #d9f2e3;
+  border-color: #167d68;
+  box-shadow: 0 6px 0 rgb(20 66 60 / 25%);
+}
+.drop-icon {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 0.5rem;
+}
+.drop-pill {
+  display: inline-block;
+  padding: 0.2rem 0.75rem;
+  border: 1.5px solid #14423c;
+  border-radius: 999px;
+  background: #e8f4ed;
+  color: #14423c;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 .preview {
   max-height: 300px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-zone,
+  .drop-zone:hover,
+  .drop-zone:focus-visible,
+  .drop-zone.dragging {
+    transform: none;
+    transition: none;
+  }
 }
 </style>
