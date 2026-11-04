@@ -180,6 +180,7 @@ describe('ReceiptReviewForm', () => {
       await row.get('[data-testid="category"]').setValue('dairy')
       await row.get('[data-testid="diet"]').setValue('vegetarian')
       await row.get('[data-testid="expires"]').setValue('2026-11-20')
+      await row.get('[data-testid="weight"]').setValue('0.5')
     }
 
     it('cannot be saved until every required field is filled in', async () => {
@@ -190,8 +191,8 @@ describe('ReceiptReviewForm', () => {
       await flushPromises()
       expect(fetchMock).not.toHaveBeenCalled()
       const text = wrapper.text()
-      for (const message of ['Enter the item name.', 'Choose a category', 'Choose a diet label.', 'Enter a use-by date']) expect(text).toContain(message)
-      expect(wrapper.get('[data-testid="problem-summary"]').text()).toContain('4 required fields')
+      for (const message of ['Enter the item name.', 'Choose a category', 'Choose a diet label.', 'Enter a use-by date', 'Enter the weight']) expect(text).toContain(message)
+      expect(wrapper.get('[data-testid="problem-summary"]').text()).toContain('5 required fields')
       expect(wrapper.get('[data-testid="required-legend"]').text()).toContain('required')
       // Filling the fields in one by one removes the problems and allows saving.
       fetchMock.mockImplementation(async () => jsonResponse(201, { saved: 1, added: 1, merged: 0 }))
@@ -232,7 +233,7 @@ describe('ReceiptReviewForm', () => {
       expect(body.items[0]).toMatchObject({ name: 'Milk', quantity: 1 })
       expect(body.items[0]).not.toHaveProperty('purchasePrice')
       expect(body.items[0]).toMatchObject({ category: 'dairy', dietType: 'vegetarian', expiresAt: '2026-11-20' })
-      expect(body.items[0]).not.toHaveProperty('weightKg')
+      expect(body.items[0].weightKg).toBe(0.5)
       expect(wrapper.get('[data-testid="saved-message"]').text()).toContain('Saved 1 item')
       wrapper.unmount()
     })
@@ -314,18 +315,29 @@ describe('ReceiptReviewForm', () => {
       wrapper.unmount()
     })
 
-    it('a weight is enough: the quantity can be left empty', async () => {
-      const fetchMock = vi.fn(async () => jsonResponse(201, { saved: 1, added: 1, merged: 0 }))
-      vi.stubGlobal('fetch', fetchMock)
+    it('shows required tiles red until filled and green afterwards, optional tiles plain', async () => {
       const wrapper = mount(ReceiptReviewForm, { props: { manual: true } })
-      await fillRequired(rows(wrapper)[0], 'Chicken breast')
-      await rows(wrapper)[0].get('[data-testid="quantity"]').setValue('')
-      await rows(wrapper)[0].get('[data-testid="weight"]').setValue('0.5')
-      await wrapper.get('form').trigger('submit')
-      await flushPromises()
-      const [item] = JSON.parse(fetchMock.mock.calls[0][1].body).items
-      expect(item.weightKg).toBe(0.5)
-      expect(item).not.toHaveProperty('quantity')
+      const row = rows(wrapper)[0]
+      expect(row.get('[data-testid="tile-name"]').classes()).toContain('tile-missing')
+      expect(row.get('[data-testid="tile-weightKg"]').classes()).toContain('tile-missing')
+      expect(row.get('[data-testid="tile-purchasePrice"]').classes()).toContain('tile-optional')
+      expect(row.get('[data-testid="tile-unit"]').classes()).toContain('tile-optional')
+      await fillRequired(row)
+      for (const f of ['name', 'quantity', 'storageZone', 'expiresAt', 'category', 'dietType', 'weightKg']) {
+        expect(row.get(`[data-testid="tile-${f}"]`).classes()).toContain('tile-ok')
+      }
+      wrapper.unmount()
+    })
+
+    it('opens a tile editor only when the tile is pressed', async () => {
+      const wrapper = mount(ReceiptReviewForm, { props: { manual: true }, attachTo: document.body })
+      const row = rows(wrapper)[0]
+      const editor = () => row.get('#editor-weightKg-' + row.find('[data-testid="weight"]').attributes('id').replace('weight-', ''))
+      expect(editor().isVisible()).toBe(false)
+      await row.get('[data-testid="tile-weightKg"]').trigger('click')
+      expect(editor().isVisible()).toBe(true)
+      await row.get('[data-testid="tile-weightKg"]').trigger('click')
+      expect(editor().isVisible()).toBe(false)
       wrapper.unmount()
     })
 

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import { addItemsToInventory } from '../services/inventoryService.js'
-import { enrichItems } from '../services/itemEnrichment.js'
+import { enrichItems, mergeDuplicateItems } from '../services/itemEnrichment.js'
 import { validateInventoryItems } from '../services/inventoryValidation.js'
 import { parseReceiptText } from '../services/receiptParser.js'
 import { notImplemented } from './notImplemented.js'
@@ -42,12 +42,12 @@ const scanReceipt = async (req, res) => {
           parsed.items.map((item) => ({ ...item, purchasedAt: parsed.purchasedAt ?? undefined, expiresAt: undefined })),
         )
         parsed.aiStatus = aiStatus
-        parsed.items = parsed.items.map((item, i) => {
+        parsed.items = mergeDuplicateItems(parsed.items.map((item, i) => {
           const d = details[i]
           const warnings = [...item.warnings]
           if (d.expiresAt && d.expiresEstimated) warnings.push('Use-by date and weight are estimates: please check them')
           return { ...item, ...d, warnings }
-        })
+        }))
       } catch (error) {
         console.error('Adding item details failed:', error)
       }

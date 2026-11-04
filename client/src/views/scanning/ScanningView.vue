@@ -1,5 +1,4 @@
 <script setup>
-import EggCompanion from '../../components/analytics/VegetableCompanions.vue'
 import { ref } from 'vue'
 import ReceiptReviewForm from '../../components/ReceiptReviewForm.vue'
 import ReceiptUpload from '../../components/ReceiptUpload.vue'
@@ -36,10 +35,7 @@ function switchMode(next) {
 
 <template>
   <section class="container py-4 fc-scope" aria-label="Receipt &amp; Product Scanning">
-    <header class="fc-page-heading">
-      <p class="eyebrow">FULL CIRCLE · INVENTORY</p>
-      <h1>Add to your inventory</h1>
-    </header>
+    <h1 class="h3 mb-3">Add to your inventory</h1>
 
     <ul class="fc-tabs" role="tablist" aria-label="How do you want to add items?">
       <li role="presentation">
@@ -78,6 +74,5 @@ function switchMode(next) {
       />
     </template>
     <ReceiptReviewForm v-else :key="`manual-${scanKey}`" manual @reset="startOver" />
-    <EggCompanion always-happy />
   </section>
 </template>

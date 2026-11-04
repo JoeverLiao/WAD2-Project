@@ -193,15 +193,11 @@ TOTAL 27.38`)
     assert.equal(byName['Lime'].price, 2)
   })
   test('does not turn discounts, coupons, tax or headings into items', () => {
-    assert.deepEqual(names(r), [
-      'Finish Quantum', 'Tea', 'Avocado', 'Orange', 'Lime', 'Ziploc Org Singl', 'Tylenol Cold & S',
-    ])
+    assert.deepEqual(names(r), ['Tea', 'Avocado', 'Orange', 'Lime'])
   })
-  test('starts non-food items unticked', () => {
-    assert.equal(byName['Finish Quantum'].include, false)
-    assert.equal(byName['Ziploc Org Singl'].include, false)
-    assert.equal(byName['Tylenol Cold & S'].include, false)
-    assert.equal(byName['Avocado'].include, true)
+  test('leaves non-food items out of the list completely, and says what was left out', () => {
+    assert.deepEqual(r.skipped, ['Finish Quantum', 'Ziploc Org Singl', 'Tylenol Cold & S'])
+    assert.ok(r.items.every((i) => i.include === true))
   })
   test('items less coupons add up to the subtotal', () => {
     assert.equal(r.subtotal, 25.11)
@@ -244,9 +240,9 @@ Subtotal 16.00`)
 083057607 B&B T $14.99
 083057779 PETCOLLAR T $5.99
 SUBTOTAL $37.36`)
-    assert.deepEqual(names(r), ['Horizon', 'GG', 'B&B', 'Petcollar'])
+    assert.deepEqual(names(r), ['Horizon', 'GG', 'B&B'])
+    assert.deepEqual(r.skipped, ['Petcollar']) // not food: left out, but counted in the totals
     assert.equal(r.totalMatches, true)
-    assert.equal(r.items[3].include, false)
   })
   test('tax and payment lines are never added as items, even when OCR glued them together', () => {
     const r = parse(`1 Milk 3.00
@@ -257,6 +253,35 @@ TAX 7.000000% $0.21
 AID: A0000000041010
 TOTAL $3.21`)
     assert.deepEqual(names(r), ['Milk'])
+  })
+})
+
+describe('names with missing spaces, abbreviations and promotion text', () => {
+  const r = parse(`FAIRPRICE
+12/10/2026
+AUSTJPNPUMPKIN 2.87
+AUST JPN PUMPKIN 2.87
+FRESH MILK 1L 3.20
+NORMAL PRICE 3.90
+2 FOR $5.00
+TOILETPAPER 8PK 6.50
+RASPBERY 125G 4.50
+SAVE 1.00
+WAS $4.00 NOW $3.00
+Subtotal 19.94
+Total 19.94`)
+  test('finds the real food inside a run-together or abbreviated name', () => {
+    assert.deepEqual(names(r), ['Pumpkin', 'Milk', 'Raspberry'])
+    assert.equal(r.items[0].quantity, 2) // the two pumpkin lines are one item
+    assert.equal(r.items[0].dietType ?? 'vegan', 'vegan')
+  })
+  test('promotion text and non-food are never listed', () => {
+    assert.ok(!names(r).some((n) => /normal|price|for|save|was|now|toilet/i.test(n)))
+    assert.deepEqual(r.skipped, ['Toiletpaper 8pk'])
+    assert.equal(r.totalMatches, true)
+  })
+  test('promotion-only names are rejected even without a price word match', () => {
+    assert.deepEqual(names(parse('1 Milk 3.20\nSpecial Offer 1.00\nEach 2.00\nNormal 3.00')), ['Milk'])
   })
 })
 

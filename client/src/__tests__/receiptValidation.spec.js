@@ -4,7 +4,7 @@ import { parseDay, toPayload, validatePurchaseDate, validateRow } from '../utils
 const today = new Date(2026, 9, 21) // 21 Oct 2026
 const good = {
   name: 'Fresh Milk 1L', quantity: 2, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', category: 'dairy',
-  dietType: 'vegetarian', expiresAt: '2026-10-19', purchasePrice: 6.4,
+  dietType: 'vegetarian', expiresAt: '2026-10-19', purchasePrice: 6.4, weightKg: 1,
 }
 const check = (changes, purchasedAt = '2026-10-12') => validateRow({ ...good, ...changes }, { purchasedAt, today })
 
@@ -27,9 +27,9 @@ describe('validateRow', () => {
     }
   })
 
-  it('accepts a weight instead of a quantity, and checks the weight', () => {
-    expect(check({ quantity: '', weightKg: '0.5' }).quantity).toBeUndefined()
+  it('requires a quantity and a weight, and checks the weight', () => {
     expect(check({ quantity: '' }).quantity).toBeDefined()
+    expect(check({ weightKg: '' }).weightKg).toBeDefined()
     expect(check({ weightKg: '0' }).weightKg).toBeDefined()
     expect(check({ weightKg: 'abc' }).weightKg).toBeDefined()
     expect(check({ weightKg: '0.1234' }).weightKg).toBeDefined()
@@ -60,8 +60,10 @@ describe('validateRow', () => {
     expect(check({ expiresAt: '' }).expiresAt).toMatch(/use-by date/)
   })
 
-  it('does not ask for a use-by date or diet label on a non-food item', () => {
-    expect(check({ category: 'non_food', expiresAt: '', dietType: '' })).toEqual({})
+  it('asks for a use-by date and diet label on every item, whatever the category', () => {
+    const errors = check({ category: 'non_food', expiresAt: '', dietType: '' })
+    expect(errors.expiresAt).toBeDefined()
+    expect(errors.dietType).toBeDefined()
   })
 
   it('needs a purchase date only when it is required', () => {
@@ -107,6 +109,7 @@ describe('helpers', () => {
     expect(toPayload({ ...good, name: ' Fresh  Milk ', quantity: '2', purchasePrice: '6.40', unit: '', expiresAt: '' }, '2026-10-12')).toEqual({
       name: 'Fresh Milk',
       quantity: 2,
+      weightKg: 1,
       storage: 'fridge',
       storageZone: 'middle-shelf',
       category: 'dairy',

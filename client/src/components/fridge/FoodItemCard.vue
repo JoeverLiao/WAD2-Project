@@ -1,48 +1,119 @@
 <script setup>
-import { computed } from 'vue'
-import FoodIcon from '../FoodIcon.vue'
+// ============================================================
+// FOOD ITEM CARD
+//
+// Purpose:
+// Display one food item in the Smart Fridge interface.
+// ============================================================
 
-// The parent provides the food item.
+import { computed } from 'vue'
+
+// ------------------------------------------------------------
+// 1. PROPS
+//
+// Props allow the parent component (FridgeView.vue) to pass
+// information into this component.
+//
+// item contains the food's name, quantity, storage and expiry.
+// ------------------------------------------------------------
+
 const props = defineProps({
-    dragging: { type: Boolean, default: false },
     item: {
         type: Object,
         required: true
     }
 })
 
-// The parent still handles inventory changes and API requests.
+// ------------------------------------------------------------
+// 2. EVENTS
+//
+// This component displays buttons, but the parent owns the
+// inventory data.
+//
+// Therefore, clicking Edit or Remove sends an event to the
+// parent instead of directly changing the inventory.
+// ------------------------------------------------------------
+
 const emit = defineEmits([
     'edit',
     'remove',
-    'consume',
-    'discard',
     'drag-start',
     'drag-end'
 ])
 
-// Expiry status.
-const expiryStatus = computed(() => {
-    if (!props.item.expiresAt) return 'No expiry date'
+// ------------------------------------------------------------
+// 3. FOOD EMOJI
+//
+// Display a simple emoji based on the food's name.
+// This is only for presentation; it does not affect storage.
+// ------------------------------------------------------------
 
+const foodEmoji = computed(() => {
+    const name = props.item.name.toLowerCase()
+
+    if (name.includes('milk')) return '🥛'
+    if (name.includes('egg')) return '🥚'
+    if (name.includes('carrot')) return '🥕'
+    if (name.includes('broccoli')) return '🥦'
+    if (name.includes('chicken')) return '🍗'
+    if (name.includes('fish')) return '🐟'
+    if (name.includes('rice')) return '🍚'
+    if (name.includes('pasta')) return '🍝'
+    if (name.includes('bread')) return '🍞'
+    if (name.includes('cheese')) return '🧀'
+    if (name.includes('ice cream')) return '🍦'
+
+    // Use a generic food emoji if there is no matching rule.
+    return '🍱'
+})
+
+// ------------------------------------------------------------
+// 4. EXPIRY STATUS
+//
+// Compare the expiry date with today's date.
+//
+// This is a basic display indicator, not a guarantee that food
+// is safe or unsafe to eat.
+// ------------------------------------------------------------
+
+const expiryStatus = computed(() => {
+    if (!props.item.expiresAt) {
+        return 'No expiry date'
+    }
+
+    // Use local calendar dates rather than comparing the current
+    // time against midnight on the expiry date.
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
     const expiry = new Date(`${props.item.expiresAt}T00:00:00`)
 
-    if (Number.isNaN(expiry.getTime())) return 'Invalid expiry date'
+    // An invalid date should not break the card.
+    if (Number.isNaN(expiry.getTime())) {
+        return 'Invalid expiry date'
+    }
 
     const daysRemaining = Math.round(
-        (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+        (expiry.getTime() - today.getTime()) /
+        (1000 * 60 * 60 * 24)
     )
 
-    if (daysRemaining < 0) return 'Expired'
-    if (daysRemaining === 0) return 'Expires today'
-    if (daysRemaining <= 3) return `Expires in ${daysRemaining} day(s)`
+    if (daysRemaining < 0) {
+        return 'Expired'
+    }
+
+    if (daysRemaining === 0) {
+        return 'Expires today'
+    }
+
+    if (daysRemaining <= 3) {
+        return `Expires in ${daysRemaining} day(s)`
+    }
 
     return `Expires ${expiry.toLocaleDateString()}`
 })
 
+// Assign a CSS class according to the expiry status.
 const expiryClass = computed(() => {
     if (
         expiryStatus.value === 'Expired' ||
@@ -58,235 +129,213 @@ const expiryClass = computed(() => {
     return 'expiry-normal'
 })
 
-// Suppress the native snapshot; the parent supplies an animated food preview.
-function setEmojiDragImage(event) {
-    if (!event.dataTransfer) return
-
-    // An empty canvas keeps the native drag image transparent.
-    const size = 72
-    const canvas = document.createElement('canvas')
-    canvas.width = size
-    canvas.height = size
-    // Browsers can ignore drag images that are not rendered in the document.
-    // Keep the transparent canvas under the pointer until the drag snapshot is taken.
-    canvas.style.position = 'fixed'
-    canvas.style.left = `${Math.max(0, event.clientX - size / 2)}px`
-    canvas.style.top = `${Math.max(0, event.clientY - size / 2)}px`
-    canvas.style.zIndex = '2147483647'
-    canvas.style.pointerEvents = 'none'
-    canvas.style.background = 'transparent'
-    document.body.appendChild(canvas)
-    event.dataTransfer.setDragImage(canvas, size / 2, size / 2)
-    requestAnimationFrame(() => canvas.remove())
-}
+// ------------------------------------------------------------
+// 5. DRAG AND DROP
+//
+// HTML's draggable attribute allows users to drag the card.
+//
+// We tell the parent which item is being dragged.
+// The parent handles moving the item between storage areas.
+// ------------------------------------------------------------
 
 function handleDragStart(event) {
-    event.dataTransfer.setData('text/plain', String(props.item.id))
+    // Set the item's ID as the dragged data.
+    event.dataTransfer.setData(
+        'text/plain',
+        String(props.item.id)
+    )
+
     event.dataTransfer.effectAllowed = 'move'
-    setEmojiDragImage(event)
-    emit('drag-start', props.item, event)
+
+    // Notify FridgeView.vue that dragging has started.
+    emit('drag-start', props.item)
 }
 
 function handleDragEnd() {
+    // Notify the parent that dragging has finished.
     emit('drag-end')
 }
 </script>
 
 <template>
+    <!--
+        The entire card can be dragged to another storage area.
+        The buttons inside the card provide edit/remove actions.
+    -->
     <article
         class="food-card"
-        :data-food-id="item.id"
-        :class="{ 'food-is-held': dragging }"
         draggable="true"
         @dragstart="handleDragStart"
         @dragend="handleDragEnd"
     >
+        <!-- Food emoji and action buttons -->
         <div class="card-top">
-            <span class="food-emoji"><FoodIcon :item="item" /></span>
+            <span class="food-emoji">
+                {{ foodEmoji }}
+            </span>
 
-            <div class="card-tools" role="group" aria-label="Food item controls">
-                <button type="button" class="icon-button" title="Edit food" :aria-label="`Edit ${item.name}`" @click.stop="emit('edit', item)">
+            <div class="card-actions">
+                <!-- Send the selected item to the parent's edit form. -->
+                <button
+                    type="button"
+                    class="icon-button"
+                    title="Edit food"
+                    aria-label="Edit food"
+                    @click.stop="emit('edit', item)"
+                >
                     ✏️
                 </button>
-                <button type="button" class="icon-button remove-icon-button" title="Remove food" :aria-label="`Remove ${item.name}`" @click.stop="emit('remove', item)">
+
+                <!-- Ask the parent to remove the selected item. -->
+                <button
+                    type="button"
+                    class="icon-button remove-icon"
+                    title="Remove food"
+                    aria-label="Remove food"
+                    @click.stop="emit('remove', item)"
+                >
                     ×
                 </button>
             </div>
         </div>
 
+        <!-- Food information -->
         <h4>{{ item.name }}</h4>
 
         <p class="quantity">
             {{ item.quantity }} {{ item.unit }}
         </p>
 
-        <span class="expiry-badge" :class="expiryClass" :aria-label="`Expiry status: ${expiryStatus}`">
+        <!-- Colour-coded expiry status -->
+        <span
+            class="expiry-badge"
+            :class="expiryClass"
+        >
             {{ expiryStatus }}
         </span>
-        <div class="food-quantity-actions" role="group" :aria-label="`Use ${item.name}`">
-            <button type="button" @click.stop="emit('consume', item)">😊 Consume</button>
-            <button type="button" @click.stop="emit('discard', item)">🗑 Discard</button>
-        </div>
     </article>
 </template>
 
 <style scoped>
+/* Main appearance of an individual food card. */
 .food-card {
-    position: relative;
     min-width: 0;
     padding: 14px;
-    overflow: visible;
+    border: 1px solid #e1e9e3;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 3%);
 
-    background: var(--paper-bright);
-    color: var(--ink);
-
-    border: 3px solid var(--ink);
-    border-radius: 0 16px 16px 16px;
-    box-shadow: var(--shadow-small);
-
+    /* The grab cursor indicates that the card can be dragged. */
     cursor: grab;
 
     transition:
-        transform 0.2s ease,
-        box-shadow 0.2s ease,
-        background 0.25s ease;
+        border-color 0.2s,
+        box-shadow 0.2s,
+        transform 0.2s;
 }
 
 .food-card:hover {
-    transform: translate(-1px, -2px);
-    box-shadow: var(--shadow-paper);
+    border-color: #9bcdb7;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 7%);
+    transform: translateY(-1px);
 }
 
 .food-card:active {
     cursor: grabbing;
 }
 
-.food-is-held { background: #fff6cc; outline: 3px solid #e4aa28; }
-.food-is-held .food-emoji { animation: held-wiggle .28s ease-in-out infinite alternate; }
-@keyframes held-wiggle { from { transform: scale(1.2) rotate(-7deg); } to { transform: scale(1.2) rotate(7deg); } }
-
-/* Card header */
+/* Emoji and buttons share the same row. */
 .card-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 10px;
-}
-
-/* Keep the small edit and remove controls together and visible on touch screens. */
-.card-tools {
-    display: flex;
-    gap: 6px;
+    margin-bottom: 12px;
 }
 
 .food-emoji {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
-    flex-shrink: 0;
-    border: 2px solid var(--ink);
-    border-radius: 12px;
-    background: var(--aqua-soft);
-    font-size: 32px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: #f1f6f1;
+    font-size: 23px;
+}
+
+/* Edit and remove buttons. */
+.card-actions {
+    display: flex;
+    gap: 3px;
 }
 
 .icon-button {
-    opacity: 1;
-    visibility: visible;
-    transition: opacity 0.15s ease, background 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    border: 2px solid var(--ink);
-    border-radius: 9px;
-    background: var(--yellow-sticky);
-    box-shadow: 2px 3px 0 var(--ink);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
     cursor: pointer;
 }
 
-.remove-icon-button {
-    color: #8d3832;
-}
-
-.food-card:hover .icon-button,
-.food-card:focus-within .icon-button,
-.icon-button:focus-visible {
-    opacity: 1;
-    visibility: visible;
-}
-
-@media (hover: none) {
-    .icon-button {
-        opacity: 1;
-        visibility: visible;
-    }
-}
-
 .icon-button:hover {
-    background: var(--yellow);
+    border-color: #e0e8e1;
+    background: #f5f8f5;
 }
 
+.remove-icon {
+    color: #b33d35;
+    font-size: 20px;
+}
+
+/* Food name and quantity. */
 h4 {
-    margin: 0 0 5px;
-    color: var(--ink);
-    font-family: var(--font-display);
-    font-size: 18px;
-    font-weight: 700;
+    margin: 0 0 6px;
     overflow-wrap: anywhere;
+    color: #263b30;
+    font-size: 14px;
+    font-weight: 750;
 }
 
 .quantity {
-    margin: 0 0 10px;
-    color: var(--muted);
-    font-size: 15px;
+    margin: 0 0 12px;
+    color: #78877d;
+    font-size: 12px;
 }
 
+/* Common appearance for expiry labels. */
 .expiry-badge {
     display: inline-block;
     max-width: 100%;
-    padding: 4px 8px;
-    border: 2px solid var(--ink);
-    border-radius: 8px;
-    font-size: 13px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 10px;
     font-weight: 700;
-    line-height: 1.4;
+    line-height: 1.5;
     overflow-wrap: anywhere;
 }
 
+/* Green: no immediate expiry warning. */
 .expiry-normal {
-    background: var(--lime);
-    color: var(--ink);
+    background: #e7f5eb;
+    color: #267446;
 }
 
+/* Amber: expiry is approaching. */
 .expiry-warning {
-    background: var(--yellow-sticky);
-    color: var(--ink);
+    background: #fff1d8;
+    color: #996313;
 }
 
+/* Red: expired or expires today. */
 .expiry-danger {
-    background: var(--coral);
-    color: var(--ink);
+    background: #ffe5e3;
+    color: #b33d35;
 }
-
-.icon-button:focus-visible {
-    outline: 3px dashed var(--aqua);
-    outline-offset: 3px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .food-card {
-        animation: none !important;
-        transition: none !important;
-    }
-}
-.food-quantity-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
-.food-quantity-actions button { padding:8px 12px; border:1px solid #739c90; border-radius:8px; background:#edf8f3; color:#214a3c; font:inherit; font-size:16px; cursor:pointer; }
-.food-quantity-actions button:last-child { background:#fff0eb; border-color:#c59887; }
 </style>
-

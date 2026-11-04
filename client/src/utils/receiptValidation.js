@@ -68,11 +68,8 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
   if (!name) errors.name = 'Enter the item name.'
   else if (name.length > 100) errors.name = 'Name must be 100 characters or fewer.'
 
-  // The quantity is optional when a weight is given (some things are bought by weight).
   const quantity = isBlank(row.quantity) ? NaN : toNumber(row.quantity)
-  if (isBlank(row.quantity) && !isBlank(row.weightKg)) {
-    // weight only: fine
-  } else if (Number.isNaN(quantity)) errors.quantity = 'Enter a quantity (for example 2) or a weight.'
+  if (Number.isNaN(quantity)) errors.quantity = 'Enter a quantity, for example 2.'
   else if (quantity <= 0) errors.quantity = 'Quantity must be more than 0.'
   else if (quantity > 9999) errors.quantity = 'Quantity must be 9999 or less.'
   else if (!fitsDecimals(quantity, 3)) errors.quantity = 'Quantity can have at most 3 decimal places.'
@@ -88,12 +85,11 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
   else if (!ZONE_VALUES.includes(row.storageZone)) errors.storageZone = 'Choose where the item is kept.'
   if (isBlank(row.category)) errors.category = 'Choose a category (or press "Suggest" to fill it in).'
   else if (!CATEGORY_VALUES.includes(row.category)) errors.category = 'Choose a category from the list.'
-  const isFood = row.category !== 'non_food'
-  if (isBlank(row.dietType)) {
-    if (isFood) errors.dietType = 'Choose a diet label.'
-  } else if (!DIET_VALUES.includes(row.dietType)) errors.dietType = 'Choose a diet label from the list.'
+  if (isBlank(row.dietType)) errors.dietType = 'Choose a diet label.'
+  else if (!DIET_VALUES.includes(row.dietType)) errors.dietType = 'Choose a diet label from the list.'
 
-  if (!isBlank(row.weightKg)) {
+  if (isBlank(row.weightKg)) errors.weightKg = 'Enter the weight in kg (an estimate is fine).'
+  else {
     const weight = toNumber(row.weightKg)
     if (Number.isNaN(weight)) errors.weightKg = 'Enter the weight in kg, for example 0.5.'
     else if (weight <= 0) errors.weightKg = 'Weight must be more than 0.'
@@ -102,7 +98,7 @@ export function validateRow(row, { purchasedAt = '', today = new Date() } = {}) 
   }
 
   if (isBlank(row.expiresAt)) {
-    if (isFood) errors.expiresAt = 'Enter a use-by date (an estimate is fine).'
+    errors.expiresAt = 'Enter a use-by date (an estimate is fine).'
   } else {
     const day = parseDay(row.expiresAt)
     const limit = new Date(today.getFullYear() + EXPIRY_YEARS_AHEAD, today.getMonth(), today.getDate())

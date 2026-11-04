@@ -36,6 +36,7 @@ const withRequired = (item) => {
   const dairy = item.category !== 'non_food'
   return {
     category: 'other',
+    weightKg: 1,
     purchasedAt: '2026-10-12',
     ...(dairy ? { dietType: 'vegetarian', expiresAt: '2026-10-19' } : {}),
     ...(ZONE_FOR[item.storage] && !item.storageZone ? { storageZone: ZONE_FOR[item.storage] } : {}),
@@ -81,7 +82,7 @@ test('saves valid items for the logged-in user', async (t) => {
   assert.equal(first.filter.name, 'Milk')
   assert.equal(first.upsert, true)
   assert.deepEqual(first.collation, { locale: 'en', strength: 2 })
-  assert.deepEqual(first.update.$inc, { quantity: 2, purchasePrice: 6.4 })
+  assert.deepEqual(first.update.$inc, { quantity: 2, weightKg: 1, purchasePrice: 6.4 })
   assert.equal(first.update.$setOnInsert.purchasedAt.toISOString(), '2026-10-12T12:00:00.000Z')
   assert.equal(ops[1].updateOne.update.$inc.quantity, 1) // "1" was turned into a number
   // The Smart Fridge details are always filled in, even when the request had none.
@@ -110,7 +111,7 @@ test('the same product on several rows is saved as one with the quantities added
   assert.equal(response.status, 201)
   const ops = bulk.mock.calls[0].arguments[0]
   assert.equal(ops.length, 1)
-  assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 3, purchasePrice: 9 })
+  assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 3, weightKg: 2, purchasePrice: 9 })
 })
 
 test('manual entry: no price needed, and common foods get their standard name', async (t) => {
@@ -126,20 +127,20 @@ test('manual entry: no price needed, and common foods get their standard name', 
   assert.equal(response.status, 201)
   const ops = bulk.mock.calls[0].arguments[0]
   assert.deepEqual(ops.map((o) => o.updateOne.filter.name), ['Milk', 'Grandma special sauce'])
-  assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 1 }) // no price field at all
+  assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 1, weightKg: 1 }) // no price field at all
 })
 
-test('stores the smart details, and an item bought by weight needs no quantity', async (t) => {
+test('stores the smart details and the weight', async (t) => {
   const bulk = mockBulk(t)
   const base = await startApp(t)
   const response = await post(base, {
     items: [
-      { name: 'Chicken Breast', weightKg: 0.5, unit: 'kg', storage: 'fridge', category: 'meat', icon: '🍗', suggestedLocation: 'lower-shelf', storageZone: 'lower-shelf', expiresAt: '2026-11-03' },
+      { name: 'Chicken Breast', quantity: 1, weightKg: 0.5, unit: 'kg', storage: 'fridge', category: 'meat', icon: '🍗', suggestedLocation: 'lower-shelf', storageZone: 'lower-shelf', expiresAt: '2026-11-03' },
     ],
   })
   assert.equal(response.status, 201)
   const { update, filter } = bulk.mock.calls[0].arguments[0][0].updateOne
-  assert.deepEqual(update.$inc, { weightKg: 0.5 }) // no quantity at all
+  assert.deepEqual(update.$inc, { quantity: 1, weightKg: 0.5 })
   assert.equal(update.$setOnInsert.icon, '🍗')
   assert.equal(update.$setOnInsert.suggestedLocation, 'lower-shelf')
   assert.equal(filter.storage, 'fridge')
@@ -159,7 +160,7 @@ test('a place that does not match fridge/freezer/pantry is rejected', async (t) 
   assert.deepEqual((await response.json()).details.map((d) => d.field), ['storageZone'])
 })
 
-test('an item needs a quantity or a weight', async (t) => {
+test('an item needs a quantity', async (t) => {
   const base = await startApp(t)
   const response = await post(base, { items: [{ name: 'Milk', storage: 'fridge' }] })
   assert.equal(response.status, 400)
@@ -184,17 +185,21 @@ test('every required detail must be filled in before anything is saved', async (
   const response = await postRaw(base, { items: [{ name: 'Milk', quantity: 1, storage: 'fridge' }] })
   assert.equal(response.status, 400)
   const fields = (await response.json()).details.map((d) => d.field)
-  assert.deepEqual(fields, ['purchasedAt', 'category', 'storageZone', 'dietType', 'expiresAt'])
+  assert.deepEqual(fields, ['purchasedAt', 'weightKg', 'category', 'storageZone', 'dietType', 'expiresAt'])
   assert.equal(bulk.mock.callCount(), 0)
 })
 
-test('price, unit and a quantity (when there is a weight) stay optional; non-food needs no use-by or diet', async (t) => {
+test('only the price and the unit are optional', async (t) => {
   mockBulk(t)
   const base = await startApp(t)
-  const full = { name: 'Chicken', weightKg: 0.5, storage: 'fridge', storageZone: 'lower-shelf', category: 'meat', dietType: 'other', purchasedAt: '2026-10-12', expiresAt: '2026-10-14' }
-  assert.equal((await postRaw(base, { items: [full] })).status, 201)
-  const collar = { name: 'Pet collar', quantity: 1, storage: 'pantry', storageZone: 'dry-storage', category: 'non_food', purchasedAt: '2026-10-12' }
-  assert.equal((await postRaw(base, { items: [collar] })).status, 201)
+  const full = { name: 'Chicken', quantity: 1, weightKg: 0.5, storage: 'fridge', storageZone: 'lower-shelf', category: 'meat', dietType: 'other', purchasedAt: '2026-10-12', expiresAt: '2026-10-14' }
+  assert.equal((await postRaw(base, { items: [full] })).status, 201) // no price, no unit
+  for (const field of ['name', 'quantity', 'weightKg', 'storageZone', 'category', 'dietType', 'expiresAt', 'purchasedAt']) {
+    const { [field]: _removed, ...incomplete } = full
+    const response = await postRaw(base, { items: [incomplete] })
+    assert.equal(response.status, 400, `${field} should be required`)
+    assert.equal((await response.json()).details[0].field, field)
+  }
 })
 
 test('the owner comes from the login, never from the request', async (t) => {

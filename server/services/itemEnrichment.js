@@ -71,8 +71,8 @@ function build(item, { category, zone, days, pieceKg, diet, source }, today) {
   if (weightKg === null && unit && KG_PER[unit] && quantity) {
     // Bought by weight: the receipt gives the weight itself, so it is not an estimate.
     weightKg = round(quantity * KG_PER[unit], 3)
-    quantity = null
-    outUnit = 'kg'
+    quantity = 1 // one purchase of this item; the weight says how much
+    outUnit = 'pieces'
   } else if (weightKg === null && quantity) {
     const printed = packWeightKg(item.receiptName ?? item.name)
     const count = packCount(item.receiptName ?? item.name)
@@ -126,6 +126,10 @@ const TOOL = {
           type: 'object',
           properties: {
             index: { type: 'integer', description: 'The index of the item in the input list.' },
+            standard_name: {
+              type: 'string',
+              description: 'The plain English name of the food: singular, no brand, origin, size or shop code. Example: "AUST JPN PUMPKIN" -> "Pumpkin", "CHKN BRST 500G" -> "Chicken Breast".',
+            },
             category: { type: 'string', enum: CATEGORY_IDS },
             icon: { type: 'string', enum: ALL_ICONS, description: 'An icon that belongs to the chosen category.' },
             location: { type: 'string', enum: ZONE_IDS },
@@ -143,7 +147,7 @@ const TOOL = {
               description: 'Typical weight in kg of ONE piece/pack as bought. null if unknown.',
             },
           },
-          required: ['index', 'category', 'location', 'shelf_life_days', 'piece_weight_kg', 'diet'],
+          required: ['index', 'standard_name', 'category', 'location', 'shelf_life_days', 'piece_weight_kg', 'diet'],
         },
       },
     },
@@ -160,7 +164,7 @@ Always identify the real food first. Examples: raspberry, blueberry, cherry, lyc
 - Potatoes, onions, garlic, bread, dry goods, canned food, snacks: dry-storage.
 - Sauces, juices: door once chilled; unopened shelf-stable ones: dry-storage.
 - Frozen items: freezer-main. Non-food items: category non_food.
-Choose the icon from the allowed list so it matches the food (for example 🍓 for strawberry-like berries, 🫐 for blueberries, 🍒 for cherries). Use only the allowed values. Be conservative with shelf life: a shorter number is safer. Item names may be abbreviated or misspelled receipt text.`
+Choose the icon from the allowed list so it matches the food (for example 🍓 for strawberry-like berries, 🫐 for blueberries, 🍒 for cherries). Use only the allowed values. Be conservative with shelf life: a shorter number is safer. Item names are receipt text: they can be abbreviated, run together without spaces or misspelled. Work out the real food first. Common receipt abbreviations: AUST = Australian, JPN = Japanese, NZ = New Zealand, ORG = organic, BNLS = boneless, SKNLS = skinless, CHKN = chicken, BRST = breast, FRZ/FRZN = frozen, LG/SM/MED = size, PKT/PK = pack, VEG = vegetable, TOM = tomato, POT = potato, WHL = whole, SLCD = sliced, FLV = flavour, UHT = long-life milk. Origins, brands and sizes are not part of the food's name: "AUST JPN PUMPKIN" is a pumpkin. Give the standard_name as the plain food name.`
 
 async function askAi(unknownItems, { fetchImpl, apiKey, model }) {
   const response = await fetchImpl('https://api.anthropic.com/v1/messages', {
@@ -200,6 +204,17 @@ export function checkAiDiet(category, diet) {
   return DIETS.includes(diet) ? diet : (CATEGORY_DIET[category] ?? 'unknown')
 }
 
+/** A clean food name from the AI, or null when it is empty, too long or has odd characters. */
+export function cleanStandardName(value) {
+  if (typeof value !== 'string') return null
+  const name = value.replace(/\s+/g, ' ').trim()
+  if (name.length < 2 || name.length > 40 || !/^[A-Za-z][A-Za-z '&-]*$/.test(name)) return null
+  return name
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 /** Check one AI answer against the fixed rules. Anything outside the rules is replaced or dropped. */
 export function checkAiAnswer(answer) {
   const category = CATEGORY_IDS.includes(answer?.category) ? answer.category : 'other'
@@ -214,7 +229,15 @@ export function checkAiAnswer(answer) {
   const days = category === 'non_food' || !Number.isFinite(raw) || raw < 1 ? guide : Math.min(Math.round(raw), cap)
   const kg = Number(answer?.piece_weight_kg)
   const pieceKg = Number.isFinite(kg) && kg > 0 && kg <= 25 ? round(kg, 3) : null
-  return { category, zone, days: category === 'non_food' ? null : days, pieceKg, icon: answer?.icon, diet: checkAiDiet(category, answer?.diet) }
+  return {
+    category,
+    zone,
+    days: category === 'non_food' ? null : days,
+    pieceKg,
+    icon: answer?.icon,
+    diet: checkAiDiet(category, answer?.diet),
+    name: cleanStandardName(answer?.standard_name),
+  }
 }
 
 /**
@@ -265,13 +288,49 @@ export async function enrichItems(items, options = {}) {
       return build(item, { category: r.category, zone: r.zone, days: r.days, pieceKg: r.pieceKg, diet: r.diet, source: 'rules' }, today)
     }
     if (ai) {
+      // The AI told us what the food really is. If our rules know that food, they decide everything
+      // (the rules are more reliable than the AI); otherwise the checked AI answer is used.
+      const known = ai.name ? classifyItem(ai.name) : null
+      if (known?.category) {
+        const named = { ...item, name: known.canonicalName ?? ai.name, icon: item.icon }
+        return {
+          ...build(named, { category: known.category, zone: known.zone, days: known.days, pieceKg: known.pieceKg ?? ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? known.diet, source: 'ai' }, today),
+          name: known.canonicalName ?? ai.name,
+        }
+      }
       const frozen = r.frozen
       const category = frozen ? 'frozen' : ai.category
       const zone = frozen ? 'freezer-main' : ai.zone
       const days = frozen ? shelfDays('frozen', 'freezer') : ai.days
-      return build({ ...item, icon: item.icon ?? ai.icon }, { category, zone, days, pieceKg: ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? ai.diet, source: 'ai' }, today)
+      return {
+        ...build({ ...item, icon: item.icon ?? ai.icon }, { category, zone, days, pieceKg: ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? ai.diet, source: 'ai' }, today),
+        ...(ai.name ? { name: ai.name } : {}),
+      }
     }
     return build(item, { category: 'other', zone: r.zone, days: null, pieceKg: null, diet: r.diet, source: 'rules' }, today)
   })
   return { items: result, aiUsed, aiStatus }
+}
+
+/**
+ * After details are added, two lines can turn out to be the same food (for example two different
+ * run-together spellings that the AI both named "Pumpkin"). Combine them: quantities, prices and
+ * weights are added up.
+ */
+export function mergeDuplicateItems(items) {
+  const groups = new Map()
+  for (const item of items) {
+    const key = `${String(item.name).toLowerCase()}|${item.unit ?? ''}|${item.storage}`
+    const group = groups.get(key)
+    if (!group) {
+      groups.set(key, { ...item, warnings: [...(item.warnings ?? [])] })
+      continue
+    }
+    group.quantity = round((group.quantity ?? 0) + (item.quantity ?? 0), 3)
+    if (item.price !== null && item.price !== undefined) group.price = round((group.price ?? 0) + item.price, 2)
+    if (item.weightKg) group.weightKg = round((group.weightKg ?? 0) + item.weightKg, 3)
+    for (const warning of item.warnings ?? []) if (!group.warnings.includes(warning)) group.warnings.push(warning)
+    group.rawLine = `${group.rawLine ?? ''} + ${item.rawLine ?? ''}`
+  }
+  return [...groups.values()]
 }

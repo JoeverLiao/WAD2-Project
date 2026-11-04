@@ -143,6 +143,13 @@ const NON_ITEM_LINE = new RegExp(
     '\\b(member|membership|points?|rewards?|loyalty|voucher|you\\s+saved?|savings?|netto|brutto|items?\\s+(sold|count)|no\\.?\\s+of\\s+items?|qty\\s+total)\\b',
     '\\b(gst\\s*(reg|no)|uen|co\\.?\\s*reg|reg(istration)?\\s*no|vat\\s*no)\\b',
     '\\b(returns?|exchange|policy|terms)\\b',
+    // Price-promotion text: "NORMAL PRICE 3.50", "2 FOR $5", "WAS $4 NOW $3", "BUY 1 GET 1", "MULTIBUY"
+    '(normal|regular|reg|orig(inal)?|usual|club|member|special|unit|promo(tion)?|sale|list)\\s*price',
+    '\\b\\d+\\s*(for|fr)\\s*[$S]?\\s*\\d',
+    '^\\s*(\\d+\\s*)?(for)\\s+[$S]?\\d',
+    '\\b(buy|get)\\s+\\d+',
+    '\\b(was|now)\\s*[$S]?\\s*\\d',
+    'multi\\s*-?\\s*buy|multisave|half\\s*price|\\bspecials?\\b|\\bbonus\\b|\\bfree\\b|\\bdeal\\b|\\bclearance\\b',
   ].join('|'),
   'i',
 )
@@ -197,6 +204,16 @@ export function tidyName(raw) {
       .join(' ')
   }
   return name
+}
+
+// A "name" made only of price-promotion words ("Normal", "For", "Each") is never a product.
+const PROMO_WORDS = new Set([
+  'normal', 'regular', 'reg', 'original', 'orig', 'usual', 'price', 'prices', 'for', 'each', 'ea', 'was', 'now', 'save',
+  'special', 'specials', 'offer', 'deal', 'sale', 'club', 'member', 'bonus', 'free', 'unit', 'per', 'off', 'only', 'and', 'the', 'or', 'at',
+])
+function isPromoName(name) {
+  const words = name.toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  return words.length > 0 && words.every((w) => PROMO_WORDS.has(w))
 }
 
 function hasEnoughLetters(name) {
@@ -339,6 +356,7 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
   let subtotal = null
   let discounts = 0
   const items = []
+  const skipped = []
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -405,6 +423,7 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
     const hadCode = /\b\d{5,}/.test(afterQty)
     const cleaned = tidyName(afterQty)
     // Digits and symbols outnumbering letters ("T=FLTAX7.000000n$20.98") is never a product.
+    if (isPromoName(cleaned)) continue
     if (/[=$]/.test(cleaned) || (cleaned.match(/\d/g) || []).length > (cleaned.match(/[A-Za-z]/g) || []).length) continue
     // Two letters ("GG", "B&B") are accepted only with a price and a product code or "&".
     if (!hasEnoughLetters(cleaned) && !(price !== null && (hadCode || cleaned.includes('&')) && (cleaned.match(/[A-Za-z]/g) || []).length >= 2)) continue
@@ -420,6 +439,12 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
     const warnings = []
 
     const info = classifyItem(cleaned)
+    // Things that are not food (toilet paper, bags, cleaning products...) are left out of the list
+    // completely; their names are only kept so the form can say what was left out.
+    if (info.likelyFood === false) {
+      skipped.push({ name: cleaned, price })
+      continue
+    }
     // The same product always gets the same name, whatever the brand, size or shop.
     const name = info.canonicalName ?? cleaned
     items.push({
@@ -444,8 +469,7 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
   const list = groupDuplicates(items)
   for (const item of list) {
     if (item.price === null) item.warnings.unshift('Price could not be read')
-    if (item.likelyFood === false) item.warnings.push('Does not look like food: untick to skip it')
-    else if (item.likelyFood === null) item.warnings.push('Please check this item and where it is stored')
+    if (item.likelyFood === null) item.warnings.push('Please check this item and where it is stored')
     if (item.quantity > 99) item.warnings.push('Quantity looks very high')
     delete item.lineIndex
   }
@@ -454,11 +478,15 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
   const itemsSum = round2(list.reduce((sum, item) => sum + (item.price ?? 0), 0))
   // The items (less any coupons) should add up to the subtotal, or to the total when there is no tax line.
   const netSum = round2(itemsSum + discounts)
+  // Non-food items are not listed, but they are still on the receipt, so they count towards the totals.
+  const skippedSum = round2(skipped.reduce((sum, item) => sum + (item.price ?? 0), 0))
   const targets = [subtotal, total].filter((n) => n !== null)
   const totalMatches =
     targets.length === 0 || list.length === 0
       ? null
-      : targets.some((t) => Math.abs(netSum - t) <= 0.05 || Math.abs(itemsSum - t) <= 0.05)
+      : targets.some((t) =>
+          [netSum, itemsSum, netSum + skippedSum, itemsSum + skippedSum].some((sum) => Math.abs(sum - t) <= 0.05),
+        )
 
-  return { merchant, purchasedAt, dateAmbiguous, total, subtotal, itemsSum, totalMatches, items: list }
+  return { merchant, purchasedAt, dateAmbiguous, total, subtotal, itemsSum, totalMatches, items: list, skipped: skipped.map((item) => item.name) }
 }

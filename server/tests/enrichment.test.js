@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { checkAiAnswer, enrichItems, enrichWithRules } from '../services/itemEnrichment.js'
+import { checkAiAnswer, cleanStandardName, enrichItems, enrichWithRules, mergeDuplicateItems } from '../services/itemEnrichment.js'
 import { ALL_ICONS, CATEGORIES, CATEGORY_IDS, DIET_LABELS, DIETS, ZONE_IDS } from '../services/storageGuide.js'
 
 const today = new Date('2026-11-01T10:00:00+08:00')
@@ -71,12 +71,13 @@ test('use-by estimate counts from the purchase date; weight comes from the pack 
   assert.equal(milk.weightEstimated, true)
 })
 
-test('items bought by weight keep the weight and have no piece count', () => {
+test('items bought by weight keep the weight (and count as one purchase)', () => {
   const [orange, lb] = enrichWithRules(
     [{ name: 'Orange', quantity: 0.358, unit: 'kg' }, { name: 'Apple', quantity: 2, unit: 'lb' }],
     { today },
   )
-  assert.equal(orange.quantity, null)
+  assert.equal(orange.quantity, 1) // one purchase; the weight says how much
+  assert.equal(orange.unit, 'pieces')
   assert.equal(orange.weightKg, 0.358)
   assert.equal(orange.weightEstimated, false)
   assert.equal(lb.weightKg, 0.907)
@@ -220,4 +221,41 @@ test('the AI label is used for unknown foods but the name can overrule it', asyn
   const { items } = await enrichItems([{ name: 'Gochujang', quantity: 1 }, { name: 'Anchovy Gochujang', quantity: 1 }], { today, fetchImpl, apiKey: 'k' })
   assert.equal(items[0].dietType, 'vegan')
   assert.equal(items[1].dietType, 'other')
+})
+
+test('messy receipt names are recognised: run-together, abbreviated and misspelt', () => {
+  const out = enrichWithRules(['AUSTJPNPUMPKIN', 'AUST JPN PUMPKIN', 'RASPBERY 125G', 'KENT PUMPKIN'].map((name) => ({ name, quantity: 1 })), { today })
+  assert.deepEqual(out.map((i) => [i.category, i.dietType]), [
+    ['root_vegetables', 'vegan'], ['root_vegetables', 'vegan'], ['fruit', 'vegan'], ['root_vegetables', 'vegan'],
+  ])
+})
+
+test('the AI names the real food, and then our rules decide the details', async () => {
+  // "Zxq Brxlnut" is nothing we know, so the AI is asked; it says the food is a pumpkin.
+  const fetchImpl = aiAnswers([{ index: 0, standard_name: 'pumpkin', category: 'other', location: 'door', shelf_life_days: 2, piece_weight_kg: 9, diet: 'unknown' }])
+  const { items } = await enrichItems([{ name: 'Zxq Brxlnut', quantity: 1 }], { today, fetchImpl, apiKey: 'k' })
+  assert.equal(items[0].name, 'Pumpkin')
+  assert.equal(items[0].category, 'root_vegetables') // from our rules, not from the AI's "other"
+  assert.equal(items[0].suggestedLocation, 'dry-storage')
+  assert.equal(items[0].dietType, 'vegan')
+  assert.equal(items[0].detailsSource, 'ai')
+})
+
+test('a clean food name from the AI is kept, odd ones are ignored', async () => {
+  assert.equal(cleanStandardName('  dragon   fruit '), 'Dragon Fruit')
+  assert.equal(cleanStandardName('<script>'), null)
+  assert.equal(cleanStandardName('x'.repeat(50)), null)
+  assert.equal(cleanStandardName(5), null)
+  const fetchImpl = aiAnswers([{ index: 0, standard_name: 'Gochujang', category: 'condiments', location: 'dry-storage', shelf_life_days: 100, piece_weight_kg: 0.5, diet: 'vegan' }])
+  const { items } = await enrichItems([{ name: 'GOCHUJNG 500G', quantity: 1 }], { today, fetchImpl, apiKey: 'k' })
+  assert.equal(items[0].name, 'Gochujang')
+})
+
+test('two lines that turn out to be the same food are combined', () => {
+  const merged = mergeDuplicateItems([
+    { name: 'Pumpkin', unit: 'pieces', storage: 'pantry', quantity: 1, price: 2.5, weightKg: 1.5, warnings: ['a'], rawLine: 'x' },
+    { name: 'pumpkin', unit: 'pieces', storage: 'pantry', quantity: 2, price: 5, weightKg: 3, warnings: ['a', 'b'], rawLine: 'y' },
+  ])
+  assert.equal(merged.length, 1)
+  assert.deepEqual([merged[0].quantity, merged[0].price, merged[0].weightKg, merged[0].warnings], [3, 7.5, 4.5, ['a', 'b']])
 })

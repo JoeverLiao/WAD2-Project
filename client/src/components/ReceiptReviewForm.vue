@@ -5,8 +5,6 @@ import { computed, nextTick, reactive, ref } from 'vue'
 import { confirmReceiptItems, suggestItemDetails } from '../services/scanningApi.js'
 import DietBadge from './common/DietBadge.vue'
 import { CATEGORIES, DIETS, ZONES, categoryByValue, zoneByValue } from '../utils/inventoryOptions.js'
-import { FOOD_ICONS } from '../utils/foodIcons.js'
-import { foodIconForEmoji } from '../utils/foodIconMap.js'
 import {
   MAX_ITEMS,
   UNIT_SUGGESTIONS,
@@ -45,6 +43,7 @@ function newRow(values = {}) {
     purchasePrice: '',
     warnings: [],
     receiptName: '',
+    openField: '', // which detail is open for editing
     ...values,
   }
 }
@@ -101,6 +100,10 @@ const rowErrors = computed(() =>
     includedRows.value.map((row) => [row.key, validateRow(row, { purchasedAt: purchasedAt.value })]),
   ),
 )
+// Errors for EVERY row (also unticked ones), so the tiles can show green or red straight away.
+const allRowErrors = computed(() =>
+  Object.fromEntries(rows.value.map((row) => [row.key, validateRow(row, { purchasedAt: purchasedAt.value })])),
+)
 const purchaseDateError = computed(() => validatePurchaseDate(purchasedAt.value, new Date(), { required: true }))
 const tooMany = computed(() => includedRows.value.length > MAX_ITEMS)
 const canSave = computed(() => includedRows.value.length > 0 && !saving.value && !tooMany.value)
@@ -118,6 +121,63 @@ function touch(row, field) {
 
 function edited(row, field) {
   if (serverErrors[row.key]) delete serverErrors[row.key][field]
+}
+
+// ----- the tiles -----
+const REQUIRED_FIELDS = new Set(['name', 'quantity', 'storageZone', 'expiresAt', 'category', 'dietType', 'weightKg'])
+// field -> id prefix of its input (used to focus it)
+const INPUT_PREFIX = {
+  name: 'name', quantity: 'qty', unit: 'unit', purchasePrice: 'price', storageZone: 'zone',
+  expiresAt: 'expires', category: 'category', icon: 'icon', dietType: 'diet', weightKg: 'weight',
+}
+const FIELD_ORDER = ['name', 'quantity', 'storageZone', 'expiresAt', 'category', 'dietType', 'weightKg', 'unit', 'purchasePrice', 'icon']
+
+function formatDay(iso) {
+  const m = String(iso ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : ''
+}
+
+function tileValue(row, field) {
+  switch (field) {
+    case 'name': return row.name.trim()
+    case 'quantity': return String(row.quantity ?? '').trim()
+    case 'unit': return String(row.unit ?? '').trim()
+    case 'purchasePrice': return String(row.purchasePrice ?? '').trim() ? `$${String(row.purchasePrice).trim()}` : ''
+    case 'storageZone': { const z = zoneByValue(row.storageZone); return z ? `${z.icon} ${z.label}` : '' }
+    case 'expiresAt': return formatDay(row.expiresAt)
+    case 'category': return categoryByValue(row.category)?.label ?? ''
+    case 'icon': return row.icon
+    case 'dietType': { const d = DIETS.find((x) => x.value === row.dietType); return d ? `${d.icon} ${d.label}` : '' }
+    case 'weightKg': return String(row.weightKg ?? '').trim() ? `${String(row.weightKg).trim()} kg` : ''
+    default: return ''
+  }
+}
+
+const TILE_LABELS = [
+  ['name', 'Name'], ['quantity', 'Quantity'], ['unit', 'Unit'], ['purchasePrice', 'Price'], ['storageZone', 'Keep in'],
+  ['expiresAt', 'Use by'], ['category', 'Category'], ['icon', 'Icon'], ['dietType', 'Diet label'], ['weightKg', 'Weight'],
+]
+
+function tilesFor(row) {
+  const errors = allRowErrors.value[row.key] ?? {}
+  return TILE_LABELS.map(([field, label]) => {
+    const required = REQUIRED_FIELDS.has(field)
+    const value = tileValue(row, field)
+    let state = 'tile-optional'
+    if (required) state = errors[field] ? 'tile-missing' : 'tile-ok'
+    else if (errors[field]) state = 'tile-missing'
+    const mark = state === 'tile-ok' ? '✓' : state === 'tile-missing' ? '!' : ''
+    const statusWords =
+      state === 'tile-ok' ? 'filled in' : state === 'tile-missing' ? (required ? 'required, still needed' : 'needs fixing') : 'optional'
+    return { field, label, required, state, mark, statusWords, value: value || (required ? 'Required' : 'Optional') }
+  })
+}
+
+function toggleField(row, field) {
+  row.openField = row.openField === field ? '' : field
+  if (row.openField) {
+    nextTick(() => document.getElementById(`${INPUT_PREFIX[field]}-${row.key}`)?.focus())
+  }
 }
 
 function onZoneChange(row) {
@@ -138,26 +198,10 @@ const dietCounts = computed(() =>
   DIETS.map((diet) => ({ ...diet, count: includedRows.value.filter((row) => row.dietType === diet.value).length })),
 )
 
-// The stored value is still the emoji, but the picker names the library icon it draws as.
-// Several emojis share one library icon (🍎 and 🍏 are both the apple), so each icon is listed
-// once, keeping whichever of them the row already has.
-const libraryIcon = (emoji) => foodIconForEmoji(emoji) ?? emoji
-const iconLabel = (emoji) => FOOD_ICONS[foodIconForEmoji(emoji)]?.label ?? emoji
-function uniqueIcons(emojis, current) {
-  const byIcon = new Map()
-  for (const emoji of emojis) {
-    if (!byIcon.has(libraryIcon(emoji)) || emoji === current) byIcon.set(libraryIcon(emoji), emoji)
-  }
-  return [...byIcon.values()]
-}
-
-const iconsFor = (row) => uniqueIcons(categoryByValue(row.category)?.icons ?? [], row.icon)
+const iconsFor = (row) => categoryByValue(row.category)?.icons ?? []
 // Every icon is available on every row; the ones for the chosen category are listed first.
 const ALL_ICONS = [...new Set(CATEGORIES.flatMap((c) => c.icons))]
-const otherIcons = (row) => {
-  const listed = new Set(iconsFor(row).map(libraryIcon))
-  return uniqueIcons(ALL_ICONS.filter((icon) => !listed.has(libraryIcon(icon))), row.icon)
-}
+const otherIcons = (row) => ALL_ICONS.filter((icon) => !iconsFor(row).includes(icon))
 const isOffSuggestion = (row) =>
   Boolean(row.suggestedLocation) && row.allowedLocations.length > 0 && !row.allowedLocations.includes(row.storageZone)
 
@@ -226,8 +270,23 @@ function removeRow(key) {
 }
 
 async function focusFirstProblem() {
-  await nextTick()
-  document.querySelector('#review-form .is-invalid')?.focus()
+  if (purchaseDateError.value) {
+    await nextTick()
+    document.getElementById('purchased-at')?.focus()
+    return
+  }
+  // Open the first missing detail of the first item that has a problem, and put the cursor in it.
+  for (const row of includedRows.value) {
+    const errors = { ...(allRowErrors.value[row.key] ?? {}) }
+    for (const [field, message] of Object.entries(serverErrors[row.key] ?? {})) if (message) errors[field] = message
+    const field = FIELD_ORDER.find((f) => errors[f])
+    if (field) {
+      row.openField = field
+      await nextTick()
+      document.getElementById(`${INPUT_PREFIX[field]}-${row.key}`)?.focus()
+      return
+    }
+  }
 }
 
 async function save() {
@@ -303,14 +362,18 @@ const totalWarning = computed(() => {
         </p>
 
         <p class="small mb-2" data-testid="required-legend">
-          <span class="required-mark" aria-hidden="true">*</span> marks a required field. Only the price and the unit
-          are optional, and you need either a quantity or a weight.
+          <span class="required-mark" aria-hidden="true">*</span> marks a required detail. Tiles turn <strong>green</strong>
+          when a required detail is filled in and <strong>red</strong> while it is missing. Only the unit, price and icon
+          are optional. Press a tile to edit it.
         </p>
         <div v-if="noItemsFound" class="alert alert-info" role="status" data-testid="no-items">
           We could not find any items on this receipt. You can add them yourself below.
         </div>
         <div v-if="parsed?.merchant" class="small text-body-secondary mb-2">
           Store: <strong>{{ parsed.merchant }}</strong>
+        </div>
+        <div v-if="!manual && parsed?.skipped?.length" class="alert alert-secondary py-2 small" role="status" data-testid="skipped-note">
+          Left out because they are not food: {{ parsed.skipped.join(', ') }}.
         </div>
         <div v-if="!manual && aiNotice(parsed?.aiStatus)" class="alert alert-warning py-2 small" role="alert" data-testid="ai-notice">
           {{ aiNotice(parsed.aiStatus) }}
@@ -400,8 +463,30 @@ const totalWarning = computed(() => {
           </ul>
 
           <fieldset :disabled="!row.include" class="border-0 p-0 m-0">
+            <!-- One tile per detail. Green = required and filled, red = required and missing, plain = optional.
+                 Press a tile to open its editor below. -->
+            <div class="field-tiles mb-2" role="group" :aria-label="`Details of item ${index + 1}`">
+              <button
+                v-for="tile in tilesFor(row)"
+                :key="tile.field"
+                type="button"
+                class="field-tile"
+                :class="[tile.state, { 'is-open': row.openField === tile.field }]"
+                :aria-expanded="row.openField === tile.field"
+                :aria-controls="`editor-${tile.field}-${row.key}`"
+                :data-testid="`tile-${tile.field}`"
+                @click="toggleField(row, tile.field)"
+              >
+                <span class="tile-label">
+                  {{ tile.label }}<span v-if="tile.required" class="required-mark" aria-hidden="true"> *</span>
+                </span>
+                <span class="tile-value">{{ tile.value }}</span>
+                <span class="tile-status" aria-hidden="true">{{ tile.mark }}</span>
+                <span class="visually-hidden">{{ tile.statusWords }}</span>
+              </button>
+            </div>
             <div class="row g-2">
-              <div class="col-12 col-md-5">
+              <div v-show="row.openField === 'name'" :id="`editor-name-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`name-${row.key}`">Name <span class="required-mark" aria-hidden="true">*</span></label>
                 <input
                   :id="`name-${row.key}`"
@@ -417,7 +502,7 @@ const totalWarning = computed(() => {
                 />
                 <div class="invalid-feedback">{{ errorFor(row, 'name') }}</div>
               </div>
-              <div class="col-4 col-md-2">
+              <div v-show="row.openField === 'quantity'" :id="`editor-quantity-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`qty-${row.key}`">Quantity (optional)</label>
                 <input
                   :id="`qty-${row.key}`"
@@ -432,7 +517,7 @@ const totalWarning = computed(() => {
                 />
                 <div class="invalid-feedback">{{ errorFor(row, 'quantity') }}</div>
               </div>
-              <div class="col-4 col-md-3">
+              <div v-show="row.openField === 'unit'" :id="`editor-unit-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`unit-${row.key}`">Unit</label>
                 <input
                   :id="`unit-${row.key}`"
@@ -448,7 +533,7 @@ const totalWarning = computed(() => {
                 />
                 <div class="invalid-feedback">{{ errorFor(row, 'unit') }}</div>
               </div>
-              <div class="col-4 col-md-2">
+              <div v-show="row.openField === 'purchasePrice'" :id="`editor-purchasePrice-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`price-${row.key}`">Price (optional)</label>
                 <input
                   :id="`price-${row.key}`"
@@ -463,7 +548,7 @@ const totalWarning = computed(() => {
                 />
                 <div class="invalid-feedback">{{ errorFor(row, 'purchasePrice') }}</div>
               </div>
-              <div class="col-6 col-md-4">
+              <div v-show="row.openField === 'storageZone'" :id="`editor-storageZone-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`zone-${row.key}`">Keep in <span class="required-mark" aria-hidden="true">*</span></label>
                 <select
                   :id="`zone-${row.key}`"
@@ -479,7 +564,7 @@ const totalWarning = computed(() => {
                 </select>
                 <div class="invalid-feedback">{{ errorFor(row, 'storageZone') }}</div>
               </div>
-              <div class="col-6 col-md-4">
+              <div v-show="row.openField === 'expiresAt'" :id="`editor-expiresAt-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`expires-${row.key}`">Use by (estimate, editable) <span class="required-mark" aria-hidden="true">*</span></label>
                 <input
                   :id="`expires-${row.key}`"
@@ -493,7 +578,7 @@ const totalWarning = computed(() => {
                 />
                 <div class="invalid-feedback">{{ errorFor(row, 'expiresAt') }}</div>
               </div>
-              <div class="col-6 col-md-4">
+              <div v-show="row.openField === 'category'" :id="`editor-category-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`category-${row.key}`">Category <span class="required-mark" aria-hidden="true">*</span></label>
                 <select
                   :id="`category-${row.key}`"
@@ -510,7 +595,7 @@ const totalWarning = computed(() => {
                 </select>
                 <div class="invalid-feedback">{{ errorFor(row, 'category') }}</div>
               </div>
-              <div class="col-6 col-md-2">
+              <div v-show="row.openField === 'icon'" :id="`editor-icon-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`icon-${row.key}`">Icon</label>
                 <select
                   :id="`icon-${row.key}`"
@@ -520,14 +605,14 @@ const totalWarning = computed(() => {
                 >
                   <option v-if="!row.icon" value="">–</option>
                   <optgroup v-if="iconsFor(row).length" :label="categoryByValue(row.category).label">
-                    <option v-for="icon in iconsFor(row)" :key="icon" :value="icon">{{ iconLabel(icon) }}</option>
+                    <option v-for="icon in iconsFor(row)" :key="icon" :value="icon">{{ icon }}</option>
                   </optgroup>
                   <optgroup label="All icons">
-                    <option v-for="icon in otherIcons(row)" :key="icon" :value="icon">{{ iconLabel(icon) }}</option>
+                    <option v-for="icon in otherIcons(row)" :key="icon" :value="icon">{{ icon }}</option>
                   </optgroup>
                 </select>
               </div>
-              <div class="col-6 col-md-3">
+              <div v-show="row.openField === 'dietType'" :id="`editor-dietType-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`diet-${row.key}`">Diet label <span class="required-mark" aria-hidden="true">*</span></label>
                 <select
                   :id="`diet-${row.key}`"
@@ -541,7 +626,7 @@ const totalWarning = computed(() => {
                 </select>
                 <div class="invalid-feedback">{{ errorFor(row, 'dietType') }}</div>
               </div>
-              <div class="col-6 col-md-3">
+              <div v-show="row.openField === 'weightKg'" :id="`editor-weightKg-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`weight-${row.key}`">Weight (kg)</label>
                 <input
                   :id="`weight-${row.key}`"
@@ -636,5 +721,68 @@ const totalWarning = computed(() => {
 .diet-edge-unknown {
   border-left-color: #6b7280 !important;
   border-left-style: dashed !important;
+}
+
+/* ----- the detail tiles: one row per item, each tile opens its editor when pressed ----- */
+.field-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.field-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 7.5rem;
+  max-width: 14rem;
+  padding: 0.45rem 1.6rem 0.45rem 0.7rem;
+  border: 2px solid #cfdcd4;
+  border-radius: 10px;
+  background: #fff;
+  color: #24352f;
+  text-align: left;
+  cursor: pointer;
+}
+.field-tile:hover {
+  filter: brightness(0.97);
+}
+.field-tile:focus-visible,
+.field-tile.is-open {
+  outline: 3px solid #105c4d;
+  outline-offset: 2px;
+}
+.tile-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.tile-value {
+  overflow: hidden;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-status {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.5rem;
+  font-weight: 800;
+}
+/* required and filled: pastel green (text contrast about 8:1) */
+.tile-ok {
+  background: #d9f2e3;
+  border-color: #2f8f5b;
+  color: #14532d;
+}
+/* required and missing: pastel red (text contrast about 9:1) */
+.tile-missing {
+  background: #fde4e4;
+  border-color: #d64545;
+  color: #7a1d1d;
+}
+/* optional: plain */
+.tile-optional {
+  background: #fff;
 }
 </style>

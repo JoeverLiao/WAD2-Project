@@ -49,6 +49,7 @@ const FOODS = [
   ['Eggs', 'egg,eggs', 'eggs', { days: 28, kg: 0.06 }],
 
   // Meat and fish (raw)
+  ['Chickpeas', 'chickpeas,chickpea,garbanzo', 'pantry_staples', { days: 365, kg: 0.4 }],
   ['Chicken Breast', 'chicken breast', 'meat', { days: 2, kg: 0.5 }],
   ['Chicken Thigh', 'chicken thigh', 'meat', { days: 2, kg: 0.5 }],
   ['Chicken Wings', 'chicken wing,chicken wings,wings', 'meat', { days: 2, kg: 0.5 }],
@@ -222,10 +223,15 @@ const NON_FOOD_WORDS = [
   'bulb', 'candle', 'lighter', 'razor', 'lotion', 'cleaner', 'bleach', 'sponge', 'foil', 'cling', 'finish',
   'dog food', 'cat food', 'cat litter', 'leash', 'toy', 'toys', 'vitamin', 'vitamins', 'plaster', 'mask',
   'cigarette', 'cigarettes', 'newspaper', 'magazine', 'gift card', 'topup', 'top-up', 'tylenol', 'panadol',
+  'toilet roll', 'toilet paper', 'kitchen roll', 'bin liner', 'bin liners', 'sanitary', 'tampon', 'tampons', 'cotton buds',
+  'body wash', 'hand wash', 'handwash', 'hand soap', 'dish soap', 'laundry', 'fabric softener', 'air freshener', 'insecticide',
+  'mosquito', 'glue', 'stationery', 'notebook', 'umbrella', 'socks', 'charger', 'cable', 'sticker', 'greeting card',
+  'plastic wrap', 'baking paper', 'aluminium foil', 'cat treats', 'dog treats', 'pet food', 'pet treats', 'bag fee', 'bag charge',
 ]
 const NON_FOOD_STEMS = [
   'collar', 'shampoo', 'conditioner', 'toothpaste', 'toothbrush', 'detergent', 'dishwash', 'tissue', 'napkin',
-  'battery', 'deodorant', 'sunscreen', 'cigarette', 'ziploc', 'paracetamol', 'ibuprofen', 'quantum',
+  'battery', 'deodorant', 'sunscreen', 'cigarette', 'ziploc', 'paracetamol', 'ibuprofen', 'quantum', 'toiletpaper', 'toiletroll',
+  'tissues', 'papertowel', 'kitchenroll', 'handwash', 'bodywash', 'dishliquid', 'laundry', 'softener', 'nappies', 'nappy',
 ]
 
 // Foods whose usual diet differs from their category's default.
@@ -262,7 +268,46 @@ const compiledFoods = FOODS.map(([canonicalName, aliases, category, overrides = 
   category,
   overrides,
   rx: wordsRx(aliases.split(',')),
+  // Single long words can also be found INSIDE a run-together name ("AUSTJPNPUMPKIN" contains "pumpkin"),
+  // and spelled with one letter wrong by OCR ("RASPBERY").
+  longWords: aliases.split(',').filter((a) => /^[a-z]{6,}$/.test(a)),
 }))
+
+// Edit distance of at most one (one letter changed, added or removed).
+function withinOneEdit(a, b) {
+  if (a === b) return true
+  if (Math.abs(a.length - b.length) > 1) return false
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1)
+  const [short, long] = a.length < b.length ? [a, b] : [b, a]
+  return short.slice(i) === long.slice(i + 1)
+}
+
+/** The food list entry for a name: exact words first, then words hidden inside it, then misspellings. */
+function findFood(text) {
+  const exact = compiledFoods.find((food) => food.rx.test(text))
+  if (exact) return exact
+  const letters = text.replace(/[^a-z]/g, '')
+  // Run-together name: take the longest known word that appears inside it.
+  let best = null
+  let bestLength = 0
+  for (const food of compiledFoods) {
+    for (const word of food.longWords) {
+      if (word.length > bestLength && letters.includes(word)) {
+        best = food
+        bestLength = word.length
+      }
+    }
+  }
+  if (best) return best
+  // One misspelt letter in a word of 6+ letters.
+  const tokens = text.split(/[^a-z]+/).filter((t) => t.length >= 6)
+  for (const food of compiledFoods) {
+    if (tokens.some((token) => food.longWords.some((word) => withinOneEdit(token, word)))) return food
+  }
+  return null
+}
 const nonFoodWordsRx = wordsRx(NON_FOOD_WORDS)
 const nonFoodStemsRx = new RegExp(NON_FOOD_STEMS.map(escapeRegex).join('|'), 'i')
 
@@ -283,8 +328,8 @@ export function classifyItem(name) {
     return { likelyFood: false, storage: 'pantry', canonicalName: null, category: 'non_food', zone: 'dry-storage', days: null, pieceKg: null, frozen: false, diet: null }
   }
   const frozen = /(?:^|[^a-z])frozen(?:[^a-z]|$)/.test(text)
-  for (const food of compiledFoods) {
-    if (!food.rx.test(text)) continue
+  const food = findFood(text)
+  if (food) {
     const info = CATEGORIES[food.category]
     // Frozen goods go to the freezer whatever the food, with the freezer storage time.
     const zone = frozen ? 'freezer-main' : (food.overrides.zone ?? info.zone)

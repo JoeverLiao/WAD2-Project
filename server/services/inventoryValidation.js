@@ -54,7 +54,7 @@ function addDaysIso(today, days) {
 /**
  * @param {unknown} input the `items` array from the request body
  * @param {{ today?: Date, requireComplete?: boolean }} [options] requireComplete: the purchase date, place,
- *   category, diet label and use-by date must all be given (the last two not for non-food)
+ *   category, diet label, use-by date, quantity and weight must all be given (only price and unit are optional)
  * @returns {{
  *   items: Array<{ name: string, quantity?: number, weightKg?: number, unit?: string, storage: string,
  *                  storageZone?: string, category?: string, icon?: string, suggestedLocation?: string,
@@ -91,11 +91,9 @@ export function validateInventoryItems(input, { today = new Date(), requireCompl
     else if (name.length > LIMITS.nameMax) fail('name', `Name must be ${LIMITS.nameMax} characters or fewer.`)
     else clean.name = name
 
-    // quantity (optional when a weight is given: some things are bought by weight)
+    // quantity (required)
     const quantity = isBlank(raw.quantity) ? NaN : toNumber(raw.quantity)
-    if (isBlank(raw.quantity) && !isBlank(raw.weightKg)) {
-      // weight only: fine
-    } else if (Number.isNaN(quantity)) fail('quantity', 'Enter a quantity (for example 2) or a weight.')
+    if (Number.isNaN(quantity)) fail('quantity', 'Enter a quantity, for example 2.')
     else if (quantity <= 0) fail('quantity', 'Quantity must be more than 0.')
     else if (quantity > LIMITS.quantityMax) fail('quantity', `Quantity must be ${LIMITS.quantityMax} or less.`)
     else if (!fitsDecimals(quantity, 3)) fail('quantity', 'Quantity can have at most 3 decimal places.')
@@ -181,12 +179,11 @@ export function validateInventoryItems(input, { today = new Date(), requireCompl
     // Required details (used when saving to the inventory): nothing is stored half-filled.
     if (requireComplete) {
       if (isBlank(raw.purchasedAt)) fail('purchasedAt', 'Enter the purchase date.')
+      if (isBlank(raw.weightKg)) fail('weightKg', 'Enter the weight in kg (an estimate is fine).')
       if (!clean.category && isBlank(raw.category)) fail('category', 'Choose a category.')
       if (!clean.storageZone && isBlank(raw.storageZone)) fail('storageZone', 'Choose where the item is kept.')
-      if (clean.category !== 'non_food') {
-        if (isBlank(raw.dietType)) fail('dietType', 'Choose a diet label.')
-        if (isBlank(raw.expiresAt)) fail('expiresAt', 'Enter a use-by date (an estimate is fine).')
-      }
+      if (isBlank(raw.dietType)) fail('dietType', 'Choose a diet label.')
+      if (isBlank(raw.expiresAt)) fail('expiresAt', 'Enter a use-by date (an estimate is fine).')
     }
 
     items.push(clean)

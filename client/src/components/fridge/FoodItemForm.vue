@@ -9,7 +9,7 @@
 // inventory. It emits a save event containing the form data.
 // ============================================================
 
-import { reactive, ref, watch, nextTick } from 'vue'
+import { reactive, watch } from 'vue'
 
 // ------------------------------------------------------------
 // 1. PROPS
@@ -32,20 +32,6 @@ const props = defineProps({
     defaultStorage: {
         type: String,
         default: 'fridge'
-    },
-
-    // Optional exact compartment passed by FridgeView. This lets the form
-    // default to the Crisper Drawer or a specific shelf when opened there.
-    defaultStorageZone: {
-        type: String,
-        default: ''
-    },
-
-    // The parent owns the API request; this prop keeps the form responsive
-    // while that request is in flight and prevents repeated submissions.
-    saving: {
-        type: Boolean,
-        default: false
     }
 })
 
@@ -57,11 +43,6 @@ const props = defineProps({
 // ------------------------------------------------------------
 
 const emit = defineEmits(['save', 'close'])
-
-// Focus is moved into the dialog on open, kept inside while tabbing, and
-// returned to the opening control when the parent closes the form.
-const dialogElement = ref(null)
-let returnFocusElement = null
 
 // ------------------------------------------------------------
 // 3. FORM DATA
@@ -75,9 +56,7 @@ let returnFocusElement = null
 
 const form = reactive({
     name: '',
-    // The inventory model no longer assumes every food has one unit.
-    // Start blank so the user records the actual quantity.
-    quantity: '',
+    quantity: 1,
     unit: 'pieces',
     storage: 'fridge',
     storageZone: 'middle-shelf',
@@ -115,24 +94,15 @@ watch(
     () => [
         props.visible,
         props.item,
-        props.defaultStorage,
-        props.defaultStorageZone
+        props.defaultStorage
     ],
     () => {
-        if (!props.visible) {
-            nextTick(() => returnFocusElement?.focus?.())
-            return
-        }
-
-        // Capture the trigger once per open; later field edits should not
-        // replace it with an element inside the dialog that will be removed.
-        if (!dialogElement.value) returnFocusElement = document.activeElement
-        nextTick(() => dialogElement.value?.querySelector('input')?.focus())
+        if (!props.visible) return
 
         if (props.item) {
             // Editing: copy the existing values into the form.
             form.name = props.item.name
-            form.quantity = props.item.quantity ?? ''
+            form.quantity = props.item.quantity
             form.unit = props.item.unit
             form.storage = props.item.storage
             form.storageZone = props.item.storageZone
@@ -140,12 +110,10 @@ watch(
         } else {
             // Adding: start with an empty form.
             form.name = ''
-            form.quantity = ''
+            form.quantity = 1
             form.unit = 'pieces'
             form.storage = props.defaultStorage
-            // Prefer the exact area the user clicked. Otherwise use the
-            // standard default for fridge, freezer or pantry.
-            form.storageZone = props.defaultStorageZone || getDefaultZone(props.defaultStorage)
+            form.storageZone = getDefaultZone(props.defaultStorage)
             form.expiresAt = ''
         }
     },
@@ -174,9 +142,20 @@ function updateStorageZone() {
 function submitForm() {
     const trimmedName = form.name.trim()
 
-    // Native `required`, `min`, and `type=number` constraints show errors
-    // beside the fields without interrupting the user with browser alerts.
-    if (!trimmedName || !Number.isFinite(Number(form.quantity)) || Number(form.quantity) <= 0 || props.saving) return
+    // A food name is required.
+    if (!trimmedName) {
+        alert('Please enter a food name.')
+        return
+    }
+
+    // Quantity must be a positive number.
+    if (
+        !Number.isFinite(Number(form.quantity)) ||
+        Number(form.quantity) <= 0
+    ) {
+        alert('Please enter a quantity greater than zero.')
+        return
+    }
 
     // Emit a clean copy rather than exposing the reactive form.
     emit('save', {
@@ -187,31 +166,6 @@ function submitForm() {
         storageZone: form.storageZone,
         expiresAt: form.expiresAt
     })
-}
-
-// Escape closes the dialog, and Tab/Shift+Tab cycle through its controls.
-function handleDialogKeydown(event) {
-    if (event.key === 'Escape') {
-        event.preventDefault()
-        emit('close')
-        return
-    }
-
-    if (event.key !== 'Tab') return
-    const focusable = [...dialogElement.value.querySelectorAll(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled)'
-    )]
-    if (!focusable.length) return
-
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-    }
 }
 </script>
 
@@ -226,13 +180,10 @@ function handleDialogKeydown(event) {
         @click.self="emit('close')"
     >
         <section
-            ref="dialogElement"
             class="form-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="food-form-title"
-            tabindex="-1"
-            @keydown="handleDialogKeydown"
         >
             <!-- Modal heading -->
             <header class="modal-header">
@@ -352,9 +303,8 @@ function handleDialogKeydown(event) {
                                 Crisper Drawer
                             </option>
 
-                            <option value="door-lower">Lower door shelf</option>
                             <option value="door">
-                                Upper door shelf
+                                Door Shelves
                             </option>
                         </template>
 
@@ -396,9 +346,8 @@ function handleDialogKeydown(event) {
                     <button
                         type="submit"
                         class="save-button"
-                        :disabled="saving"
                     >
-                        {{ saving ? 'Saving…' : item ? 'Save Changes' : 'Add Food' }}
+                        {{ item ? 'Save Changes' : 'Add Food' }}
                     </button>
                 </footer>
             </form>
@@ -420,11 +369,10 @@ function handleDialogKeydown(event) {
     overflow-y: auto;
     padding: 20px;
 
-    background: rgb(18 35 27 / 58%);
-    backdrop-filter: blur(4px);
+    background: rgb(18 35 27 / 55%);
 }
 
-/* The paper surface, bold outline, and offset shadow match the fridge page. */
+/* The actual form container. */
 .form-modal {
     width: 100%;
     max-width: 500px;
@@ -432,11 +380,11 @@ function handleDialogKeydown(event) {
     overflow-y: auto;
 
     padding: 25px;
-    border: 2px solid var(--ink, #123f3b);
-    border-radius: 17px;
+    border: 1px solid #e4ebe5;
+    border-radius: 16px;
 
-    background: var(--paper, #fdfaf3);
-    box-shadow: var(--shadow-paper, 6px 8px 0 #123f3b), 0 20px 60px rgb(0 0 0 / 20%);
+    background: white;
+    box-shadow: 0 20px 60px rgb(0 0 0 / 20%);
 }
 
 .modal-header {
@@ -457,18 +405,17 @@ function handleDialogKeydown(event) {
 
 .modal-header h2 {
     margin: 0;
-    color: var(--ink, #123f3b);
-    font-family: var(--font-display, "Kalam", cursive, sans-serif);
-    font-size: 27px;
+    color: #24352f;
+    font-size: 22px;
 }
 
 .close-button {
     width: 34px;
     height: 34px;
-    border: 2px solid var(--ink, #123f3b);
+    border: 1px solid #e1e9e3;
     border-radius: 8px;
     background: white;
-    color: var(--ink, #123f3b);
+    color: #647168;
     font-size: 22px;
     cursor: pointer;
 }
@@ -482,7 +429,7 @@ function handleDialogKeydown(event) {
 
 .form-field label {
     color: #43534a;
-    font-size: 16px;
+    font-size: 12px;
     font-weight: 700;
 }
 
@@ -492,20 +439,19 @@ function handleDialogKeydown(event) {
     min-height: 43px;
     padding: 10px 12px;
 
-    border: 2px solid #b8d1c9;
+    border: 1px solid #dce5de;
     border-radius: 8px;
     outline: none;
 
-    background: var(--paper-bright, #fbfffd);
-    color: var(--ink, #123f3b);
-    font-size: 17px;
+    background: white;
+    color: #24352f;
+    font-size: 13px;
 }
 
 .form-field input:focus,
 .form-field select:focus {
-    border-color: var(--teal, #0fa89c);
-    box-shadow: 0 0 0 3px rgb(15 168 156 / 16%);
-    outline: 2px solid transparent;
+    border-color: #167d68;
+    box-shadow: 0 0 0 3px rgb(22 125 104 / 10%);
 }
 
 /* Quantity and unit fields sit side by side on wider screens. */
@@ -522,49 +468,32 @@ function handleDialogKeydown(event) {
 
     margin-top: 25px;
     padding-top: 18px;
-    border-top: 2px dashed #b8d1c9;
+    border-top: 1px solid #e1e9e3;
 }
 
 .cancel-button,
 .save-button {
     padding: 11px 17px;
-    border: 2px solid var(--ink, #123f3b);
-    border-radius: 9px;
-    box-shadow: 2px 3px 0 var(--ink, #123f3b);
-    font-size: 16px;
+    border-radius: 8px;
+    font-size: 12px;
     font-weight: 700;
     cursor: pointer;
 }
 
 .cancel-button {
-    background: var(--paper-bright, #fbfffd);
-    color: var(--ink, #123f3b);
+    border: 1px solid #e1e9e3;
+    background: white;
+    color: #647168;
 }
 
 .save-button {
-    background: var(--teal, #0fa89c);
+    border: 1px solid #167d68;
+    background: #167d68;
     color: white;
 }
 
 .save-button:hover {
-    background: #087d73;
-}
-
-.save-button:disabled {
-    cursor: wait;
-    opacity: .72;
-    transform: none;
-    box-shadow: 2px 3px 0 var(--ink, #123f3b);
-}
-
-.form-modal:focus { outline: none; }
-
-/* Preserve visible focus for keyboard users across both modal actions and fields. */
-.form-modal button:focus-visible,
-.form-modal input:focus-visible,
-.form-modal select:focus-visible {
-    outline: 3px solid #f0b93d;
-    outline-offset: 2px;
+    background: #105c4d;
 }
 
 @media (max-width: 480px) {
