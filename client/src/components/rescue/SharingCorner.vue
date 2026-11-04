@@ -332,7 +332,9 @@ function togglePerson(sectionId, group) {
   const key = `${sectionId}-${group.id}`
 
   if (expandedIds.value.includes(key)) {
-    expandedIds.value = expandedIds.value.filter((id) => id !== key)
+    expandedIds.value = expandedIds.value.filter(
+      (id) => id !== key,
+    )
   } else {
     expandedIds.value.push(key)
     selectRequest(group, group.requests[0])
@@ -1013,11 +1015,7 @@ onBeforeUnmount(() => {
                         :class="{
                           selected: selectedPerson?.id === group.id,
                         }"
-                        :aria-expanded="
-                          expandedIds.includes(
-                            `${section.id}-${group.id}`,
-                          ) || Boolean(search.trim())
-                        "
+                        :aria-expanded="expandedIds.includes(`${section.id}-${group.id}`)"
                         :aria-controls="
                           `person-${section.id}-${group.id}`
                         "
@@ -1036,14 +1034,9 @@ onBeforeUnmount(() => {
                           <small>{{ groupSummary(group) }}</small>
                         </span>
 
-                        <span
-                          class="group-chevron ms-auto"
-                          aria-hidden="true"
-                        >
+                        <span class="group-chevron ms-auto" aria-hidden="true">
                           {{
-                            expandedIds.includes(
-                              `${section.id}-${group.id}`,
-                            ) || search.trim()
+                            expandedIds.includes(`${section.id}-${group.id}`)
                               ? '⌄'
                               : '›'
                           }}
@@ -1052,11 +1045,7 @@ onBeforeUnmount(() => {
 
                       <!-- Food conversations -->
                       <div
-                        v-show="
-                          expandedIds.includes(
-                            `${section.id}-${group.id}`,
-                          ) || search.trim()
-                        "
+                        v-if="expandedIds.includes(`${section.id}-${group.id}`)"
                         :id="`person-${section.id}-${group.id}`"
                         class="d-flex flex-column gap-1 mt-2"
                       >
