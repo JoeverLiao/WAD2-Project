@@ -6,6 +6,7 @@ import { computed, nextTick, reactive, ref } from 'vue'
 import { confirmReceiptItems, suggestItemDetails } from '../services/scanningApi.js'
 import DietBadge from './common/DietBadge.vue'
 import { CATEGORIES, DIETS, ZONES, categoryByValue, zoneByValue } from '../utils/inventoryOptions.js'
+import { storageDestinations, unifiedShelfZone } from '../utils/storageDestinations.js'
 import {
   MAX_ITEMS,
   UNIT_SUGGESTIONS,
@@ -20,8 +21,29 @@ const props = defineProps({
   parsed: { type: Object, default: null },
   // true when the user types the items in themselves instead of scanning a receipt
   manual: { type: Boolean, default: false },
+  inventoryItems: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['saved', 'reset'])
+const destinations = computed(() => storageDestinations(props.inventoryItems))
+const defaultDestination = JSON.stringify(['fridge', 'Main fridge'])
+const keepInZones = ZONES.filter(zone => !['upper-shelf', 'lower-shelf'].includes(zone.value))
+  .map(zone => ({ ...zone, label: zone.value === 'middle-shelf' ? 'Shelves' : zone.value === 'door' ? 'Upper door shelf' : zone.label }))
+
+function destinationFor(row) {
+  return destinations.value.find(option => option.value === row.storageDestination) || destinations.value[0]
+}
+function zonesFor(row) {
+  return keepInZones.filter(zone => destinationFor(row).type === 'pantry' ? zone.storage === 'pantry' : zone.storage !== 'pantry')
+}
+function compatibleDestinationZone(row, zone) {
+  const normalised = unifiedShelfZone(zone)
+  return zonesFor(row).some(option => option.value === normalised)
+    ? normalised : destinationFor(row).type === 'pantry' ? 'dry-storage' : 'middle-shelf'
+}
+function onDestinationChange(row) {
+  row.storageZone = compatibleDestinationZone(row, row.storageZone)
+  onZoneChange(row)
+}
 
 let nextKey = 1
 function newRow(values = {}) {
@@ -31,8 +53,9 @@ function newRow(values = {}) {
     name: '',
     quantity: 1,
     unit: 'pieces',
-    storage: 'pantry',
-    storageZone: 'dry-storage',
+    storage: 'fridge',
+    storageZone: 'middle-shelf',
+    storageDestination: defaultDestination,
     category: '',
     icon: '',
     dietType: '',
@@ -64,9 +87,10 @@ function initialRows(parsed) {
       suggestedLocation: item.suggestedLocation ?? '',
       allowedLocations: item.allowedLocations ?? [],
       locationReason: item.locationReason ?? '',
-      storageZone: item.storageZone ?? item.suggestedLocation ?? 'dry-storage',
+      storageZone: (item.storageZone ?? item.suggestedLocation) === 'dry-storage' ? 'middle-shelf'
+        : unifiedShelfZone(item.storageZone ?? item.suggestedLocation ?? 'middle-shelf'),
       unit: item.unit ?? 'pieces',
-      storage: item.storage ?? 'pantry',
+      storage: (item.storageZone ?? item.suggestedLocation) === 'freezer-main' ? 'freezer' : 'fridge',
       expiresAt: item.expiresAt ?? '',
       purchasePrice: item.price ?? '',
       warnings: item.warnings ?? [],
@@ -94,8 +118,10 @@ const saveError = ref('')
 const savedCount = ref(0)
 const savedItems = ref([])
 const savedLocations = computed(() => savedItems.value.map(item => {
-  const storage = item.storage === 'pantry' ? item.pantryName || 'Pantry' : item.fridgeName || 'Main fridge'
-  const zone = zoneByValue(item.storageZone)?.label || item.storageZone || item.storage
+  const type = item.storage === 'pantry' ? 'pantry' : 'fridge'
+  const name = type === 'pantry' ? item.pantryName || 'Pantry' : item.fridgeName || 'Main fridge'
+  const storage = destinations.value.find(option => option.type === type && option.name === name)?.label || name
+  const zone = keepInZones.find(zone => zone.value === unifiedShelfZone(item.storageZone))?.label || item.storageZone || item.storage
   return { id: item._id, name: item.name, location: storage + ' · ' + zone }
 }))
 const viewItemsRoute = computed(() => ({
@@ -147,8 +173,9 @@ const REQUIRED_FIELDS = new Set(['name', 'quantity', 'storageZone', 'expiresAt',
 const INPUT_PREFIX = {
   name: 'name', quantity: 'qty', unit: 'unit', purchasePrice: 'price', storageZone: 'zone',
   expiresAt: 'expires', category: 'category', icon: 'icon', dietType: 'diet', weightKg: 'weight',
+  storageDestination: 'destination',
 }
-const FIELD_ORDER = ['name', 'quantity', 'storageZone', 'expiresAt', 'category', 'dietType', 'weightKg', 'unit', 'purchasePrice', 'icon']
+const FIELD_ORDER = ['name', 'quantity', 'storageDestination', 'storageZone', 'expiresAt', 'category', 'dietType', 'weightKg', 'unit', 'purchasePrice', 'icon']
 
 function formatDay(iso) {
   const m = String(iso ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -161,7 +188,8 @@ function tileValue(row, field) {
     case 'quantity': return String(row.quantity ?? '').trim()
     case 'unit': return String(row.unit ?? '').trim()
     case 'purchasePrice': return String(row.purchasePrice ?? '').trim() ? `$${String(row.purchasePrice).trim()}` : ''
-    case 'storageZone': { const z = zoneByValue(row.storageZone); return z ? `${z.icon} ${z.label}` : '' }
+    case 'storageDestination': return destinationFor(row).label
+    case 'storageZone': { const z = keepInZones.find(zone => zone.value === unifiedShelfZone(row.storageZone)); return z ? `${z.icon} ${z.label}` : '' }
     case 'expiresAt': return formatDay(row.expiresAt)
     case 'category': return categoryByValue(row.category)?.label ?? ''
     case 'icon': return row.icon
@@ -172,7 +200,7 @@ function tileValue(row, field) {
 }
 
 const TILE_LABELS = [
-  ['name', 'Name'], ['quantity', 'Quantity'], ['unit', 'Unit'], ['purchasePrice', 'Price'], ['storageZone', 'Keep in'],
+  ['name', 'Name'], ['quantity', 'Quantity'], ['unit', 'Unit'], ['purchasePrice', 'Price'], ['storageDestination', 'Fridge / pantry'], ['storageZone', 'Keep in'],
   ['expiresAt', 'Use by'], ['category', 'Category'], ['icon', 'Icon'], ['dietType', 'Diet label'], ['weightKg', 'Weight'],
 ]
 
@@ -261,8 +289,8 @@ async function suggestDetails() {
       row.suggestedLocation = d.suggestedLocation
       row.allowedLocations = d.allowedLocations
       row.locationReason = d.locationReason
-      row.storageZone = d.suggestedLocation
-      row.storage = d.storage
+      row.storageZone = compatibleDestinationZone(row, d.suggestedLocation)
+      row.storage = zoneByValue(row.storageZone).storage
       if (!row.expiresAt && d.expiresAt) row.expiresAt = d.expiresAt
       if (row.weightKg === '' && d.weightKg) row.weightKg = d.weightKg
     })
@@ -322,7 +350,10 @@ async function save() {
   const sent = includedRows.value.slice()
   saving.value = true
   try {
-    const result = await confirmReceiptItems(sent.map((row) => toPayload(row, purchasedAt.value)), props.manual ? 'manual' : 'receipt')
+    const result = await confirmReceiptItems(sent.map(row => {
+      const destination = destinationFor(row)
+      return { ...toPayload(row, purchasedAt.value), [destination.type === 'pantry' ? 'pantryName' : 'fridgeName']: destination.name }
+    }), props.manual ? 'manual' : 'receipt')
     savedItems.value = result.items || []
     savedCount.value = result.saved
     addedCount.value = result.added ?? result.saved
@@ -573,6 +604,13 @@ const totalWarning = computed(() => {
                 />
                 <div class="invalid-feedback">{{ errorFor(row, 'purchasePrice') }}</div>
               </div>
+              <div v-show="row.openField === 'storageDestination'" :id="`editor-storageDestination-${row.key}`" class="col-12 col-md-6">
+                <label class="form-label small mb-1" :for="`destination-${row.key}`">Fridge / pantry <span class="text-muted">(optional)</span></label>
+                <select :id="`destination-${row.key}`" v-model="row.storageDestination" class="form-select" data-testid="destination" @change="onDestinationChange(row)">
+                  <option v-for="destination in destinations" :key="destination.value" :value="destination.value">{{ destination.label }} ({{ destination.type }})</option>
+                </select>
+                <div class="form-text">Defaults to your first fridge. Choose another fridge or pantry if needed.</div>
+              </div>
               <div v-show="row.openField === 'storageZone'" :id="`editor-storageZone-${row.key}`" class="col-12 col-md-6">
                 <label class="form-label small mb-1" :for="`zone-${row.key}`">Keep in <span class="required-mark" aria-hidden="true">*</span></label>
                 <select
@@ -583,7 +621,7 @@ const totalWarning = computed(() => {
                   data-testid="zone"
                   @change="onZoneChange(row)"
                 >
-                  <option v-for="zone in ZONES" :key="zone.value" :value="zone.value">
+                  <option v-for="zone in zonesFor(row)" :key="zone.value" :value="zone.value">
                     {{ zone.icon }} {{ zone.label }}
                   </option>
                 </select>

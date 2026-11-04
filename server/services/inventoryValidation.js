@@ -129,6 +129,16 @@ export function validateInventoryItems(input, { today = new Date(), requireCompl
     } else if (!STORAGE_OPTIONS.includes(raw.storage)) fail('storage', 'Choose where the item is kept.')
     else clean.storage = raw.storage
 
+    // Named appliances are optional; unnamed records belong to the first fridge/pantry.
+    for (const field of ['fridgeName', 'pantryName']) {
+      if (isBlank(raw[field])) continue
+      if (typeof raw[field] !== 'string' || raw[field].trim().length > 60) {
+        fail(field, 'Storage name must be text with 1 to 60 characters.')
+      } else if ((field === 'pantryName') === (clean.storage === 'pantry')) {
+        clean[field] = raw[field].trim()
+      }
+    }
+
     // smart details (optional here: the server fills in what is missing from its storage rules)
     if (!isBlank(raw.category)) {
       if (!CATEGORY_IDS.includes(raw.category)) fail('category', 'Choose a category from the list.')

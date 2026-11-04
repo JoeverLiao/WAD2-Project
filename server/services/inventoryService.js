@@ -17,7 +17,9 @@ export function standardName(name) {
 export function groupSameProducts(items) {
   const groups = new Map()
   for (const item of items) {
-    const key = `${item.name.toLowerCase()}|${item.unit ?? ''}|${item.storage}`
+    const field = item.storage === 'pantry' ? 'pantryName' : 'fridgeName'
+    const storageName = item[field] || (item.storage === 'pantry' ? 'Pantry' : 'Main fridge')
+    const key = JSON.stringify([item.name.toLowerCase(), item.unit ?? '', item.storage, storageName, item.storageZone])
     const group = groups.get(key)
     if (!group) {
       groups.set(key, { ...item })
@@ -100,6 +102,10 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
       locationReason: item.locationReason,
       storageZone: item.storageZone,
     }
+    const field = item.storage === 'pantry' ? 'pantryName' : 'fridgeName'
+    const mainName = item.storage === 'pantry' ? 'Pantry' : 'Main fridge'
+    const storageName = item[field] || mainName
+    onInsert[field] = storageName
     if (item.dietType) onInsert.dietType = item.dietType
     if (item.purchasedAt) onInsert.purchasedAt = item.purchasedAt
     if (item.expiresAt) onInsert.expiresAt = item.expiresAt
@@ -107,7 +113,11 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
     if (Object.keys(inc).length) update.$inc = inc
     return {
       updateOne: {
-        filter: { user: userId, name: item.name, unit: item.unit ?? null, storage: item.storage },
+        filter: {
+          user: userId, name: item.name, unit: item.unit ?? null, storage: item.storage,
+          storageZone: item.storageZone,
+          ...(storageName === mainName ? { $or: [{ [field]: mainName }, { [field]: null }] } : { [field]: storageName }),
+        },
         update,
         upsert: true,
         collation: { locale: 'en', strength: 2 },

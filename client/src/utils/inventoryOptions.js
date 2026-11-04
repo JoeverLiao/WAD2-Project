@@ -7,6 +7,7 @@ export const ZONES = [
   { value: 'middle-shelf', label: 'Middle shelf', icon: '➡️', storage: 'fridge' },
   { value: 'lower-shelf', label: 'Lower shelf', icon: '⬇️', storage: 'fridge' },
   { value: 'door', label: 'Fridge door', icon: '🚪', storage: 'fridge' },
+  { value: 'door-lower', label: 'Lower door shelf', icon: '🚪', storage: 'fridge' },
   { value: 'crisper', label: 'Crisper drawer', icon: '🥬', storage: 'fridge' },
   { value: 'freezer-main', label: 'Freezer', icon: '❄️', storage: 'freezer' },
   { value: 'dry-storage', label: 'Pantry / dry storage', icon: '🗄️', storage: 'pantry' },
