@@ -990,26 +990,6 @@ defineExpose({
           <option value="tomorrow">Tomorrow</option>
         </select>
       </label>
-
-      <label>
-        <span class="visually-hidden">
-          Whose listings to show
-        </span>
-
-        <select v-model="scope">
-          <option value="all">
-            All available food
-          </option>
-
-          <option value="neighbours">
-            Neighbours’ food
-          </option>
-
-          <option value="mine">
-            Your listings
-          </option>
-        </select>
-      </label>
     </div>
 
     <!-- Results summary -->
@@ -1120,6 +1100,7 @@ defineExpose({
           :ref="(element) => setCardElement(item.id, element)"
           class="food-card"
           :class="{ selected: selectedId === item.id }"
+          @click="selectItem(item)"
         >
           <img
             v-if="item.image && !failedImages.has(item.id)"
@@ -1141,11 +1122,10 @@ defineExpose({
           <div class="food-details">
             <div class="food-heading">
               <h3>
-                <button
+                <p
                   type="button"
                   class="food-title-button"
                   :aria-pressed="selectedId === item.id"
-                  @click="selectItem(item)"
                 >
                   <span
                     class="card-marker-number"
@@ -1155,7 +1135,7 @@ defineExpose({
                   </span>
 
                   {{ item.name }}
-                </button>
+                </p>
               </h3>
 
               <span class="food-distance">
@@ -1592,6 +1572,7 @@ button {
   padding: 3px;
   scrollbar-width: thin;
   scrollbar-color: var(--aqua) var(--aqua-soft);
+  cursor: pointer;
 }
 
 .food-card {

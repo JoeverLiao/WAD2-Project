@@ -53,9 +53,7 @@ const inventory = useInventoryStore()
 const dialog = ref(null)
 const confirmationDialog = ref(null)
 
-const open = computed(() =>
-  ['listings', 'add'].includes(props.activeSection),
-)
+const open = computed(() => props.activeSection === 'listings')
 
 // Listing data
 const listings = ref([])
@@ -451,7 +449,7 @@ watch(
   () => props.activeSection,
 
   async (section) => {
-    if (!['listings', 'add'].includes(section)) {
+    if (section !== 'listings') {
       loadController?.abort()
 
       isEditorOpen.value = false
@@ -491,16 +489,7 @@ watch(
     }
 
     await loadListings()
-
-    if (
-      alive &&
-      props.activeSection === 'add' &&
-      !loadError.value
-    ) {
-      openEditor()
-    }
   },
-
   {
     immediate: true,
   },

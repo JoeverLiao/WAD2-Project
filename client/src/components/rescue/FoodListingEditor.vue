@@ -9,43 +9,25 @@ import {
   watch,
 } from 'vue'
 
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
-
+import FoodIcon from '../FoodIcon.vue'
 import { CATEGORY_OPTIONS } from '@/services/rescueCategories.js'
 import { useInventoryStore } from '@/stores/inventory.js'
 import { api, apiError } from '@/services/rescueApi.js'
 import { lockBodyScroll } from '@/services/rescueModal.js'
-
-import FoodIcon from '../FoodIcon.vue'
-
-import {
-  toLocalInput,
-  validateForm,
-} from '@/services/rescueForm.js'
+import { toLocalInput, validateForm } from '@/services/rescueForm.js'
 
 // Props and events
 const props = defineProps({
-  listing: {
-    type: Object,
-    default: null,
-  },
-
-  activeInventoryIds: {
-    type: Array,
-    default: () => [],
-  },
+  listing: { type: Object, default: null },
+  activeInventoryIds: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits([
-  'close',
-  'saved',
-  'committed',
-])
-
+const emit = defineEmits(['close', 'saved', 'committed'])
 const inventory = useInventoryStore()
 
-// Inventory selection
+// Form
+const editing = computed(() => Boolean(props.listing?._id))
+
 const source = ref(
   props.listing
     ? props.listing.inventoryItem
@@ -57,16 +39,48 @@ const source = ref(
 const selectedInventoryId = ref(
   String(
     props.listing?.inventoryItem?._id ||
-    props.listing?.inventoryItem ||
-    '',
+      props.listing?.inventoryItem ||
+      '',
   ),
 )
 
-const inventorySearch = ref('')
+const form = reactive({
+  category: props.listing?.category || 'other',
+  title: props.listing?.title || '',
+  description: props.listing?.description || '',
+  quantity: props.listing?.quantity ?? '',
+  unit: props.listing?.unit || 'pieces',
+  expiresAt: toLocalInput(props.listing?.expiresAt),
+  pickupStart: toLocalInput(props.listing?.pickupStart),
+  pickupEnd: toLocalInput(props.listing?.pickupEnd),
+  pickupLabel: props.listing?.pickupLabel || '',
+  pickupInstructions: props.listing?.pickupInstructions || '',
+  latitude: props.listing?.location?.coordinates?.[1] ?? '',
+  longitude: props.listing?.location?.coordinates?.[0] ?? '',
+})
 
-const editing = computed(() =>
-  Boolean(props.listing?._id),
+// Dialog state
+const dialog = ref(null)
+const error = ref('')
+const saving = ref(false)
+const uncertainCreate = ref(false)
+const persisted = ref(null)
+const savePhase = ref('')
+
+const locked = computed(
+  () => saving.value || Boolean(persisted.value) || uncertainCreate.value,
 )
+
+let alive = true
+let previouslyFocused = null
+let releaseScroll = null
+
+const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+const minDatetime = computed(() => toLocalInput(Date.now()))
+
+// Inventory
+const inventorySearch = ref('')
+const inventorySort = ref('expiry')
 
 const linked = computed(() =>
   editing.value
@@ -75,98 +89,121 @@ const linked = computed(() =>
 )
 
 const selectedInventory = computed(() =>
-  inventory.items.find(
-    (item) => item.id === selectedInventoryId.value,
-  ),
+  inventory.items.find((item) => item.id === selectedInventoryId.value),
 )
 
-const linkedExpiry = computed(() =>
-  inventoryExpiry(selectedInventory.value),
-)
+function inventoryExpiry(item) {
+  const value = item?.expiresAtISO || item?.expiresAt
 
-const inventorySort = ref('expiry')
+  if (!value) return ''
+
+  const date = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(String(value))
+      ? `${value}T00:00:00`
+      : value,
+  )
+
+  return Number.isFinite(date.getTime()) ? date.toISOString() : ''
+}
+
+const linkedExpiry = computed(() => inventoryExpiry(selectedInventory.value))
 
 const inventoryOptions = computed(() => {
   const query = inventorySearch.value.trim().toLowerCase()
+  const now = Date.now()
 
-  const items = inventory.items.filter((item) =>
-    String(item.name || '').toLowerCase().includes(query),
-  )
+  return inventory.items
+    .filter((item) => {
+      const expiry = inventoryExpiry(item)
 
-  return items.sort((a, b) => {
-    const compareNames = () =>
-      String(a.name || '').localeCompare(
-        String(b.name || ''),
-        'en',
-        { sensitivity: 'base', numeric: true },
+      return (
+        (!expiry || Date.parse(expiry) > now) &&
+        String(item.name || '').toLowerCase().includes(query)
       )
+    })
+    .sort((a, b) => {
+      const compareNames = () =>
+        String(a.name || '').localeCompare(
+          String(b.name || ''),
+          'en',
+          { sensitivity: 'base', numeric: true },
+        )
 
-    if (inventorySort.value === 'name') {
-      return compareNames()
-    }
+      if (inventorySort.value === 'name') return compareNames()
 
-    const aTime = Date.parse(inventoryExpiry(a))
-    const bTime = Date.parse(inventoryExpiry(b))
+      const aExpiry = inventoryExpiry(a)
+      const bExpiry = inventoryExpiry(b)
 
-    const aHasExpiry = Number.isFinite(aTime)
-    const bHasExpiry = Number.isFinite(bTime)
+      if (!aExpiry && !bExpiry) return compareNames()
+      if (!aExpiry) return 1
+      if (!bExpiry) return -1
 
-    // Put items without an expiry at the bottom.
-    if (aHasExpiry !== bHasExpiry) {
-      return aHasExpiry ? -1 : 1
-    }
-
-    if (aHasExpiry && aTime !== bTime) {
-      return aTime - bTime
-    }
-
-    return compareNames()
-  })
+      return Date.parse(aExpiry) - Date.parse(bExpiry) || compareNames()
+    })
 })
 
-function chooseInventory(item) {
-  if (
-    editing.value ||
-    saving.value ||
-    persisted.value ||
-    uncertainCreate.value ||
-    inventoryDisabledReason(item)
-  ) {
-    return
+function inventoryDisabledReason(item) {
+  if (props.activeInventoryIds.includes(item.id)) {
+    return 'Already listed'
   }
 
-  selectedInventoryId.value = item.id
-  selectInventoryItem()
+  if (
+    !Number.isFinite(Number(item.quantity)) ||
+    Number(item.quantity) <= 0 ||
+    !item.unit?.trim()
+  ) {
+    return 'Add quantity and unit in your inventory first'
+  }
 
-  // Start with one whole unit when choosing a food item.
-  form.quantity = 1
+  if (Number(item.quantity) < 1) {
+    return 'Less than one whole unit available'
+  }
+
+  const expiry = inventoryExpiry(item)
+
+  if (expiry && Date.parse(expiry) <= Date.now()) {
+    return 'Expired'
+  }
+
+  return ''
 }
 
-function inventoryExpiry(item) {
-  return item?.expiresAtISO || item?.expiresAt || ''
+function chooseInventory(item) {
+  if (editing.value || locked.value || inventoryDisabledReason(item)) return
+
+  selectedInventoryId.value = item.id
+  form.title = item.name
+  form.quantity = 1
+  form.unit = item.unit.trim()
+  form.expiresAt = toLocalInput(inventoryExpiry(item))
+}
+
+function changeSource(value) {
+  if (editing.value || locked.value) return
+
+  source.value = value
+  selectedInventoryId.value = ''
+  form.category = 'other'
+  form.title = ''
+  form.quantity = ''
+  form.unit = 'pieces'
+  form.expiresAt = ''
 }
 
 function inventoryExpiryLabel(item) {
-  const value = inventoryExpiry(item)
-  const timestamp = Date.parse(value)
+  const timestamp = Date.parse(inventoryExpiry(item))
 
-  if (!Number.isFinite(timestamp)) {
-    return 'No expiry recorded'
-  }
+  if (!Number.isFinite(timestamp)) return 'No expiry recorded'
+  if (timestamp <= Date.now()) return 'Expired'
 
   const expiry = new Date(timestamp)
   const today = new Date()
 
-  if (timestamp <= Date.now()) {
-    return 'Expired'
-  }
-
-  const sameDay =
+  if (
     expiry.getFullYear() === today.getFullYear() &&
     expiry.getMonth() === today.getMonth() &&
     expiry.getDate() === today.getDate()
-
-  if (sameDay) {
+  ) {
     return 'Use by today'
   }
 
@@ -188,99 +225,225 @@ function inventoryStorageLabel(item) {
   }[item.storage] || 'Inventory'
 }
 
+// Whole quantity controls
+const maxShareQuantity = computed(() => {
+  const available = Number(selectedInventory.value?.quantity)
+
+  return Number.isFinite(available)
+    ? Math.max(0, Math.floor(available))
+    : 0
+})
+
+const validShareQuantity = computed(() => {
+  const quantity = Number(form.quantity)
+
+  return (
+    Boolean(selectedInventory.value) &&
+    Number.isInteger(quantity) &&
+    quantity >= 1 &&
+    quantity <= maxShareQuantity.value
+  )
+})
+
+function clampShareQuantity() {
+  if (maxShareQuantity.value < 1) {
+    form.quantity = ''
+    return
+  }
+
+  const quantity = Number(form.quantity)
+
+  form.quantity = Math.min(
+    maxShareQuantity.value,
+    Math.max(1, Number.isFinite(quantity) ? Math.floor(quantity) : 1),
+  )
+}
+
+function changeShareQuantity(change) {
+  if (locked.value || maxShareQuantity.value < 1) return
+
+  clampShareQuantity()
+
+  form.quantity = Math.min(
+    maxShareQuantity.value,
+    Math.max(1, Number(form.quantity) + change),
+  )
+}
+
 async function continueToFoodDetails() {
   if (!selectedInventory.value) return
 
   const reason = inventoryDisabledReason(selectedInventory.value)
 
-  if (reason) {
-    error.value = reason
-    return
-  }
-
-  if (!validShareQuantity.value) {
-    error.value = 'Choose a whole quantity within the available amount.'
+  if (reason || !validShareQuantity.value) {
+    error.value =
+      reason || 'Choose a whole quantity within the available amount.'
     return
   }
 
   error.value = ''
 
   await nextTick()
-
-  dialog.value
-    ?.querySelector('#listing-title')
-    ?.focus()
+  dialog.value?.querySelector('#listing-title')?.focus()
 }
-// Listing form
-const form = reactive({
-  category: props.listing?.category || 'other',
-  title: props.listing?.title || '',
-  description: props.listing?.description || '',
-  quantity: props.listing?.quantity ?? '',
-  unit: props.listing?.unit || 'pieces',
 
-  expiresAt: toLocalInput(props.listing?.expiresAt),
-  pickupStart: toLocalInput(props.listing?.pickupStart),
-  pickupEnd: toLocalInput(props.listing?.pickupEnd),
+// Address search
+const addressQuery = ref(props.listing?.pickupLabel || '')
+const addressResults = ref([])
+const addressLoading = ref(false)
+const addressError = ref('')
+const addressPage = ref(1)
+const addressTotalPages = ref(0)
+const lastAddressQuery = ref('')
 
-  pickupLabel: props.listing?.pickupLabel || '',
-  pickupInstructions: props.listing?.pickupInstructions || '',
+function validCoordinates(latitude, longitude) {
+  return (
+    latitude !== '' &&
+    latitude !== null &&
+    latitude !== undefined &&
+    longitude !== '' &&
+    longitude !== null &&
+    longitude !== undefined &&
+    Number.isFinite(Number(latitude)) &&
+    Number.isFinite(Number(longitude)) &&
+    Number(latitude) >= -90 &&
+    Number(latitude) <= 90 &&
+    Number(longitude) >= -180 &&
+    Number(longitude) <= 180
+  )
+}
 
-  latitude: props.listing?.location?.coordinates?.[1] ?? '',
-  longitude: props.listing?.location?.coordinates?.[0] ?? '',
-})
+// Existing listings retain their saved meeting point until another is selected.
+const selectedAddress = ref(
+  props.listing?.pickupLabel &&
+    validCoordinates(form.latitude, form.longitude)
+    ? {
+        address: props.listing.pickupLabel,
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+      }
+    : null,
+)
 
-// Dialog and loading state
-const dialog = ref(null)
-const mapElement = ref(null)
+let addressController = null
+let addressSearchSequence = 0
 
-const error = ref('')
-const locationNotice = ref('')
+function resetAddressResults() {
+  addressSearchSequence += 1
+  addressController?.abort()
+  addressLoading.value = false
+  addressResults.value = []
+  addressTotalPages.value = 0
+  addressError.value = ''
+}
 
-const geolocating = ref(false)
-const saving = ref(false)
-const uncertainCreate = ref(false)
+watch(addressQuery, resetAddressResults)
 
-const persisted = ref(null)
-const savePhase = ref('')
+async function searchPickupAddresses(page = 1) {
+  if (locked.value || !alive) return
 
-// Photo state
+  const query =
+    page === 1
+      ? addressQuery.value.trim()
+      : lastAddressQuery.value
+
+  if (query.length < 2 || query.length > 160) {
+    addressError.value = 'Enter between 2 and 160 characters.'
+    return
+  }
+
+  addressController?.abort()
+
+  const controller = new AbortController()
+  addressController = controller
+
+  const sequence = ++addressSearchSequence
+
+  addressLoading.value = true
+  addressError.value = ''
+  addressResults.value = []
+  addressTotalPages.value = 0
+
+  try {
+    const { data } = await api.get('/locations/search', {
+      params: { q: query, page },
+      signal: controller.signal,
+    })
+
+    if (
+      !alive ||
+      controller.signal.aborted ||
+      sequence !== addressSearchSequence
+    ) {
+      return
+    }
+
+    if (!Array.isArray(data.addresses)) {
+      throw new Error('Unexpected address search response.')
+    }
+
+    addressResults.value = data.addresses.filter(
+      (address) =>
+        typeof address.address === 'string' &&
+        address.address.trim() &&
+        validCoordinates(address.latitude, address.longitude),
+    )
+
+    addressPage.value = Number(data.page) || page
+    addressTotalPages.value = Number(data.totalPages) || 0
+    lastAddressQuery.value = query
+
+    if (!addressResults.value.length) {
+      addressError.value =
+        'No matching addresses. Try a building name or postal code.'
+    }
+  } catch (err) {
+    if (
+      alive &&
+      !controller.signal.aborted &&
+      sequence === addressSearchSequence
+    ) {
+      addressError.value = apiError(err, 'Could not search addresses.')
+    }
+  } finally {
+    if (alive && sequence === addressSearchSequence) {
+      addressLoading.value = false
+    }
+  }
+}
+
+function choosePickupAddress(address) {
+  if (locked.value) return
+
+  if (!validCoordinates(address.latitude, address.longitude)) {
+    addressError.value = 'This address has invalid coordinates.'
+    return
+  }
+
+  selectedAddress.value = {
+    address: address.address,
+    latitude: Number(address.latitude),
+    longitude: Number(address.longitude),
+  }
+
+  form.pickupLabel = selectedAddress.value.address
+  form.latitude = selectedAddress.value.latitude
+  form.longitude = selectedAddress.value.longitude
+
+  resetAddressResults()
+}
+
+// Photos
 const photo = ref(null)
 const photoPreview = ref('')
 const photoInput = ref(null)
-
 const removeExistingPhoto = ref(false)
 const photoPending = ref(false)
 const photoLoaded = ref(false)
 const existingPhotoUrl = ref('')
 
-// DOM and Leaflet references
 let currentPhotoObjectUrl = ''
 let previewObjectUrl = ''
-
-let map = null
-let marker = null
-let resizeObserver = null
-
-let alive = true
-let previouslyFocused = null
-let releaseScroll = null
-
-// Map configuration
-const localTimezone =
-  Intl.DateTimeFormat().resolvedOptions().timeZone
-
-const tiles =
-  'https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=a3soRYRrrsDYTIFau8f0'||
-  'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-
-const attribution =
-  '<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>' ||
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
-
-const pointSelected = computed(
-  () => form.latitude !== '' && form.longitude !== '',
-)
 
 const hasExistingPhoto = computed(
   () =>
@@ -289,183 +452,6 @@ const hasExistingPhoto = computed(
     !photo.value,
 )
 
-const minDatetime = computed(() =>
-  toLocalInput(Date.now()),
-)
-
-// Inventory helpers
-function inventoryDisabledReason(item) {
-  if (props.activeInventoryIds.includes(item.id)) {
-    return 'Already listed'
-  }
-
-  if (
-    !(Number(item.quantity) > 0) ||
-    !item.unit?.trim()
-  ) {
-    return 'Add quantity and unit in your inventory first'
-  }
-
-  if (Number(item.quantity) < 1) {
-    return 'Less than one whole unit available'
-  }
-
-  if (
-    inventoryExpiry(item) &&
-    Date.parse(inventoryExpiry(item)) <= Date.now()
-  ) {
-    return 'Expired'
-  }
-
-  return ''
-}
-
-function selectInventoryItem() {
-  if (editing.value) {
-    return
-  }
-
-  const item = selectedInventory.value
-
-  if (!item) {
-    return
-  }
-
-  form.title = item.name
-  form.quantity = item.quantity
-  form.unit = item.unit?.trim() || ''
-  form.expiresAt = toLocalInput(inventoryExpiry(item))
-}
-
-function changeSource(value) {
-  if (editing.value || persisted.value) {
-    return
-  }
-
-  source.value = value
-  selectedInventoryId.value = ''
-
-  form.category = 'other'
-  form.title = ''
-  form.quantity = ''
-  form.unit = 'pieces'
-  form.expiresAt = ''
-}
-
-// Pickup location
-function updatePoint(lat, lng, pan = false) {
-  const latitude = Number(lat)
-  const longitude = Number(lng)
-
-  if (
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    longitude < -180 ||
-    longitude > 180
-  ) {
-    return
-  }
-
-  form.latitude = Number(latitude.toFixed(6))
-  form.longitude = Number(longitude.toFixed(6))
-
-  if (!map) {
-    return
-  }
-
-  if (!marker) {
-    const icon = L.divIcon({
-      className: 'pickup-marker-wrapper',
-      html: '<span class="pickup-marker-dot"></span>',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-    })
-
-    marker = L.marker([latitude, longitude], {
-      icon,
-      draggable: true,
-      title: 'Pickup meeting point',
-      autoPan: true,
-    }).addTo(map)
-
-    marker.on('dragend', () => {
-      const point = marker.getLatLng()
-      updatePoint(point.lat, point.lng)
-    })
-  } else {
-    marker.setLatLng([latitude, longitude])
-  }
-
-  if (pan) {
-    map.setView([latitude, longitude], 16)
-  }
-}
-
-function syncTypedPoint() {
-  if (pointSelected.value) {
-    updatePoint(
-      form.latitude,
-      form.longitude,
-      true,
-    )
-  }
-}
-
-function useMyLocation() {
-  if (!navigator.geolocation) {
-    locationNotice.value =
-      'Location is unavailable. Tap the map or enter coordinates.'
-
-    return
-  }
-
-  geolocating.value = true
-  locationNotice.value = ''
-
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      if (!alive) {
-        return
-      }
-
-      geolocating.value = false
-
-      if (saving.value || persisted.value) {
-        return
-      }
-
-      updatePoint(
-        position.coords.latitude,
-        position.coords.longitude,
-        true,
-      )
-
-      locationNotice.value =
-        'Location found. Move the pin to your public pickup meeting point.'
-    },
-
-    () => {
-      if (!alive) {
-        return
-      }
-
-      geolocating.value = false
-
-      locationNotice.value =
-        'Could not access location. Tap the map or enter coordinates instead.'
-    },
-
-    {
-      enableHighAccuracy: false,
-      timeout: 10000,
-      maximumAge: 60000,
-    },
-  )
-}
-
-// Photo selection and preview
 function clearPreview() {
   if (previewObjectUrl) {
     URL.revokeObjectURL(previewObjectUrl)
@@ -478,20 +464,13 @@ function clearPreview() {
 function choosePhoto(event) {
   const file = event.target.files?.[0]
 
-  if (!file) {
-    return
-  }
+  if (!file) return
 
   error.value = ''
 
-  if (
-    !['image/jpeg', 'image/png', 'image/webp'].includes(
-      file.type,
-    )
-  ) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
     error.value =
       'Choose a JPEG, PNG or WebP image. Convert HEIC photos to JPEG first.'
-
     event.target.value = ''
     return
   }
@@ -506,7 +485,6 @@ function choosePhoto(event) {
 
   photo.value = file
   removeExistingPhoto.value = false
-
   previewObjectUrl = URL.createObjectURL(file)
   photoPreview.value = previewObjectUrl
 }
@@ -521,40 +499,41 @@ function clearPhoto() {
 }
 
 async function loadExistingPhoto() {
-  if (!props.listing?.hasPhoto) {
-    return
-  }
+  if (!props.listing?.hasPhoto) return
 
   try {
     const { data } = await api.get(
       `/rescue/${props.listing._id}/photo`,
-      {
-        responseType: 'blob',
-      },
+      { responseType: 'blob' },
     )
 
-    if (!alive) {
-      return
-    }
+    if (!alive) return
 
     currentPhotoObjectUrl = URL.createObjectURL(data)
     existingPhotoUrl.value = currentPhotoObjectUrl
   } catch {
-    // The listing is still editable if its existing image is missing.
+    // A missing photo does not prevent editing.
   } finally {
-    if (alive) {
-      photoLoaded.value = true
-    }
+    if (alive) photoLoaded.value = true
+  }
+}
+
+async function persistPhoto(listing) {
+  if (photo.value) {
+    const body = new FormData()
+    body.append('photo', photo.value)
+
+    await api.put(`/rescue/${listing._id}/photo`, body, {
+      timeout: 60000,
+    })
+  } else if (removeExistingPhoto.value && listing.hasPhoto) {
+    await api.delete(`/rescue/${listing._id}/photo`)
   }
 }
 
 // Dialog controls
 function close() {
-  if (saving.value) {
-    return
-  }
-
-  emit('close')
+  if (!saving.value) emit('close')
 }
 
 function onCancel(event) {
@@ -563,44 +542,15 @@ function onCancel(event) {
 }
 
 function onBackdrop(event) {
-  if (event.target === dialog.value) {
-    close()
-  }
+  if (event.target === dialog.value) close()
 }
 
-// Photo persistence
-async function persistPhoto(listing) {
-  if (photo.value) {
-    const body = new FormData()
-    body.append('photo', photo.value)
-
-    // The browser supplies the multipart boundary.
-    // Do not set Content-Type manually.
-    await api.put(
-      `/rescue/${listing._id}/photo`,
-      body,
-      {
-        timeout: 60_000,
-      },
-    )
-  } else if (
-    removeExistingPhoto.value &&
-    listing.hasPhoto
-  ) {
-    await api.delete(`/rescue/${listing._id}/photo`)
-  }
-}
-
-// Create or update the listing
+// Save
 async function save() {
-  if (saving.value || uncertainCreate.value) {
-    return
-  }
+  if (saving.value || uncertainCreate.value) return
 
   error.value = ''
 
-  // After a photo failure, retry only the photo.
-  // Never POST a second listing.
   if (persisted.value) {
     await retryPhoto()
     return
@@ -614,14 +564,37 @@ async function save() {
         throw new Error('Choose an inventory item to share.')
       }
 
-      const reason = inventoryDisabledReason(
-        selectedInventory.value,
-      )
+      const reason = inventoryDisabledReason(selectedInventory.value)
 
-      if (reason) {
-        throw new Error(reason)
-      }
+      if (reason) throw new Error(reason)
     }
+
+    if (
+      !Number.isInteger(Number(form.quantity)) ||
+      Number(form.quantity) < 1
+    ) {
+      throw new Error('Choose a whole quantity greater than zero.')
+    }
+
+    if (linked.value && !editing.value && !validShareQuantity.value) {
+      throw new Error('Choose a quantity within the available amount.')
+    }
+
+    if (
+      !selectedAddress.value ||
+      !validCoordinates(
+        selectedAddress.value.latitude,
+        selectedAddress.value.longitude,
+      )
+    ) {
+      throw new Error(
+        'Search for a Singapore address and select a result.',
+      )
+    }
+
+    form.pickupLabel = selectedAddress.value.address
+    form.latitude = selectedAddress.value.latitude
+    form.longitude = selectedAddress.value.longitude
 
     payload = validateForm(form, {
       linked: linked.value,
@@ -637,17 +610,10 @@ async function save() {
       delete payload.unit
     }
 
-    // Keep unchanged instants exact.
-    // datetime-local inputs only have minute precision.
+    // Preserve exact timestamps when the displayed values are unchanged.
     if (editing.value) {
-      for (const key of [
-        'expiresAt',
-        'pickupStart',
-        'pickupEnd',
-      ]) {
-        if (
-          form[key] === toLocalInput(props.listing[key])
-        ) {
+      for (const key of ['expiresAt', 'pickupStart', 'pickupEnd']) {
+        if (form[key] === toLocalInput(props.listing[key])) {
           payload[key] = props.listing[key]
         }
       }
@@ -663,17 +629,13 @@ async function save() {
   }
 
   saving.value = true
-
   savePhase.value = editing.value
     ? 'Saving changes…'
     : 'Creating listing…'
 
   try {
     const { data } = editing.value
-      ? await api.patch(
-          `/rescue/${props.listing._id}`,
-          payload,
-        )
+      ? await api.patch(`/rescue/${props.listing._id}`, payload)
       : await api.post('/rescue', payload)
 
     persisted.value = data.listing
@@ -684,22 +646,17 @@ async function save() {
       await persistPhoto(data.listing)
     } catch (err) {
       photoPending.value = true
-
       error.value =
         `Your listing was saved, but the photo change failed: ${apiError(err)} Retry the photo or continue without that change.`
-
       return
     }
 
     emit('saved', data.listing)
   } catch (err) {
-    // A lost create response is ambiguous.
-    // Do not automatically retry a POST.
     error.value = apiError(err)
 
     if (!editing.value && !err.response) {
       uncertainCreate.value = true
-
       error.value +=
         ' The server may have saved it. Close this form and refresh My listings before trying again.'
     }
@@ -710,9 +667,7 @@ async function save() {
 }
 
 async function retryPhoto() {
-  if (saving.value) {
-    return
-  }
+  if (saving.value || !persisted.value) return
 
   saving.value = true
   error.value = ''
@@ -720,12 +675,10 @@ async function retryPhoto() {
 
   try {
     await persistPhoto(persisted.value)
-
     photoPending.value = false
     emit('saved', persisted.value)
   } catch (err) {
-    error.value =
-      `Listing is saved. Photo change failed: ${apiError(err)}`
+    error.value = `Listing is saved. Photo change failed: ${apiError(err)}`
   } finally {
     saving.value = false
     savePhase.value = ''
@@ -742,62 +695,7 @@ function finishWithoutPhotoChange() {
 onMounted(async () => {
   previouslyFocused = document.activeElement
   releaseScroll = lockBodyScroll()
-
   dialog.value.showModal()
-
-  await nextTick()
-
-  if (!alive) {
-    return
-  }
-
-  map = L.map(mapElement.value, {
-    scrollWheelZoom: false,
-  }).setView(
-    pointSelected.value
-      ? [
-          Number(form.latitude),
-          Number(form.longitude),
-        ]
-      : [1.3008, 103.8555],
-
-    pointSelected.value ? 16 : 13,
-  )
-
-  L.tileLayer(tiles, {
-    attribution,
-    maxZoom: 19,
-  })
-    .on('tileerror', () => {
-      if (alive) {
-        locationNotice.value =
-          'Map tiles could not load. You can still enter latitude and longitude below.'
-      }
-    })
-    .addTo(map)
-
-  map.on('click', (event) => {
-    if (!saving.value && !persisted.value) {
-      updatePoint(
-        event.latlng.lat,
-        event.latlng.lng,
-      )
-    }
-  })
-
-  if (pointSelected.value) {
-    updatePoint(
-      form.latitude,
-      form.longitude,
-    )
-  }
-
-  resizeObserver = new ResizeObserver(() => {
-    map?.invalidateSize()
-  })
-
-  resizeObserver.observe(mapElement.value)
-  map.invalidateSize()
 
   await Promise.all([
     inventory.loadInventory(),
@@ -805,24 +703,10 @@ onMounted(async () => {
   ])
 })
 
-watch(saving, (value) => {
-  if (!marker) {
-    return
-  }
-
-  if (value || persisted.value) {
-    marker.dragging.disable()
-  } else {
-    marker.dragging.enable()
-  }
-})
-
 onBeforeUnmount(() => {
   alive = false
-
-  resizeObserver?.disconnect()
-  map?.remove()
-  map = null
+  addressSearchSequence += 1
+  addressController?.abort()
 
   clearPreview()
 
@@ -838,62 +722,100 @@ onBeforeUnmount(() => {
   }
 })
 
-const maxShareQuantity = computed(() => {
-  const available = Number(selectedInventory.value?.quantity)
+const geolocating = ref(false)
 
-  return Number.isFinite(available)
-    ? Math.max(0, Math.floor(available))
-    : 0
-})
+function getBrowserPosition() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 30000,
+    })
+  })
+}
 
-const validShareQuantity = computed(() => {
-  const quantity = Number(form.quantity)
+async function useMyLocation() {
+  if (locked.value || geolocating.value || addressLoading.value) return
 
-  return (
-    selectedInventory.value &&
-    Number.isInteger(quantity) &&
-    quantity >= 1 &&
-    quantity <= maxShareQuantity.value
-  )
-})
-
-const remainingQuantity = computed(() => {
-  if (!validShareQuantity.value) return null
-
-  return Number(
-    (
-      Number(selectedInventory.value.quantity) -
-      Number(form.quantity)
-    ).toFixed(12),
-  )
-})
-
-function clampShareQuantity() {
-  if (maxShareQuantity.value < 1) {
-    form.quantity = ''
+  if (!navigator.geolocation) {
+    addressError.value =
+      'Your browser does not support location access. Search manually instead.'
     return
   }
 
-  const quantity = Number(form.quantity)
+  resetAddressResults()
 
-  form.quantity = Math.min(
-    maxShareQuantity.value,
-    Math.max(
-      1,
-      Number.isFinite(quantity) ? Math.floor(quantity) : 1,
-    ),
-  )
-}
+  const sequence = ++addressSearchSequence
 
-function changeShareQuantity(amount) {
-  clampShareQuantity()
+  geolocating.value = true
+  addressError.value = ''
 
-  if (maxShareQuantity.value < 1) return
+  try {
+    const position = await getBrowserPosition()
 
-  form.quantity = Math.min(
-    maxShareQuantity.value,
-    Math.max(1, Number(form.quantity) + amount),
-  )
+    if (
+      !alive ||
+      locked.value ||
+      sequence !== addressSearchSequence
+    ) {
+      return
+    }
+
+    const controller = new AbortController()
+    addressController = controller
+
+    const { data } = await api.get('/locations/reverse', {
+      params: {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      },
+      signal: controller.signal,
+    })
+
+    if (
+      !alive ||
+      locked.value ||
+      controller.signal.aborted ||
+      sequence !== addressSearchSequence
+    ) {
+      return
+    }
+
+    if (!Array.isArray(data.addresses)) {
+      throw new Error('Unexpected address lookup response.')
+    }
+
+    const addresses = data.addresses.filter(
+      (address) =>
+        address.address &&
+        validCoordinates(address.latitude, address.longitude),
+    )
+
+    if (!addresses.length) {
+      addressError.value =
+        'No nearby address found. Please search for your building or postal code.'
+      return
+    }
+
+    // Fill the nearest result automatically.
+    choosePickupAddress(addresses[0])
+
+    // Let the user correct it if another nearby building is more accurate.
+    addressResults.value = addresses
+  } catch (err) {
+    if (!alive || sequence !== addressSearchSequence) return
+
+    addressError.value =
+      err.code === 1
+        ? 'Location permission was denied. Allow access or search manually.'
+        : err.code === 2
+          ? 'Your location is unavailable. Please search manually.'
+          : err.code === 3
+            ? 'Location access timed out. Try again or search manually.'
+            : apiError(err, 'Could not locate your address.')
+  } finally {
+    if (alive) geolocating.value = false
+  }
 }
 </script>
 
@@ -907,7 +829,6 @@ function changeShareQuantity(amount) {
       @click="onBackdrop"
     >
       <form @submit.prevent="save">
-        <!-- Heading -->
         <header
           class="d-flex justify-content-between align-items-start gap-3 mb-4"
         >
@@ -933,12 +854,10 @@ function changeShareQuantity(amount) {
           </button>
         </header>
 
-        <!-- Errors -->
         <div v-if="error" class="alert alert-danger" role="alert">
           {{ error }}
         </div>
 
-        <!-- Photo recovery -->
         <div
           v-if="persisted && photoPending"
           class="photo-recovery p-3 mb-3"
@@ -968,10 +887,8 @@ function changeShareQuantity(amount) {
           </div>
         </div>
 
-        <fieldset
-          :disabled="saving || Boolean(persisted) || uncertainCreate"
-        >
-          <!-- Choose food -->
+        <fieldset :disabled="locked">
+          <!-- Food picker -->
           <section v-if="!editing" class="editor-section p-3 mb-3">
             <div class="row g-2 align-items-center mb-3">
               <div class="col-12 col-sm">
@@ -1027,7 +944,6 @@ function changeShareQuantity(amount) {
               </div>
 
               <template v-else>
-                <!-- Search and sorting -->
                 <div class="row g-2 mb-3">
                   <div class="col-12 col-sm-7">
                     <label for="inventory-search" class="visually-hidden">
@@ -1059,7 +975,6 @@ function changeShareQuantity(amount) {
                   </div>
                 </div>
 
-                <!-- Food grid -->
                 <fieldset>
                   <legend class="visually-hidden">
                     Choose one food item to share
@@ -1112,9 +1027,7 @@ function changeShareQuantity(amount) {
                             <FoodIcon :food="item.name" />
                           </span>
 
-                          <span class="food-name">
-                            {{ item.name }}
-                          </span>
+                          <span class="food-name">{{ item.name }}</span>
 
                           <span class="food-meta">
                             {{ item.quantity ?? '—' }} {{ item.unit }}
@@ -1123,9 +1036,8 @@ function changeShareQuantity(amount) {
                           <span
                             class="food-expiry mt-auto pt-1"
                             :class="{
-                              'food-unavailable': Boolean(
-                                inventoryDisabledReason(item),
-                              ),
+                              'food-unavailable':
+                                Boolean(inventoryDisabledReason(item)),
                             }"
                           >
                             {{
@@ -1136,25 +1048,18 @@ function changeShareQuantity(amount) {
                         </label>
                       </div>
 
-                      <div
-                        v-if="!inventoryOptions.length"
-                        class="col-12"
-                      >
+                      <div v-if="!inventoryOptions.length" class="col-12">
                         <div class="picker-empty text-center px-3 py-4">
                           <p class="picker-empty-title">
                             {{
                               inventorySearch.trim()
                                 ? 'No matching food'
-                                : 'Your shelves are waiting'
+                                : 'No food available to share'
                             }}
                           </p>
 
                           <p class="picker-muted mt-1">
-                            {{
-                              inventorySearch.trim()
-                                ? 'Try another search or add food manually.'
-                                : 'Add food to your inventory, or enter an item manually.'
-                            }}
+                            Try another search or add food manually.
                           </p>
 
                           <button
@@ -1170,7 +1075,7 @@ function changeShareQuantity(amount) {
                   </div>
                 </fieldset>
 
-                <!-- Selection and quantity -->
+                <!-- Selected item and quantity -->
                 <div
                   v-if="selectedInventory"
                   class="selection-bar p-3 mt-3"
@@ -1193,7 +1098,7 @@ function changeShareQuantity(amount) {
 
                     <div class="col-12 col-lg-auto">
                       <div class="row g-2 align-items-end">
-                        <div class="col">
+                        <div class="col-auto">
                           <label
                             for="share-picker-quantity"
                             class="quantity-label d-block mb-1"
@@ -1209,9 +1114,7 @@ function changeShareQuantity(amount) {
                               class="flex-shrink-0"
                               aria-label="Decrease quantity"
                               :disabled="
-                                saving ||
-                                Boolean(persisted) ||
-                                uncertainCreate ||
+                                locked ||
                                 maxShareQuantity < 1 ||
                                 Number(form.quantity) <= 1
                               "
@@ -1223,12 +1126,13 @@ function changeShareQuantity(amount) {
                             <input
                               id="share-picker-quantity"
                               v-model.number="form.quantity"
-                              class="flex-grow-1 text-center"
+                              class="text-center"
                               type="number"
                               min="1"
                               :max="maxShareQuantity"
                               step="1"
                               inputmode="numeric"
+                              aria-label="Quantity to share"
                               required
                               @change="clampShareQuantity"
                             />
@@ -1238,9 +1142,7 @@ function changeShareQuantity(amount) {
                               class="flex-shrink-0"
                               aria-label="Increase quantity"
                               :disabled="
-                                saving ||
-                                Boolean(persisted) ||
-                                uncertainCreate ||
+                                locked ||
                                 maxShareQuantity < 1 ||
                                 Number(form.quantity) >= maxShareQuantity
                               "
@@ -1291,17 +1193,13 @@ function changeShareQuantity(amount) {
             the shared quantity is deducted after collection.
           </div>
 
-          <!-- Details grid -->
           <div class="row g-3">
             <!-- Food details -->
             <div class="col-12 col-md-6">
               <section class="editor-section p-3 h-100">
                 <h3 class="mb-3">1. What are you sharing?</h3>
 
-                <label for="listing-title">
-                  Food name <span aria-hidden="true">*</span>
-                </label>
-
+                <label for="listing-title">Food name *</label>
                 <input
                   id="listing-title"
                   v-model="form.title"
@@ -1314,7 +1212,6 @@ function changeShareQuantity(amount) {
                 <label class="mt-3" for="listing-category">
                   Category
                 </label>
-
                 <select
                   id="listing-category"
                   v-model="form.category"
@@ -1332,7 +1229,6 @@ function changeShareQuantity(amount) {
                 <div class="row g-3 mt-0">
                   <div class="col-6">
                     <label for="listing-quantity">Quantity *</label>
-
                     <input
                       id="listing-quantity"
                       v-model.number="form.quantity"
@@ -1341,7 +1237,7 @@ function changeShareQuantity(amount) {
                       min="1"
                       :max="
                         linked && !editing
-                          ? selectedInventory?.quantity
+                          ? maxShareQuantity
                           : 1000000
                       "
                       step="1"
@@ -1352,7 +1248,6 @@ function changeShareQuantity(amount) {
 
                   <div class="col-6">
                     <label for="listing-unit">Unit *</label>
-
                     <input
                       id="listing-unit"
                       v-model="form.unit"
@@ -1379,7 +1274,6 @@ function changeShareQuantity(amount) {
                 <label class="mt-3" for="listing-description">
                   Short description
                 </label>
-
                 <textarea
                   id="listing-description"
                   v-model="form.description"
@@ -1392,7 +1286,6 @@ function changeShareQuantity(amount) {
                 <label class="mt-3" for="listing-expiry">
                   Use-by date and time *
                 </label>
-
                 <input
                   id="listing-expiry"
                   v-model="form.expiresAt"
@@ -1400,9 +1293,7 @@ function changeShareQuantity(amount) {
                   type="datetime-local"
                   :min="minDatetime"
                   :max="
-                    linkedExpiry
-                      ? toLocalInput(linkedExpiry)
-                      : undefined
+                    linkedExpiry ? toLocalInput(linkedExpiry) : undefined
                   "
                   required
                 />
@@ -1441,13 +1332,9 @@ function changeShareQuantity(amount) {
                   </p>
                 </div>
 
-                <label
-                  class="visually-hidden"
-                  for="listing-photo"
-                >
+                <label class="visually-hidden" for="listing-photo">
                   Choose a food photo
                 </label>
-
                 <input
                   id="listing-photo"
                   ref="photoInput"
@@ -1458,8 +1345,8 @@ function changeShareQuantity(amount) {
                 />
 
                 <p class="field-hint mt-2">
-                  Optional. JPEG, PNG or WebP, up to 8 MiB.
-                  Compressed on the server before storage.
+                  A Photo is optional, but strongly reccomanded. 
+                  Format accepted: JPEG, PNG or WebP, up to 8 MiB.
                 </p>
 
                 <button
@@ -1480,7 +1367,6 @@ function changeShareQuantity(amount) {
                     class="flex-shrink-0"
                     type="checkbox"
                   />
-
                   Remove the current photo when saving
                 </label>
               </section>
@@ -1494,7 +1380,6 @@ function changeShareQuantity(amount) {
                 <div class="row g-3">
                   <div class="col-12 col-sm-6">
                     <label for="pickup-start">From *</label>
-
                     <input
                       id="pickup-start"
                       v-model="form.pickupStart"
@@ -1508,7 +1393,6 @@ function changeShareQuantity(amount) {
 
                   <div class="col-12 col-sm-6">
                     <label for="pickup-end">Until *</label>
-
                     <input
                       id="pickup-end"
                       v-model="form.pickupEnd"
@@ -1526,108 +1410,156 @@ function changeShareQuantity(amount) {
                   time before expiry.
                 </p>
 
-                <label class="mt-3" for="pickup-label">
-                  Meeting point *
-                </label>
+                <!-- Address search -->
+                <div class="mt-3">
+                  <div class="d-flex justify-content-between">
+                    <label for="pickup-address-search">
+                      Search a Singapore address *
+                    </label>
 
-                <input
-                  id="pickup-label"
-                  v-model="form.pickupLabel"
-                  class="form-control"
-                  maxlength="160"
-                  required
-                  placeholder="e.g. Community centre main entrance"
-                />
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                      <button
+                        type="button"
+                        class="editor-button"
+                        :disabled="locked || geolocating || addressLoading"
+                        @click="useMyLocation"
+                      >
+                        {{ geolocating ? 'Finding your address…' : '⌖ Get my location' }}
+                      </button>
+                    </div>
+                  </div>
+                  
 
-                <p class="field-hint mt-2">
-                  The pin, meeting point and instructions are visible to
-                  other signed-in users. Choose a public meeting point
-                  you are comfortable sharing.
-                </p>
+                  <div class="row g-2">
+                    <div class="col">
+                      <input
+                        id="pickup-address-search"
+                        v-model="addressQuery"
+                        class="form-control"
+                        type="search"
+                        maxlength="160"
+                        placeholder="Building, street or postal code"
+                        @keydown.enter.prevent="searchPickupAddresses(1)"
+                      />
+                    </div>
 
-                <div
-                  class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3"
-                >
-                  <label id="pickup-map-label" class="mb-0">
-                    Choose the pickup point *
-                  </label>
+                    <div class="col-auto">
+                      <button
+                        type="button"
+                        class="editor-button"
+                        :disabled="
+                          addressLoading ||
+                          geolocating ||
+                          addressQuery.trim().length < 2
+                        "
+                        @click="searchPickupAddresses(1)"
+                      >
+                        {{ addressLoading ? 'Searching…' : 'Search' }}
+                      </button>
+                    </div>
+                    <p v-if="geolocating" class="field-hint mt-2" role="status">
+                      Finding your current location and nearby addresses…
+                    </p>
 
-                  <button
-                    type="button"
-                    class="editor-link"
-                    :disabled="geolocating"
-                    @click="useMyLocation"
-                  >
-                    {{ geolocating ? 'Locating…' : 'Use my location' }}
-                  </button>
-                </div>
-
-                <div
-                  ref="mapElement"
-                  class="pickup-map w-100"
-                  aria-labelledby="pickup-map-label"
-                ></div>
-
-                <p class="field-hint mt-2">
-                  Tap the map or drag the pin. You can also enter
-                  coordinates below.
-                </p>
-
-                <p
-                  v-if="locationNotice"
-                  class="field-hint mt-2"
-                  role="status"
-                >
-                  {{ locationNotice }}
-                </p>
-
-                <div class="row g-2 mt-0">
-                  <div class="col-6">
-                    <label for="pickup-lat">Latitude *</label>
-
-                    <input
-                      id="pickup-lat"
-                      v-model="form.latitude"
-                      class="form-control"
-                      type="number"
-                      step="any"
-                      min="-90"
-                      max="90"
-                      required
-                      placeholder="1.300800"
-                      @change="syncTypedPoint"
-                    />
+                    <p
+                      v-if="addressResults.length && !addressTotalPages"
+                      class="field-hint mt-2"
+                    >
+                      The nearest address has been selected. Choose another nearby result
+                      if needed.
+                    </p>
                   </div>
 
-                  <div class="col-6">
-                    <label for="pickup-lng">Longitude *</label>
+                  <p class="field-hint mt-2">
+                    Search, then select a result to set your pickup address.
+                  </p>
 
-                    <input
-                      id="pickup-lng"
-                      v-model="form.longitude"
-                      class="form-control"
-                      type="number"
-                      step="any"
-                      min="-180"
-                      max="180"
-                      required
-                      placeholder="103.855500"
-                      @change="syncTypedPoint"
-                    />
+                  <p
+                    v-if="addressError"
+                    class="field-hint mt-2"
+                    role="status"
+                  >
+                    {{ addressError }}
+                  </p>
+
+                  <div
+                    v-if="addressResults.length"
+                    class="address-results list-group overflow-auto mt-2"
+                    aria-label="Matching pickup addresses"
+                  >
+                    <button
+                      v-for="address in addressResults"
+                      :key="`${address.address}-${address.latitude}-${address.longitude}`"
+                      type="button"
+                      class="address-result list-group-item list-group-item-action text-start"
+                      @click="choosePickupAddress(address)"
+                    >
+                      <strong v-if="address.building" class="d-block">
+                        {{ address.building }}
+                      </strong>
+
+                      <span class="d-block">
+                        {{ address.address }}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div
+                    v-if="addressTotalPages > 1"
+                    class="d-flex align-items-center justify-content-between gap-2 mt-2"
+                  >
+                    <button
+                      type="button"
+                      class="editor-button"
+                      :disabled="addressLoading || addressPage <= 1"
+                      @click="searchPickupAddresses(addressPage - 1)"
+                    >
+                      Previous
+                    </button>
+
+                    <span class="field-hint">
+                      Page {{ addressPage }} of {{ addressTotalPages }}
+                    </span>
+
+                    <button
+                      type="button"
+                      class="editor-button"
+                      :disabled="
+                        addressLoading ||
+                        addressPage >= addressTotalPages
+                      "
+                      @click="searchPickupAddresses(addressPage + 1)"
+                    >
+                      Next
+                    </button>
+                  </div>
+
+                  <!-- Read-only selected address -->
+                  <div
+                    v-if="selectedAddress"
+                    class="linked-note p-3 mt-3"
+                    aria-live="polite"
+                  >
+                    <strong class="d-block">
+                      Selected meeting point
+                    </strong>
+
+                    <p class="mt-1">
+                      {{ selectedAddress.address }}
+                    </p>
                   </div>
                 </div>
 
                 <label class="mt-3" for="pickup-instructions">
                   Pickup instructions
                 </label>
-
                 <textarea
                   id="pickup-instructions"
                   v-model="form.pickupInstructions"
                   class="form-control"
                   rows="2"
                   maxlength="500"
-                  placeholder="e.g. Bring a reusable bag."
+                  placeholder="e.g. Meet outside the main entrance. Bring a reusable bag."
                 ></textarea>
               </section>
             </div>
@@ -1936,15 +1868,15 @@ function changeShareQuantity(amount) {
   background: var(--paper);
 }
 
-/* Quantity stepper */
+/* Quantity */
 .food-editor .quantity-label {
   color: var(--muted);
   font-size: 0.78rem;
 }
 
 .quantity-stepper {
-  width: 100%;
-  max-width: 152px;
+  width: 152px;
+  flex-shrink: 0;
   border: 1.5px solid var(--ink);
   border-radius: 10px;
   background: var(--paper-bright);
@@ -1968,6 +1900,7 @@ function changeShareQuantity(amount) {
 .quantity-stepper input {
   width: 0;
   min-width: 0;
+  flex: 1 1 0;
   height: 44px;
   padding: 0 4px;
   border: 0;
@@ -1993,7 +1926,7 @@ function changeShareQuantity(amount) {
   outline-offset: 3px;
 }
 
-/* Photo and pickup map */
+/* Photos and map */
 .photo-box {
   min-height: 140px;
   border: 1.5px dashed var(--line, var(--ink));
@@ -2011,23 +1944,23 @@ function changeShareQuantity(amount) {
   height: 18px;
 }
 
-.pickup-map {
-  height: clamp(230px, 30vw, 260px);
-  border: 1.5px solid var(--ink);
-  border-radius: 12px;
-  z-index: 0;
+/* Address results */
+.address-results {
+  max-height: 240px;
 }
 
-:deep(.pickup-marker-dot) {
-  display: block;
-  width: 26px;
-  height: 26px;
-  border: 3px solid white;
-  border-radius: 50%;
-  background: var(--aqua, #159b8e);
-  box-shadow:
-    0 0 0 2px var(--ink, #123f3b),
-    0 3px 6px #0005;
+.address-result {
+  border-color: var(--line, var(--ink));
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+
+.address-result:hover,
+.address-result:focus-visible {
+  background: var(--aqua-soft);
+  color: var(--ink);
 }
 
 /* Notices and footer */
@@ -2040,7 +1973,6 @@ function changeShareQuantity(amount) {
 }
 
 .editor-footer {
-  position: sticky;
   bottom: 0;
   z-index: 1;
   border-top: 1px solid var(--line, var(--ink));

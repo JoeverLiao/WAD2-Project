@@ -43,6 +43,7 @@ const { default: analyticsRoutes } = await import('./routes/analyticsRoutes.js')
 const { default: iconRoutes } = await import('./routes/iconRoutes.js');
 const { default: userRecipeRoutes } = await import('./routes/userRecipeRoutes.js');
 const { default: recipeRecommendationRoutes } = await import('./routes/recipeRecommendationRoutes.js');
+const { default: locationRoutes } = await import('./routes/locationRoutes.js');
 
 const server = express();
 // Parse URL-encoded data from POST requests
@@ -81,6 +82,7 @@ server.use('/api/scanning', scanningRoutes)
 server.use('/api/inventory', inventoryRoutes)
 server.use('/api/freshness', freshnessRoutes)
 server.use('/api/rescue', rescueRoutes)
+server.use('/api/locations', locationRoutes)
 server.use('/api/analytics', analyticsRoutes)
 server.use('/api/icons', iconRoutes)
 server.use('/api/user-recipes', userRecipeRoutes)
