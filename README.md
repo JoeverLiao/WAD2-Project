@@ -94,6 +94,12 @@ The example config also lists optional `ICON_AI_*` tuning settings such as token
 
 4. Open `http://localhost:5173`. Vite proxies `/api` requests to the local server at port `3000`.
 
+## Deployed URL, Git Hub repo, and demo video
+
+Deployed website: http://161.118.223.167/
+GitHub Repo: https://github.com/JoeverLiao/WAD2-Project
+Demo Video: https://youtu.be/ksG4yL16ogo
+
 ## Basic user guide
 
 1. Register an account or log in from the home page. Most application pages require authentication.
@@ -102,6 +108,11 @@ The example config also lists optional `ICON_AI_*` tuning settings such as token
 4. Use **Freshness & Recipes** to focus on food that needs attention, find recipes based on ingredients, and save or record recipes you have cooked.
 5. Open **Neighbour Food Rescue** to browse nearby listings or create one for food you can share. Use the listing and pickup tools to coordinate with another user.
 6. Record food activity and visit **Food Waste Analytics** to review the activity history and summaries. Update your profile from **Profile** when needed.
+
+## Demo account that was used in video
+
+Email: example@gmail.com
+Password: 12345678
 
 ## Project structure
 
