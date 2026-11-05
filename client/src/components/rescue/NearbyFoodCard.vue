@@ -47,7 +47,7 @@ function openRequest(item) {
       class="photo-placeholder d-grid"
       aria-hidden="true"
     >
-      <FoodIcon :food="item.name" />
+      <FoodIcon :name="item.name" />
     </div>
 
     <div class="food-details d-grid">

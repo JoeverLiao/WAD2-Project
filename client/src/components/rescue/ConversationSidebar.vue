@@ -176,7 +176,7 @@ function selectRequest(group, request) {
                     class="conversation-food-icon flex-shrink-0"
                     aria-hidden="true"
                   >
-                    <FoodIcon :food="request.food" />
+                    <FoodIcon :name="request.food" />
                   </span>
 
                   <span class="d-flex flex-column gap-1">
