@@ -1,6 +1,6 @@
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -20,7 +20,9 @@ const recipesLoading = ref(false)
 const recipesError = ref('')
 
 const search = ref('')
-const diet = ref('')
+const cookingTime = ref('')
+const timeEstimates = ref({})
+const estimatingTimes = ref(false)
 const sort = ref('rescue')
 const currentPage = ref(1)
 const pageSize = 6
@@ -450,6 +452,7 @@ async function loadRecipes() {
   recipesError.value = ''
   recipes.value = []
   aiUsed.value = false
+  estimatingTimes.value = false
   try {
     let result = []
     if (activeTab.value === 'mine') {
@@ -484,7 +487,10 @@ async function loadRecipes() {
         }).filter(Boolean)
       }
     }
-    if (requestId === recipeRequestId && !signal.aborted) recipes.value = result
+    if (requestId === recipeRequestId && !signal.aborted) {
+      recipes.value = result
+      void loadTimeEstimates(result, requestId, signal)
+    }
   } catch (err) {
     if (err.name === 'AbortError') return
     if (requestId === recipeRequestId) {
@@ -497,6 +503,90 @@ async function loadRecipes() {
 }
 
 // ==========================================
+// ESTIMATED COOKING TIMES
+// ==========================================
+
+async function loadTimeEstimates(list, requestId, signal) {
+  if (!list.length) return
+
+  estimatingTimes.value = true
+
+  try {
+    const estimates = {}
+
+    // Backend accepts up to 30 recipes per request.
+    for (let i = 0; i < list.length; i += 30) {
+      if (signal.aborted) return
+
+      const batch = list.slice(i, i + 30)
+
+      const response = await fetch(
+        '/api/freshness/recipes/estimate-times',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            ...authHeaders(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            recipes: batch.map(recipe => ({
+              id: recipe.id,
+              name: recipe.name,
+              ingredients: recipe.ingredients,
+              instructions: recipe.instructions,
+            })),
+          }),
+          signal,
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(
+          `Time estimation failed (${response.status})`
+        )
+      }
+
+      const data = await response.json()
+      Object.assign(estimates, data.estimates || {})
+    }
+
+    if (
+      requestId === recipeRequestId &&
+      !signal.aborted
+    ) {
+      timeEstimates.value = {
+        ...timeEstimates.value,
+        ...estimates,
+      }
+    }
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      console.warn(
+        'Cooking-time estimates unavailable:',
+        error.message
+      )
+    }
+  } finally {
+    if (requestId === recipeRequestId) {
+      estimatingTimes.value = false
+    }
+  }
+}
+
+function estimatedMinutes(recipe) {
+  const value = timeEstimates.value[String(recipe.id)]
+  const minutes = Number(value)
+
+  return (
+    value != null &&
+    Number.isFinite(minutes) &&
+    minutes > 0
+  )
+    ? minutes
+    : null
+}
+
 // RECIPE MATCHING
 // ==========================================
 
@@ -582,18 +672,22 @@ const filteredRecipes = computed(() => {
         return false
       }
 
-      if (
-        diet.value &&
-        !recipe.dietaryTags.some(tag =>
-          tag.toLowerCase() === diet.value.toLowerCase()
-        )
-      ) {
-        return false
+      if (cookingTime.value) {
+        const minutes = estimatedMinutes(recipe)
+        if (minutes === null) return false
+        if (cookingTime.value === '60plus') {
+          if (minutes < 60) return false
+        } else if (minutes >= Number(cookingTime.value)) {
+          return false
+        }
       }
 
       return true
     })
     .sort((a, b) => {
+      if (sort.value === 'time') {
+        return (estimatedMinutes(a) ?? Infinity) - (estimatedMinutes(b) ?? Infinity)
+      }
       if (activeTab.value === 'ai') return 0
       if (sort.value === 'match') {
         return b.percentage - a.percentage
@@ -620,7 +714,7 @@ const visibleRecipes = computed(() => {
 // WATCHERS
 // ==========================================
 
-watch([activeTab, search, diet, sort], () => {
+watch([activeTab, search, cookingTime, sort], () => {
   currentPage.value = 1
 })
 
@@ -642,8 +736,7 @@ watch(apiIngredients, () => {
 
 
 function goToInventory() {
-  document.querySelector('.kitchen-summary')
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  router.push('/dashboard')
 }
 
 function goToUrgentItems() {
@@ -1136,22 +1229,25 @@ onUnmounted(() => {
           aria-label="Search recipes"
         />
 
-        <select v-model="diet" aria-label="Filter diet">
-          <option value="">All diets</option>
-          <option value="Vegetarian">Vegetarian</option>
-          <option value="Vegan">Vegan</option>
+        <select v-model="cookingTime" aria-label="Filter estimated cooking time">
+          <option value="">Any cooking time</option>
+          <option value="30">Under 30 min</option>
+          <option value="45">Under 45 min</option>
+          <option value="60">Under 60 min</option>
+          <option value="60plus">60 min or longer</option>
         </select>
 
         <select v-model="sort" aria-label="Sort recipes">
           <option value="rescue">Best rescue score</option>
           <option value="match">Best match</option>
+          <option value="time">Quickest to cook</option>
           <option value="name">Name A–Z</option>
         </select>
 
         <button
           @click="
             search = '';
-            diet = '';
+            cookingTime = '';
             sort = 'rescue'
           "
         >
@@ -1202,7 +1298,7 @@ onUnmounted(() => {
         <Transition name="recipe-fade" mode="out-in">
           <div
             v-if="visibleRecipes.length"
-            :key="`${activeTab}-${currentPage}-${search}-${diet}-${sort}`"
+            :key="`${activeTab}-${currentPage}-${search}-${cookingTime}-${sort}`"
             class="recipe-grid"
           >
             <article
@@ -1264,8 +1360,11 @@ onUnmounted(() => {
                     {{ tag }}
                   </span>
 
-                  <span v-if="recipe.prepTime">
-                    {{ recipe.prepTime }} min
+                  <span v-if="estimatedMinutes(recipe)">
+                    ⏱ Estimated time: {{ estimatedMinutes(recipe) }} min
+                  </span>
+                  <span v-else-if="estimatingTimes">
+                    ⏱ Estimating...
                   </span>
                 </div>
 
@@ -1341,7 +1440,7 @@ onUnmounted(() => {
               v-if="activeTab !== 'saved'"
               @click="
                 search = '';
-                diet = '';
+                cookingTime = '';
                 resetSelection()
               "
             >
