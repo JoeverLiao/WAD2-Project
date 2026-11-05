@@ -119,6 +119,8 @@ The example config also lists optional `ICON_AI_*` tuning settings such as token
 |   |   |-- views/              # Account, fridge, scanning, recipe, rescue, analytics pages
 |   |   |-- utils/              # Validation, date, and feature helpers
 |   |   `-- styles/             # Global and feature styles
+|   |-- tests/
+|   |      |-- e2e/       
 |   |-- package.json
 |   `-- vite.config.js
 |-- server/
@@ -144,3 +146,43 @@ The example config also lists optional `ICON_AI_*` tuning settings such as token
 - OneMap address lookup is intended for Singapore addresses.
 - The local Vite proxy and server CORS configuration are set up for `localhost:5173` and `localhost:3000`; deployments need corresponding frontend hosting and API routing configuration.
 
+## End-to-end tests
+
+Start the frontend and backend using the local setup instructions above.
+Run these commands from the folder containing `playwright.config.js`.
+
+Install Chromium once:
+
+```sh
+npx playwright install chromium
+```
+
+Run all tests without opening a browser window:
+
+```sh
+npx playwright test --config playwright.config.js
+```
+
+Run all tests with the browser visible:
+
+```sh
+npx playwright test --config playwright.config.js --headed
+```
+
+Run a single feature:
+
+```sh
+npx playwright test rescue.spec.js --config playwright.config.js
+```
+
+Replace `rescue.spec.js` with another test filename as needed.
+Add `--headed` to see the browser.
+
+View the test report:
+
+```sh
+npx playwright show-report playwright-report
+```
+
+Tests use the real backend and external services, so the database and required
+APIs must be configured. Use a test database because tests create and modify data.

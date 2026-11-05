@@ -327,7 +327,7 @@ test('post linked food from the editor using the saved pickup address', async ({
   ).toBe(true)
 })
 
-test('search OneMap and choose a real pickup address @external', async ({
+test('search OneMap and choose a real pickup address', async ({
   page,
   context,
   member,

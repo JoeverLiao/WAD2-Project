@@ -1,5 +1,4 @@
 // Server settings for food icon classification, read from the environment (server/config.env;
-// see server/config.env.example). Read when called, not at import, because config.env is loaded at startup.
 import { fileURLToPath } from 'node:url'
 
 const number = (value, fallback) => {
