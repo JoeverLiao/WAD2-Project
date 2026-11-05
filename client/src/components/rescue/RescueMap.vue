@@ -1,4 +1,5 @@
 <script setup>
+import { singaporeDateKey } from '@/services/rescueDates.js'
 import '@/assets/rescue.css'
 import CollectionRequestForm from './CollectionRequestForm.vue'
 import NearbyFilters from './NearbyFilters.vue'
@@ -103,7 +104,7 @@ const uncertainRequest = ref(false)
 const cardElements = new Map()
 const markers = new Map()
 
-const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+const timezone = 'Asia/Singapore'
 
 let map = null
 let layer = null
@@ -195,25 +196,22 @@ const areaLabel = computed(() =>
 // Formatting
 function useBy(value) {
   const date = new Date(value)
-  const today = new Date(clock.value)
-
-  const tomorrow = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate() + 1,
-  )
+  const today = singaporeDateKey(clock.value)
+  const tomorrow = singaporeDateKey(clock.value + 86400000)
 
   const day =
-    date.toDateString() === today.toDateString()
+    singaporeDateKey(date) === today
       ? 'Today'
-      : date.toDateString() === tomorrow.toDateString()
+      : singaporeDateKey(date) === tomorrow
         ? 'Tomorrow'
         : new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
             day: 'numeric',
             month: 'short',
           }).format(date)
 
   const time = new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
     hour: 'numeric',
     minute: '2-digit',
   }).format(date)

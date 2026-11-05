@@ -1,3 +1,4 @@
+import { validateLinkedExpiry } from '../services/rescueExpiry.js'
 import mongoose from 'mongoose'
 import {storeInitialMessage} from '../services/rescueCommunication.js'
 import FoodListing from '../models/foodListingModel.js'
@@ -97,7 +98,7 @@ const createListing = wrap(async (req,res) => {
         fail(400, 'The unit must match your inventory item.')
       }
       if (!inventory.updatedAt) fail(409,'Update this legacy inventory item before sharing it.')
-      if (inventory.expiresAt && fields.expiresAt>inventory.expiresAt) fail(400,'Listing expiry cannot be later than inventory expiry.')
+      validateLinkedExpiry(fields.expiresAt, inventory.expiresAt)
       data.inventoryItem = inventory._id
       data.activeInventoryItem = inventory._id
       data.inventorySnapshotUpdatedAt = inventory.updatedAt
@@ -149,7 +150,7 @@ const updateListing = wrap(async (req,res) => {
     if (existing.inventoryItem && has(fields,'expiresAt')) {
       const inventory = await InventoryItem.findOne({_id:existing.inventoryItem,user:req.userId}).session(session)
       if (!inventory) fail(409,'Linked inventory item is missing. Withdraw this listing.')
-      if (inventory.expiresAt && fields.expiresAt>inventory.expiresAt) fail(400,'Listing expiry cannot be later than inventory expiry.')
+      validateLinkedExpiry(fields.expiresAt, inventory.expiresAt)
     }
     validateListingWindow({...existing.toObject(),...fields})
     return FoodListing.findOneAndUpdate({_id:existing._id,status:'available'},{$set:fields,$inc:{revision:1}},{new:true,runValidators:true,session})

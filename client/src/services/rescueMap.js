@@ -1,3 +1,4 @@
+import { rescueDate, singaporeDateKey } from "./rescueDates.js";
 export const DEFAULT_CENTRE = { lat: 1.3008, lng: 103.8555 };
 export function validPoint(coordinates) {
   return (
@@ -33,18 +34,10 @@ export function dayWindow(day, now = new Date()) {
   if (!["today", "tomorrow"].includes(day))
     throw new Error("Invalid pickup day.");
   const offset = day === "tomorrow" ? 1 : 0;
-  // Local calendar boundaries, including daylight-saving transitions.
+  const start = rescueDate(singaporeDateKey(now)).getTime() + offset * 86400000;
   return {
-    pickupFrom: new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + offset,
-    ).toISOString(),
-    pickupUntil: new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + offset + 1,
-    ).toISOString(),
+    pickupFrom: rescueDate(start).toISOString(),
+    pickupUntil: new Date(start + 86400000).toISOString(),
   };
 }
 export function boundsForApi(bounds) {
@@ -69,8 +62,8 @@ export function requestPayload(
   { start, end, message, listing },
   now = Date.now(),
 ) {
-  let pickupStart = new Date(start),
-    pickupEnd = new Date(end);
+  let pickupStart = rescueDate(start),
+    pickupEnd = rescueDate(end);
   if (
     !start ||
     !end ||

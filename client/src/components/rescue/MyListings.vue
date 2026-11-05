@@ -208,6 +208,7 @@ function dateLabel(value) {
   }
 
   return new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
     day: 'numeric',
     month: 'short',
     hour: 'numeric',

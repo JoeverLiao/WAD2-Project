@@ -1,4 +1,5 @@
 <script setup>
+import { endOfExpiryDay, singaporeDateKey } from '@/services/rescueDates.js'
 import PageHeaderDoodle from '../PageHeaderDoodle.vue'
 import '@/assets/rescue.css'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -39,13 +40,7 @@ const boardOwner = computed(() =>
 
 // Nearby food expiring today
 const expiringToday = computed(() => {
-  const now = new Date(clock.value)
-
-  const dayEnd = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + 1,
-  ).getTime()
+  const dayEnd = Date.parse(endOfExpiryDay(singaporeDateKey(clock.value)))
 
   return props.nearbyListings
     .filter((item) => {
@@ -55,7 +50,7 @@ const expiringToday = computed(() => {
         item.status === 'available' &&
         !item.isOwner &&
         expiry > clock.value &&
-        expiry < dayEnd &&
+        expiry <= dayEnd &&
         Date.parse(item.pickupEnd) > clock.value
       )
     })
@@ -76,6 +71,7 @@ const canShowResults = computed(
 // Formatting
 function expiryTime(value) {
   return new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value))
