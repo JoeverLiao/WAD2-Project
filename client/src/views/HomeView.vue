@@ -1,4 +1,5 @@
 <script setup>
+import PageHeaderDoodle from '../components/PageHeaderDoodle.vue'
 import { usePageLoading } from '../utils/pageLoading.js'
 import { ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -80,14 +81,16 @@ async function handleLogin() {
     <div class="home-shell">
       <div class="home-hero">
         <div class="hero-copy">
-          <div v-if="auth.isAuthenticated" class="login-card fc-page-heading">
+          <div v-if="auth.isAuthenticated" class="login-card fc-page-heading" data-header-theme="account">
+            <PageHeaderDoodle kind="account" />
             <h1>Welcome back, {{ auth.user.name }}</h1>
             <p class="login-subtitle">You&rsquo;re already signed in.</p>
             <RouterLink :to="{ name: 'dashboard' }" class="home-button button-scan"
               >Go to my dashboard</RouterLink
             >
           </div>
-          <form v-else class="login-card fc-page-heading" aria-label="Login" @submit.prevent="handleLogin">
+          <form v-else class="login-card fc-page-heading" data-header-theme="account" aria-label="Login" @submit.prevent="handleLogin">
+            <PageHeaderDoodle kind="account" />
             <h1>Login</h1>
             <p class="login-subtitle">Sign in to your Full Circle account.</p>
             <p v-if="error" class="login-error" role="alert">{{ error }}</p>

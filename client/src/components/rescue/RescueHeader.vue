@@ -1,4 +1,5 @@
 <script setup>
+import PageHeaderDoodle from '../PageHeaderDoodle.vue'
 import '@/assets/rescue.css'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -94,7 +95,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="rescue-header container py-4">
-    <div class="bulletin-board-container position-relative my-4 p-3 p-sm-4 p-lg-5">
+    <div class="bulletin-board-container fc-page-heading position-relative my-4 p-3 p-sm-4 p-lg-5" data-header-theme="rescue">
+      <PageHeaderDoodle kind="rescue" />
       <div class="row align-items-center gy-4">
         <!-- Community board introduction -->
         <div class="col-12 col-lg-7 col-xl-6">

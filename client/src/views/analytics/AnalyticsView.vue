@@ -1,4 +1,5 @@
 <script setup>
+import PageHeaderDoodle from '../../components/PageHeaderDoodle.vue'
 import { computed, ref, watch } from 'vue'
 import { seedAnalyticsDemo } from '../../services/analytics.js'
 import { useFoodActivity, actionLabels } from '../../composables/useFoodActivity.js'
@@ -201,7 +202,8 @@ const animatedTotals = useAnimatedTotals(totals)
 
 <template>
   <section class="container-xl py-4 analytics-page" aria-label="Food Waste Analytics">
-    <header class="hero row align-items-center fc-page-heading">
+    <header class="hero row align-items-center fc-page-heading" data-header-theme="analytics">
+      <PageHeaderDoodle kind="analytics" />
       <div class="col-lg-8">
         <p class="eyebrow">✿ FOOD WASTE ANALYTICS</p>
         <h1 class="hero-title">Less waste, <span class="scribble">more impact.</span></h1>

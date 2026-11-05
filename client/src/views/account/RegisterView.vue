@@ -55,7 +55,7 @@ async function handleRegister() {
 
 <template>
   <section aria-label="Register">
-    <header class="fc-page-heading"><p class="eyebrow">FULL CIRCLE · ACCOUNT</p><h1>Register</h1></header>
+    <header class="fc-page-heading" data-header-theme="account"><p class="eyebrow">FULL CIRCLE · ACCOUNT</p><h1>Register</h1></header>
     <form @submit.prevent="handleRegister">
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <div>

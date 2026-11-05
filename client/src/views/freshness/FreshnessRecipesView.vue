@@ -768,7 +768,7 @@ onUnmounted(() => {
          COMPACT ANIMATED BANNER
     ====================================== -->
 
-    <section class="fresh-hero">
+    <section class="fresh-hero fc-page-heading" data-header-theme="recipes">
       <div class="hero-pattern" aria-hidden="true"></div>
 
       <div class="floating-leaf leaf-a" aria-hidden="true">

@@ -88,38 +88,72 @@ select[aria-invalid='true'] {
   border-color: #b5382a !important;
 }
 
-/* Shared page header surface, based on the Smart Kitchen header. */
-.site-content .fc-page-heading.fc-page-heading {
+/* Shared recipe-inspired typography and paper surface for page introductions.
+   Repeated class specificity keeps existing scoped page styles from changing this hierarchy. */
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading {
+  --header-accent: #07877d;
+  --header-wash: #def3eb;
+  --header-glow: #edf4cb;
+  position: relative;
+  isolation: isolate;
   box-sizing: border-box;
-  padding: clamp(20px, 2.5vw, 24px) clamp(20px, 3vw, 28px);
-  border: 2px solid var(--ink);
-  border-radius: 17px;
-  background: var(--paper-bright);
+  padding: clamp(24px, 3vw, 40px) clamp(24px, 3.5vw, 48px);
+  border: 3px solid var(--ink);
+  border-radius: 25px;
+  background: radial-gradient(ellipse at 100% 0%, var(--header-glow), transparent 45%), radial-gradient(ellipse at 0% 100%, var(--header-wash), transparent 55%), var(--paper);
   color: var(--ink);
-  box-shadow: var(--shadow-paper);
-  margin-bottom: 20px;
+  font-family: var(--font-sans);
+  box-shadow: 8px 9px 0 var(--ink);
+  margin-bottom: 28px;
 }
-.site-content .fc-page-heading h1 {
-  margin: 0;
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading h1 {
+  margin: 0 0 10px;
   font-family: var(--font-display);
-  font-size: clamp(30px, 4vw, 50px);
-  line-height: 1.1;
+  font-weight: 400;
+  font-size: clamp(32px, 3.2vw, 52px);
+  line-height: 1.18;
+  letter-spacing: normal;
+  color: var(--ink);
 }
-.site-content .fc-page-heading .eyebrow {
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading :is(.eyebrow, .hero-eyebrow, .fc-eyebrow, .profile-tag) {
   margin: 0 0 8px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: #087d73;
-  font-size: .8rem;
+  box-shadow: none;
+  border-radius: 0;
+  color: var(--header-accent);
+  font-family: var(--font-sans);
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: .06em;
+  letter-spacing: .1em;
+  text-transform: uppercase;
 }
-.site-content .fc-page-heading :is(.hero-sub, .page-description, .login-subtitle) {
-  margin-top: 10px;
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading :is(.hero-sub, .page-description, .login-subtitle, .fc-hero-sub, .board-intro, .hero-copy > p) {
+  margin: 12px 0 0;
+  font-family: var(--font-sans);
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.5;
   color: var(--muted);
 }
-.site-content .fc-page-heading.hero.row {
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading :is(button, a.btn, .primary-action, .secondary-action, .secondary-button) {
+  font-family: var(--font-sans);
+}
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading :is(.scribble, .hero-copy h1 span) { color:var(--header-accent); }
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading .scribble::after { background:var(--header-wash); }
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading[data-header-theme='fridge'] { --header-accent:#357b96; --header-wash:#dbedf4; --header-glow:#e6f4ed; }
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading[data-header-theme='analytics'] { --header-accent:#736395; --header-wash:#ebe6f4; --header-glow:#e6f3e4; }
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading[data-header-theme='scanning'] { --header-accent:#a46930; --header-wash:#fff0d6; --header-glow:#e6f1df; }
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading[data-header-theme='rescue'] { --header-accent:#b36e50; --header-wash:#fce8df; --header-glow:#edf3d5; }
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading[data-header-theme='account'] { --header-accent:#826992; --header-wash:#f0e6f4; --header-glow:#e2f2ef; }
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading[data-header-theme='recipes'] { --header-accent:#0b948a; --header-wash:#d9f4ef; --header-glow:#e7f2b9; }
+@media(max-width:600px) {
+  .site-content .fc-page-heading.fc-page-heading.fc-page-heading { padding:24px 20px; border-radius:22px; box-shadow:5px 6px 0 var(--ink); }
+  .site-content .fc-page-heading.fc-page-heading.fc-page-heading h1 { font-size:32px; }
+  .site-content .fc-page-heading.fc-page-heading.fc-page-heading :is(.hero-sub,.page-description,.login-subtitle,.fc-hero-sub,.board-intro,.hero-copy > p) { font-size:18px; }
+}
+.site-content .fc-page-heading.fc-page-heading.fc-page-heading.hero.row {
   margin-inline: 0;
   row-gap: 16px;
 }

@@ -1,4 +1,5 @@
 <script setup>
+import PageHeaderDoodle from '../../components/PageHeaderDoodle.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
@@ -52,7 +53,8 @@ async function handleLogout() {
 
 <template>
   <section class="profile-page" aria-label="Profile">
-    <div v-if="auth.user" class="profile-card fc-page-heading">
+    <div v-if="auth.user" class="profile-card fc-page-heading" data-header-theme="account">
+      <PageHeaderDoodle kind="account" />
       <p class="profile-tag">My account</p>
       <h1>{{ auth.user.name }}</h1>
       <p v-if="error" class="profile-alert alert-error" role="alert">{{ error }}</p>
@@ -94,7 +96,8 @@ async function handleLogout() {
         </div>
       </form>
     </div>
-    <div v-else class="profile-card fc-page-heading">
+    <div v-else class="profile-card fc-page-heading" data-header-theme="account">
+      <PageHeaderDoodle kind="account" />
       <h1>Profile</h1>
       <p>Please <RouterLink :to="{ name: 'login' }">log in</RouterLink> to view your profile.</p>
     </div>

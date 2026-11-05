@@ -1,5 +1,6 @@
 
 <script setup>
+import PageHeaderDoodle from '../../components/PageHeaderDoodle.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePageLoading } from '../../utils/pageLoading.js'
@@ -216,7 +217,8 @@ function goBack() {
     </div>
 
     <article v-else-if="recipe" class="recipe-paper">
-      <div class="recipe-hero fc-page-heading">
+      <div class="recipe-hero fc-page-heading" data-header-theme="recipes">
+        <PageHeaderDoodle kind="cooking" />
         <img
           v-if="recipe.image"
           :src="recipe.image"

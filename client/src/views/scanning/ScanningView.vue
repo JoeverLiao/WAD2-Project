@@ -1,4 +1,5 @@
 <script setup>
+import PageHeaderDoodle from '../../components/PageHeaderDoodle.vue'
 import { ref } from 'vue'
 import ReceiptReviewForm from '../../components/ReceiptReviewForm.vue'
 import ReceiptUpload from '../../components/ReceiptUpload.vue'
@@ -35,12 +36,8 @@ function switchMode(next) {
 
 <template>
   <section class="container py-4 fc-scope" aria-label="Receipt &amp; Product Scanning">
-    <header class="fc-hero">
-      <!-- decorative leaf -->
-      <svg class="fc-hero-leaf" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
-        <path d="M14 106C10 52 46 14 108 12c2 60-30 96-86 98" fill="#b9e0a5" stroke="#4f8a64" stroke-width="4" stroke-linejoin="round" />
-        <path d="M14 106C42 78 66 54 96 28M52 72l-2-24M70 56l16 2M38 88l-18-4" fill="none" stroke="#4f8a64" stroke-width="4" stroke-linecap="round" />
-      </svg>
+    <header class="fc-hero fc-page-heading" data-header-theme="scanning">
+      <PageHeaderDoodle kind="scanning" />
       <p class="fc-eyebrow">Full Circle · Add to inventory</p>
       <h1 class="fc-hero-title">Scan it, sort it, stash it.</h1>
       <p class="fc-hero-sub">Snap your receipt or type items in, and we'll sort out where each one belongs.</p>

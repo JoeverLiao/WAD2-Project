@@ -1,4 +1,5 @@
 <script setup>
+import PageHeaderDoodle from '../../components/PageHeaderDoodle.vue'
 import { ref, onMounted, onBeforeUnmount, inject } from 'vue'
 import { storeToRefs } from 'pinia'
 import { RouterLink, routerKey, routeLocationKey } from 'vue-router'
@@ -284,7 +285,8 @@ defineExpose({ highlightFood })
       </div>
 
       <!-- The paper hero makes the page title and main action read like the other feature pages. -->
-      <header v-if="!embedded" class="page-header paper hero fc-page-heading">
+      <header v-if="!embedded" class="page-header paper hero fc-page-heading" data-header-theme="fridge">
+        <PageHeaderDoodle kind="fridge" />
         <div>
           <p class="eyebrow">FULL CIRCLE · INVENTORY MANAGEMENT</p>
           <h1>My Smart Kitchen</h1>
