@@ -34,7 +34,7 @@ const emit = defineEmits(['photo-error'])
       class="listing-placeholder d-flex align-items-center justify-content-center flex-shrink-0 rounded"
       aria-hidden="true"
     >
-      <FoodIcon :food="selectedGroup.food" />
+      <FoodIcon :name="selectedGroup.food" />
     </span>
 
     <div>

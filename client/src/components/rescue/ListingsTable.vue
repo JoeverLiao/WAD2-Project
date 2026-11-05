@@ -74,7 +74,7 @@ function askConfirmation(type, item) {
                 class="food-placeholder d-grid"
                 aria-hidden="true"
               >
-                <FoodIcon :food="item.title" />
+                <FoodIcon :name="item.title" />
               </span>
 
               <div>

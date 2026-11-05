@@ -1,6 +1,8 @@
 // Vite proxies /api to Express in development. Production needs the same routing.
 export async function apiRequest(path, { body, headers, ...options } = {}) {
   const response = await fetch(`/api${path}`, {
+    method: 'GET',
+    credentials: 'include',
     ...options,
     headers: {
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -11,16 +13,23 @@ export async function apiRequest(path, { body, headers, ...options } = {}) {
 
   if (response.status === 204) return null
 
-  const text = await response.text()
   let data
   try {
-    data = JSON.parse(text)
+    data = await response.json()
   } catch {
-    throw new Error(
-      `Server returned ${response.status}: ${text || '(empty response)'}`,
-    )
+    if (response.ok)
+      throw new Error(`Server returned an invalid response (HTTP ${response.status}).`)
   }
 
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
+  if (!response.ok) {
+    const error = new Error(
+      data?.error ||
+        (response.status === 401
+          ? 'Your session has expired. Please sign in again.'
+          : `Request failed (HTTP ${response.status}).`),
+    )
+    error.status = response.status
+    throw error
+  }
   return data
 }

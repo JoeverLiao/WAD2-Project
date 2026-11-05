@@ -1,7 +1,5 @@
 import axios from "axios";
 
-// Same-origin /api matches your inventory store. For a separate server set
-// VITE_API_BASE_URL=http://localhost:YOUR_PORT/api in the FRONTEND .env.
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
   withCredentials: true,
@@ -17,8 +15,6 @@ export function apiError(
 }
 export const isCancelled = (error) => axios.isCancel(error);
 
-// Backend /mine has no search endpoint, so retrieve all pages before applying
-// local search/counts. Suitable for the tens of listings in this school project.
 export async function allPages(path, key, params = {}, signal) {
   const records = new Map();
   let page = 1;

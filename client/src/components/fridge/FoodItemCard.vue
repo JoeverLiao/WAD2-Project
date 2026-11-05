@@ -229,7 +229,7 @@ function handleDragEnd() {
                 @change="emit('move-storage', { item, destination: JSON.parse($event.target.value) }); $event.target.value = ''">
                 <option value="" disabled selected>Choose fridge or pantry…</option>
                 <option v-for="option in storageOptions" :key="option.type + ':' + option.name"
-                    :value="JSON.stringify({ type: option.type, name: option.name })">{{ option.label }} ({{ option.type }})</option>
+                    :value="JSON.stringify({ type: option.type, name: option.name })">{{ option.label }}</option>
             </select>
         </label>
         <div class="food-quantity-actions">

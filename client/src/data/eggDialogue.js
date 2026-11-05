@@ -3,7 +3,7 @@ export const eggDialogue = {
     "Open the door and type a food name to find it fast.",
     "A yellow badge means a food is expiring soon.",
     "Tap an item in the Expired list and I’ll point you to it.",
-    "Got more than one fridge? Use the arrows to switch.",
+    "Use the arrows to switch between your Fridge and Pantry.",
     "Drag a box around several foods to select them together."
   ],
   "freshness-recipes": [

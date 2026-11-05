@@ -4,9 +4,7 @@ import InventoryItem from '../models/inventoryItemModel.js'
 import FoodListing from '../models/foodListingModel.js'
 import RescueRequest from '../models/rescueRequestModel.js'
 import RescuePhoto from '../models/rescuePhotoModel.js'
-import { completeItems } from '../services/inventoryService.js'
-import { classifyItem } from '../services/foodKnowledge.js'
-import { ZONE_IDS } from '../services/storageGuide.js'
+import { storageGuidance, withStorageGuidance } from '../services/storageGuidance.js'
 //Thahesh
 // // ============================================================
 // INVENTORY API CONTROLLER
@@ -27,7 +25,7 @@ function activitySnapshot(item, action, quantity, fraction = 1) {
     unit: hasCount ? item.unit || 'pieces' : 'kg', category: item.category || 'Other',
     weightKg: (Number(item.weightKg) || 0) * fraction,
     valueSgd: (Number(item.purchasePrice) || 0) * fraction,
-    location: item.storage === 'pantry' ? item.pantryName || 'Pantry' : item.fridgeName || 'Main fridge',
+    location: item.storage === 'pantry' ? 'Pantry' : 'Fridge',
     source: 'Inventory activity',
   }
 }
@@ -53,7 +51,7 @@ async function recordPartialActivity(req, res, next) {
       return item
     })
     if (!updated) return res.status(409).json({ error: 'The food amount has changed. Reload and try again.' })
-    res.json({ item: updated })
+    res.json({ item: withStorageGuidance(updated) })
   } catch (error) { next(error) }
 }
 
@@ -67,8 +65,6 @@ const editableFields = [
   'unit',
   'storage',
   'storageZone',
-  'fridgeName',
-  'pantryName',
   'storageGuidanceIgnored',
   'purchasedAt',
   'expiresAt',
@@ -100,17 +96,6 @@ function validateItemFields(fields, { creating = false } = {}) {
   if (Object.prototype.hasOwnProperty.call(fields, 'storageGuidanceIgnored') &&
       typeof fields.storageGuidanceIgnored !== 'boolean') {
     return 'Storage guidance preference must be true or false.'
-  }
-  for (const key of ['fridgeName', 'pantryName']) {
-    if (!Object.prototype.hasOwnProperty.call(fields, key)) continue
-    if (fields[key] === null || fields[key] === '') {
-      fields[key] = null
-      continue
-    }
-    if (typeof fields[key] !== 'string' || fields[key].trim().length === 0 || fields[key].trim().length > 60) {
-      return 'Storage name must be between 1 and 60 characters.'
-    }
-    fields[key] = fields[key].trim()
   }
   if (creating || Object.prototype.hasOwnProperty.call(fields, 'name')) {
     if (typeof fields.name !== 'string' || !fields.name.trim()) {
@@ -239,7 +224,7 @@ async function listItems(req, res, next) {
       .lean()
 
     // The Vue page accepts { items: [...] } as its response shape.
-    res.json({ items })
+    res.json({ items: items.map(withStorageGuidance) })
   } catch (error) {
     next(error)
   }
@@ -266,7 +251,7 @@ async function createItem(req, res, next) {
       user: req.userId,
     })
 
-    res.status(201).json({ item })
+    res.status(201).json({ item: withStorageGuidance(item) })
   } catch (error) {
     next(error)
   }
@@ -289,7 +274,7 @@ async function getItem(req, res, next) {
       return res.status(404).json({ error: 'Inventory item not found.' })
     }
 
-    res.json({ item })
+    res.json({ item: withStorageGuidance(item) })
   } catch (error) {
     next(error)
   }
@@ -367,26 +352,11 @@ async function updateItem(req, res, next) {
 
     const locationChanged = combined.storage !== existingItem.storage || combined.storageZone !== existingItem.storageZone
     if (!preferenceOnly && locationChanged) {
-      // Older inventory records may predate stored guidance. Use the same rules as receipts.
-      let allowed = (existingItem.allowedLocations || []).filter(zone => ZONE_IDS.includes(zone))
-      let suggested = ZONE_IDS.includes(existingItem.suggestedLocation) ? existingItem.suggestedLocation : null
-      let reason = existingItem.locationReason
-      if (!allowed.length && suggested) allowed = [suggested]
-      if (!allowed.length && (existingItem.category || classifyItem(existingItem.name).category)) {
-        const source = existingItem.toObject ? existingItem.toObject() : existingItem
-        const guidance = completeItems([source])[0]
-        allowed = guidance.allowedLocations
-        suggested = guidance.suggestedLocation
-        reason = guidance.locationReason
-      }
-      if (allowed.length) {
-        fields.allowedLocations = allowed
-        fields.suggestedLocation = suggested && allowed.includes(suggested) ? suggested : allowed[0]
-        if (reason) fields.locationReason = reason
-        // A previous dismissal does not suppress a new move out of a recommended place.
-        if (allowed.includes(existingItem.storageZone) && !allowed.includes(combined.storageZone)) {
-          fields.storageGuidanceIgnored = false
-        }
+      const source = existingItem.toObject ? existingItem.toObject() : existingItem
+      const guidance = storageGuidance(source)
+      Object.assign(fields, guidance)
+      if (guidance.allowedLocations.includes(existingItem.storageZone) && !guidance.allowedLocations.includes(combined.storageZone)) {
+        fields.storageGuidanceIgnored = false
       }
     }
 
@@ -406,7 +376,7 @@ async function updateItem(req, res, next) {
       { new: true, runValidators: true },
     )
 
-    res.json({ item })
+    res.json({ item: withStorageGuidance(item) })
   } catch (error) {
     next(error)
   }

@@ -9,14 +9,12 @@ const router = useRouter()
 const editMode = ref(false)
 const editName = ref('')
 const editEmail = ref('')
-const editPostalCode = ref('')
 const error = ref('')
 const success = ref('')
 
 function startEdit() {
   editName.value = auth.user?.name || ''
   editEmail.value = auth.user?.email || ''
-  editPostalCode.value = auth.user?.postalCode || ''
   editMode.value = true
   error.value = ''
   success.value = ''
@@ -30,16 +28,10 @@ function cancelEdit() {
 async function saveProfile() {
   error.value = ''
   success.value = ''
-  const postalCode = editPostalCode.value.trim()
-  if (!/^\d{6}$/.test(postalCode)) {
-    error.value = 'Postal code must be 6 digits'
-    return
-  }
   try {
     await auth.updateProfile({
       username: editName.value,
       email: editEmail.value,
-      postalCode,
     })
     editMode.value = false
     success.value = 'Profile updated'
@@ -75,11 +67,6 @@ async function handleLogout() {
           <span class="field-label">Email:</span>
           <span>{{ auth.user.email }}</span>
         </div>
-        <div class="profile-field">
-          <span class="field-label">Preferred pickup location:</span>
-          <span v-if="auth.user.postalCode">Singapore {{ auth.user.postalCode }}</span>
-          <span v-else class="field-empty">Not set yet. Click "Edit profile" to add one.</span>
-        </div>
         <div class="profile-actions">
           <button type="button" class="profile-button button-primary" @click="startEdit">
             Edit profile
@@ -98,23 +85,6 @@ async function handleLogout() {
         <div class="profile-input">
           <label for="edit-email">Email:</label>
           <input id="edit-email" v-model="editEmail" type="email" required autocomplete="email" />
-        </div>
-        <div class="profile-input">
-          <label for="edit-postal-code">Preferred pickup location (postal code):</label>
-          <input
-            id="edit-postal-code"
-            v-model="editPostalCode"
-            type="text"
-            inputmode="numeric"
-            pattern="\d{6}"
-            maxlength="6"
-            required
-            autocomplete="postal-code"
-            aria-describedby="edit-postal-code-hint"
-          />
-          <p id="edit-postal-code-hint" class="input-hint">
-            Usually your home. Used as the starting point for pickups and drop-offs.
-          </p>
         </div>
         <div class="profile-actions">
           <button type="submit" class="profile-button button-primary">Save</button>

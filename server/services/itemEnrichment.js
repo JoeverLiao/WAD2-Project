@@ -12,6 +12,7 @@
 //
 // Only item NAMES are sent to the AI: never prices, dates, the user's id or email.
 import { classifyItem, dietFromText } from './foodKnowledge.js'
+import { storageGuidance } from './storageGuidance.js'
 import {
   ALL_ICONS,
   CATEGORIES,
@@ -82,15 +83,24 @@ function build(item, { category, zone, days, pieceKg, diet, source }, today) {
     weightIsEstimate = weightKg !== null
   }
 
-  const expiresAt = item.expiresAt ?? (days ? addDays(baseDate, days) : null)
+  const placement = storageGuidance({ ...item, category, suggestedLocation: zone })
+  // State overrides must not inherit a dry product's long shelf-life estimate.
+  let estimateDays = days
+  if (days && !['dry-storage', 'freezer-main'].includes(placement.suggestedLocation)) {
+    const text = `${item.name} ${item.receiptName || ''}`.toLowerCase()
+    let cap
+    if (/\b(thawed|defrosted)\b|\b(?:cooked|fried) rice\b|\b(risotto|congee)\b/.test(text)) cap = 1
+    else if (/hard[ -]?(?:boiled|cooked) eggs?/.test(text)) cap = 7
+    else if (/\b(cooked|leftovers?|rotisserie|fried|steamed|boiled|opened|cut|chopped|sliced|peeled|diced)\b|soup|stew|curry|custard|cream filled|fresh pasta|fresh noodles/.test(text)) cap = 3
+    if (cap) estimateDays = Math.min(days, cap)
+  }
+  const expiresAt = item.expiresAt ?? (estimateDays ? addDays(baseDate, estimateDays) : null)
   return {
     category,
     icon: info.icons.includes(item.icon) ? item.icon : info.icons[0],
-    suggestedLocation: zone,
-    allowedLocations: info.allowed.includes(zone) ? info.allowed : [zone, ...info.allowed],
-    locationReason: zone === 'freezer-main' && category !== 'frozen' ? CATEGORIES.frozen.reason : info.reason,
-    storageZone: item.storageZone ?? zone,
-    storage: ZONES[item.storageZone ?? zone].storage,
+    ...placement,
+    storageZone: item.storageZone ?? placement.suggestedLocation,
+    storage: ZONES[item.storageZone ?? placement.suggestedLocation].storage,
     expiresAt,
     expiresEstimated: expiresAt !== null && !item.expiresAt,
     quantity,

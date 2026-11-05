@@ -1,3 +1,4 @@
+import { mockHttp } from './helpers/mockHttp.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
@@ -6,6 +7,7 @@ import { useInventoryStore } from '../stores/inventory.js'
 import { showConfirm, showPrompt } from '../utils/dialog.js'
 
 vi.mock('../utils/dialog.js')
+vi.mock('../components/analytics/VegetableCompanions.vue', () => ({ default: { template: '<div />' } }))
 
 const food = { _id: 'apple-1', name: 'Apples', quantity: 3, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', expiresAt: '2026-11-05' }
 let wrapper
@@ -14,14 +16,17 @@ let pinia
 beforeEach(() => {
   pinia = createPinia()
   vi.stubGlobal('matchMedia', () => ({ matches: true }))
-  request = vi.fn(async (url, options) => ({ ok: true, json: async () => {
+  request = vi.fn(async (url, options) => ({ data: (()=>{
     if (url.startsWith('/api/freshness/recipes')) return []
     if (options?.method === 'DELETE') return {}
-    if (options?.method === 'PATCH') return { item: { ...food, ...JSON.parse(options.body) } }
-    if (options?.method === 'POST') return { item: { ...JSON.parse(options.body), _id: 'new-food' } }
+    if (options?.method === 'PATCH') {
+      const body = JSON.parse(options.data)
+      return { item: { ...food, ...body, quantity: body.activity ? food.quantity - body.amount : food.quantity } }
+    }
+    if (options?.method === 'POST') return { item: { ...JSON.parse(options.data), _id: 'new-food' } }
     return { items: [food] }
-  } }))
-  vi.stubGlobal('fetch', request)
+  })(), status: 200 }))
+  mockHttp(request)
   showPrompt.mockResolvedValue('1')
   showConfirm.mockResolvedValue(true)
 })
@@ -68,7 +73,7 @@ describe('Dashboard Smart Fridge', () => {
     expect(wrapper.find('.pantry-unit').exists()).toBe(false)
     expect(wrapper.find('#inventory-search').exists()).toBe(false)
     expect(wrapper.find('.toolbar').exists()).toBe(false)
-    expect(wrapper.find('.modal-toolbar').exists()).toBe(false)
+    expect(wrapper.find('.modal-toolbar .primary-button').exists()).toBe(false)
     expect(wrapper.get('.food-card').text()).toContain('Apples')
   })
 })

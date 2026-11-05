@@ -8,3 +8,5 @@ playwright-report/
 config.env
 .DS_Store
 .tesseract-cache/
+.env
+/server/.env

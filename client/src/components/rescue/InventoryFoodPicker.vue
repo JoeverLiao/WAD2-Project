@@ -95,17 +95,9 @@ function continueToFoodDetails() {
       <div class="col-12 col-sm-auto">
         <button
           type="button"
-          :class="
-          source === 'inventory'
-          ? 'primary-button'
-          : 'btn btn-link editor-link p-0'
-          "
+          class="btn btn-primary rescue-button"
           :disabled="locked"
-          @click="
-          changeSource(
-          source === 'inventory' ? 'manual' : 'inventory',
-          )
-          "
+          @click="changeSource(source === 'inventory' ? 'manual' : 'inventory')"
         >
           {{
           source === 'inventory'
@@ -222,7 +214,7 @@ function continueToFoodDetails() {
                     class="choice-icon d-flex align-items-center justify-content-center my-1"
                     aria-hidden="true"
                   >
-                    <FoodIcon :food="item.name" />
+                    <FoodIcon :name="item.name" />
                   </span>
 
                   <span class="food-name">{{ item.name }}</span>

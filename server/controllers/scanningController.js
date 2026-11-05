@@ -3,7 +3,6 @@ import { addItemsToInventory } from '../services/inventoryService.js'
 import { enrichItems, mergeDuplicateItems } from '../services/itemEnrichment.js'
 import { validateInventoryItems } from '../services/inventoryValidation.js'
 import { parseReceiptText } from '../services/receiptParser.js'
-import { notImplemented } from './notImplemented.js'
 import {
   extractTextFromReceipt,
   OcrUnavailableError,
@@ -116,12 +115,8 @@ const confirmItems = async (req, res) => {
   }
 }
 
-// Product (barcode) scanning is a separate feature, not part of the receipt flow.
-const scanProduct = notImplemented('Product scanning')
-
 export default {
   scanReceipt,
-  scanProduct,
   suggestDetails,
   confirmItems
 };

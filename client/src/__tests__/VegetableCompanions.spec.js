@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import VegetableCompanions from '../components/analytics/VegetableCompanions.vue'
 import { vegetableMessages, vegetableMood } from '../utils/analyticsMascots.js'
 
@@ -22,21 +22,21 @@ describe('vegetable companions', () => {
 
   it('uses mood-specific messages without repeats and dismisses them after six seconds', async () => {
     vi.useFakeTimers()
-    const wrapper = mount(VegetableCompanions, { props: { events: events(1, 2) } })
+    const wrapper = mount(VegetableCompanions, { props: { events: events(1, 2) }, global: { stubs: { Teleport: true } } })
     try {
       const button = wrapper.get('.vegetable-button')
       await button.trigger('click')
-      const first = wrapper.get('.companion-speech span').text()
+      const first = wrapper.get('.speech-message').text()
       expect(vegetableMessages.crying).toContain(first)
       await button.trigger('click')
-      expect(wrapper.get('.companion-speech span').text()).not.toBe(first)
+      expect(wrapper.get('.speech-message').text()).not.toBe(first)
       await vi.advanceTimersByTimeAsync(6000)
-      expect(wrapper.text()).toBe('')
+      expect(wrapper.find('.speech-message').exists()).toBe(false)
       await button.trigger('click')
       await wrapper.setProps({ events: events(4, 1) })
-      expect(wrapper.text()).toBe('')
+      expect(wrapper.find('.speech-message').exists()).toBe(false)
       await button.trigger('click')
-      expect(vegetableMessages.happy).toContain(wrapper.get('.companion-speech span').text())
+      expect(vegetableMessages.happy).toContain(wrapper.get('.speech-message').text())
     } finally {
       wrapper.unmount()
       expect(vi.getTimerCount()).toBe(0)
@@ -44,30 +44,34 @@ describe('vegetable companions', () => {
     }
   })
 
-  it('shows three vegetables and the egg mascot with messages only after clicks', async () => {
-    const wrapper = mount(VegetableCompanions, { props: { events: events(3, 1) } })
-    const buttons = wrapper.findAll('.vegetable-button')
-    expect(buttons).toHaveLength(4)
-    expect(buttons[3].attributes('aria-label')).toContain('Egg mascot')
-    expect(wrapper.text()).toBe('')
-    for (const button of buttons) {
-      await button.trigger('click')
-      expect(button.classes()).toContain('reacting')
-      expect(button.classes()).not.toContain('gloomy')
-      expect(button.attributes('title')).toBeUndefined()
+  it('shows only the egg, animates its mood, and dismisses speech when the message is clicked', async () => {
+    const wrapper = mount(VegetableCompanions, { props: { events: events(3, 1) }, global: { stubs: { Teleport: true } } })
+    try {
+      const buttons = wrapper.findAll('.vegetable-button')
+      expect(buttons).toHaveLength(1)
+      const button = () => wrapper.get('.vegetable-button')
+      expect(button().attributes('aria-label')).toContain('Egg mascot')
+      expect(wrapper.find('.speech-message').exists()).toBe(false)
+      await button().trigger('click')
+      await flushPromises()
+      expect(button().classes()).toContain('reacting')
+      expect(button().classes()).not.toContain('gloomy')
+      expect(button().attributes('title')).toBeUndefined()
+      expect(wrapper.findAll('.speech-message')).toHaveLength(1)
+      await button().trigger('animationend')
+      expect(button().classes()).not.toContain('reacting')
+      await wrapper.setProps({ events: events(1, 1.5) })
+      await button().trigger('click')
+      await flushPromises()
+      expect(button().classes()).toContain('gloomy')
+      expect(button().classes()).toContain('reacting')
+      expect(button().attributes('aria-label')).toContain('sad')
+      expect(vegetableMessages.sad).toContain(wrapper.get('.speech-message').text())
+      await wrapper.get('.speech-message').trigger('click')
+      expect(wrapper.find('.speech-message').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
     }
-    expect(wrapper.findAll('.companion-speech span')).toHaveLength(1)
-    await buttons[0].trigger('animationend')
-    expect(buttons[0].classes()).not.toContain('reacting')
-    await wrapper.setProps({ events: events(1, 1.5) })
-    await buttons[3].trigger('click')
-    expect(buttons[3].classes()).toContain('gloomy')
-    expect(buttons[3].classes()).toContain('reacting')
-    expect(buttons[3].attributes('aria-label')).toContain('sad')
-    expect(vegetableMessages.sad).toContain(wrapper.get('.companion-speech span').text())
-    await buttons[3].trigger('keydown', { key: 'Escape' })
-    expect(wrapper.text()).toBe('')
-    wrapper.unmount()
   })
 })
 
