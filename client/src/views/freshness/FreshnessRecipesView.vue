@@ -1840,6 +1840,7 @@ onUnmounted(() => {
 }
 
 .summary-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 145px;
@@ -2883,10 +2884,20 @@ onUnmounted(() => {
   gap: 14px;
 }
 
+.summary-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+}
+
 .summary-card-link:focus-visible {
-  outline: 2px solid currentColor;
+  outline: none;
+}
+
+.summary-card-link:focus-visible::after {
+  outline: 3px solid currentColor;
   outline-offset: 4px;
-  border-radius: 4px;
 }
 
 @media (max-width: 480px) {
