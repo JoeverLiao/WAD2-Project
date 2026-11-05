@@ -14,23 +14,18 @@ function parseCookies(header) {
   return cookies
 }
 
-const POSTAL_CODE_PATTERN = /^\d{6}$/
 
 const register =  async(req, res, next) => {
   try {
     if (!req.body) return res.status(400).json({ error: 'Request body is required' })
     const { username, email, password } = req.body
-    const postalCode = typeof req.body.postalCode === 'string' ? req.body.postalCode.trim() : ''
-    if (!username?.trim() || !email?.trim() || !password || !postalCode) {
+    if (!username?.trim() || !email?.trim() || !password) {
       return res
         .status(400)
-        .json({ error: 'Username, email, password, and postal code are required' })
+        .json({ error: 'Username, email, and password are required' })
     }
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' })
-    }
-    if (!POSTAL_CODE_PATTERN.test(postalCode)) {
-      return res.status(400).json({ error: 'Postal code must be 6 digits' })
     }
 
     const existing = await User.findOne({ email: email.toLowerCase().trim() })
@@ -41,8 +36,7 @@ const register =  async(req, res, next) => {
     const user = new User({
       name: username.trim(),
       email: email.toLowerCase().trim(),
-      password,
-      postalCode,
+      password
     })
     await user.save()
 
@@ -152,13 +146,6 @@ const updateProfile = async (req, res, next) => {
     const updates = {}
     if (req.body.username?.trim()) updates.name = req.body.username.trim()
     if (req.body.email?.trim()) updates.email = req.body.email.trim()
-    if (req.body.postalCode !== undefined) {
-      const postalCode = typeof req.body.postalCode === 'string' ? req.body.postalCode.trim() : ''
-      if (!POSTAL_CODE_PATTERN.test(postalCode)) {
-        return res.status(400).json({ error: 'Postal code must be 6 digits' })
-      }
-      updates.postalCode = postalCode
-    }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' })
     }
