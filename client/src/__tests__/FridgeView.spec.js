@@ -47,6 +47,17 @@ afterEach(() => {
 })
 
 describe('Fridge interactions', () => {
+  it('renders expired food in the Expired panel', async () => {
+    request.mockResolvedValueOnce({ data: [{ ...food, expiresAt: '2000-01-01' }], status: 200 })
+    await openFridge()
+
+    await wrapper.get('.expiry-dropdown > .expiry-button').trigger('click')
+
+    expect(wrapper.get('.expiry-dropdown-panel').exists()).toBe(true)
+    expect(wrapper.get('.expiry-food-row .expiry-label').classes()).toContain('is-expired')
+    expect(wrapper.get('.expiry-food-row .expiry-label').text()).toContain('Expired')
+  })
+
   it.each(['stage', 'popup'])('offers Put in fridge for pantry food dragged from the %s and saves to shelves', async (source) => {
     request.mockResolvedValueOnce({ data: [{ ...food, storage: 'pantry', storageZone: 'dry-storage' }], status: 200 })
     await openFridge()
