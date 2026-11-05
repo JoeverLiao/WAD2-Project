@@ -1,5 +1,10 @@
 import { http } from './http.js'
 
+export async function seedAnalyticsDemo() {
+  const { data } = await http.post('/analytics/demo')
+  return data
+}
+
 export async function fetchFoodActivity(options) {
   const { data } = await http.get('/analytics/history', options)
   return data.events || []

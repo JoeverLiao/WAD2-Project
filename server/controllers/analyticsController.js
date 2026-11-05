@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import FoodEvent from '../models/foodEventModel.js'
+import { analyticsDemoEvents } from '../services/analyticsDemo.js'
 
 export function validateEvent(body) {
   const fields = {}
@@ -47,4 +48,24 @@ async function saveEvent(req, res, next) {
   } catch (error) { next(error) }
 }
 
-export default { getAnalytics: getHistory, getHistory, createEvent: saveEvent, updateEvent: saveEvent }
+async function seedDemo(req, res, next) {
+  if (!mongoose.isValidObjectId(req.userId)) return res.status(401).json({ error: 'Authentication required' })
+  try {
+    const operations = analyticsDemoEvents(String(req.userId)).map(event => ({
+      updateOne: {
+        filter: { _id: event._id, user: req.userId },
+        update: { $setOnInsert: { ...validateEvent(event), user: req.userId } },
+        upsert: true,
+      },
+    }))
+    const result = await FoodEvent.bulkWrite(operations, { ordered: false })
+    res.json({ added: result.upsertedCount || 0 })
+  } catch (error) {
+    // Concurrent activations can race on the same deterministic IDs; those already exist.
+    if (error.writeErrors?.length && error.writeErrors.every(item => item.code === 11000))
+      return res.json({ added: error.result?.upsertedCount || 0 })
+    next(error)
+  }
+}
+
+export default { getAnalytics: getHistory, getHistory, createEvent: saveEvent, updateEvent: saveEvent, seedDemo }

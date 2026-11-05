@@ -176,6 +176,32 @@
   height: 40px;
   color: #3e9a8e;
 }
+.analytics-page .stamp-trigger,
+.analytics-page .stamp-trigger:hover,
+.analytics-page .stamp-trigger:focus,
+.analytics-page .stamp-trigger:active {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  transform: none;
+  filter: none;
+  opacity: 1;
+  animation: none;
+  transition: none;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+.analytics-page .stamp-trigger .stamp-icon {
+  animation: none;
+  transition: none;
+  transform: none;
+}
 .stamp-icon,
 .metric-icon svg {
   fill: none;

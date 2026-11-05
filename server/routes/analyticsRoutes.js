@@ -9,6 +9,7 @@ router.use(auth.authenticate)
 router.get('/', analyticsController.getAnalytics)
 router.get('/history', analyticsController.getHistory)
 router.post('/events', analyticsController.createEvent)
+router.post('/demo', analyticsController.seedDemo)
 
 router.put('/events/:id', analyticsController.updateEvent)
 

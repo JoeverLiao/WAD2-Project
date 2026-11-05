@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { seedAnalyticsDemo } from '../../services/analytics.js'
 import { useFoodActivity, actionLabels } from '../../composables/useFoodActivity.js'
 import { useAnalyticsChart } from '../../composables/useAnalyticsChart.js'
 import { useAnimatedTotals } from '../../composables/useAnimatedTotals.js'
@@ -31,6 +32,26 @@ const {
   saveDay,
   addDraft,
 } = useFoodActivity()
+const seedingDemo = ref(false)
+let heartClicks = 0
+let lastHeartClick = 0
+async function clickHeart() {
+  if (seedingDemo.value || loading.value || saving.value) return
+  const now = performance.now()
+  heartClicks = now - lastHeartClick <= 2000 ? heartClicks + 1 : 1
+  lastHeartClick = now
+  if (heartClicks < 3) return
+  heartClicks = 0
+  seedingDemo.value = true
+  try {
+    await seedAnalyticsDemo()
+    await loadActivity()
+  } catch (error) {
+    loadError.value = error.message || 'Could not add analytics demo data. Please try again.'
+  } finally {
+    seedingDemo.value = false
+  }
+}
 const {
   days,
   range,
@@ -191,9 +212,11 @@ const animatedTotals = useAnimatedTotals(totals)
       </div>
       <div class="col-lg-4 d-flex justify-content-lg-end">
         <div class="stamp">
+          <button type="button" class="stamp-trigger" aria-label="Heart" :aria-disabled="seedingDemo" @click="clickHeart">
           <svg class="stamp-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" />
           </svg>
+          </button>
           <p class="stamp-title" :aria-label="`${totals.saved.toFixed(2)} kg kept.`">
             <span aria-hidden="true">{{ animatedTotals.saved.toFixed(2) }} kg kept.</span>
           </p>
