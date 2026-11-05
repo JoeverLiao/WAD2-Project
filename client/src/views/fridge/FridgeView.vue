@@ -1227,7 +1227,7 @@ function storageAdvice(item) {
             'door-lower': 'Lower door shelf', crisper: 'Crisper drawer',
             'freezer-main': 'Freezer', 'dry-storage': 'Pantry'
         }
-        const allowedNames = allowedLocations.map(zone => zoneLabels[zone] || zone).join(', ')
+        const allowedNames = [...new Set(allowedLocations.map(zone => zoneLabels[zone] || zone))].join(', ')
         const suggestedName = zoneLabels[item.suggestedLocation] || item.suggestedLocation
         return `Storage warning: ${item.name} is in ${locationLabel(item)}, but its allowed locations are ${allowedNames}.${suggestedName ? ` Suggested: ${suggestedName}.` : ''}${item.locationReason ? ` ${item.locationReason}` : ''}`
     }
@@ -1896,6 +1896,7 @@ onBeforeUnmount(cancelActionReaction)
                 </div>
             </div>
             <p>Some foods may need a different storage location. Check product packaging and food-specific guidance.</p>
+            <p>Guidance uses the food name and category. Include “opened”, “cooked”, “cut” or “frozen” in the name when relevant, and follow the product label.</p>
             <p v-if="arrangementError" class="guidance-error" role="alert">{{ arrangementError }}</p>
             <TransitionGroup name="guidance-list" tag="div" class="recommendation-list" tabindex="0" role="region" aria-label="Storage guidance items">
                 <article v-for="item in storageRecommendations" :key="item.id" class="recommendation-card">

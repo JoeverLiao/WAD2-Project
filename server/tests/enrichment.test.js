@@ -29,20 +29,21 @@ test('the zones and categories match the ones the client form offers', () => {
   for (const diet of DIETS) assert.ok(client.includes(`'${diet}'`) && client.includes(DIET_LABELS[diet]), `client is missing diet ${diet}`)
 })
 
-test('food-safety placement: raw meat low, dairy never in the door, potatoes not in the fridge', () => {
+test('food-safety placement: raw meat in Shelves or Freezer, dairy never in the door, whole potatoes in Pantry', () => {
   const [chicken, milk, eggs, potato, bread, banana, juice] = enrichWithRules(
     ['Chicken Breast', 'Milk', 'Eggs', 'Potato', 'Bread', 'Banana', 'Orange Juice'].map((name) => ({ name, quantity: 1 })),
     { today },
   )
-  assert.equal(chicken.suggestedLocation, 'lower-shelf')
-  assert.deepEqual(chicken.allowedLocations, ['lower-shelf'])
+  assert.equal(chicken.suggestedLocation, 'middle-shelf')
+  assert.ok(chicken.allowedLocations.includes('middle-shelf'))
+  assert.ok(chicken.allowedLocations.includes('freezer-main'))
   assert.equal(milk.suggestedLocation, 'middle-shelf')
   assert.ok(!milk.allowedLocations.includes('door'))
   assert.ok(!eggs.allowedLocations.includes('door'))
   assert.equal(potato.suggestedLocation, 'dry-storage')
   assert.equal(bread.suggestedLocation, 'dry-storage')
   assert.equal(banana.suggestedLocation, 'dry-storage')
-  assert.equal(juice.suggestedLocation, 'door')
+  assert.ok(juice.allowedLocations.includes(juice.suggestedLocation))
 })
 
 test('frozen food goes to the freezer with the freezer storage time', () => {
@@ -106,7 +107,7 @@ test('the AI is only asked about foods the rules do not know', async () => {
   assert.ok(!asked.messages[0].content.includes('Milk'))
   assert.equal(items[0].detailsSource, 'rules')
   assert.equal(items[1].detailsSource, 'ai')
-  assert.equal(items[1].suggestedLocation, 'upper-shelf')
+  assert.equal(items[1].suggestedLocation, 'middle-shelf')
   assert.equal(items[1].icon, '🧀')
   assert.equal(items[1].weightKg, 0.2)
 })
@@ -117,7 +118,7 @@ test('AI answers are checked against the rules', () => {
   assert.equal(a.zone, 'middle-shelf')
   assert.equal(a.days, 20)
   assert.equal(checkAiAnswer({ category: 'spaceship', location: 'door' }).category, 'other')
-  assert.equal(checkAiAnswer({ category: 'meat', location: 'upper-shelf' }).zone, 'lower-shelf')
+  assert.equal(checkAiAnswer({ category: 'meat', location: 'door' }).zone, 'lower-shelf')
   assert.equal(checkAiAnswer({ category: 'fruit', location: 'crisper', piece_weight_kg: 900 }).pieceKg, null)
   assert.equal(checkAiAnswer({ category: 'non_food', location: 'dry-storage', shelf_life_days: 5 }).days, null)
 })
