@@ -2,6 +2,7 @@
 <script setup>
 import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from 'axios'
 
 const router = useRouter()
 
@@ -84,43 +85,29 @@ function normalizeInventoryItem(item) {
 async function loadInventory() {
   inventoryLoading.value = true
   inventoryError.value = ''
-
   try {
-    const response = await fetch('/api/inventory', {
-      method: 'GET',
-      credentials: 'include',
+    const { data } = await axios.get('/api/inventory', {
+      withCredentials: true,
       headers: authHeaders(),
     })
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Please log in to view your inventory.')
-      }
-      throw new Error(`Inventory request failed (${response.status}).`)
-    }
-
-    const data = await response.json()
-
-    if (!Array.isArray(data.items)) {
-      throw new Error('Unexpected inventory response.')
-    }
-
+    if (!Array.isArray(data.items)) throw new Error('Unexpected inventory response.')
     inventory.value = data.items
       .filter(item => item && (item._id || item.id))
       .map(normalizeInventoryItem)
-
     inventoryLoaded.value = true
-
     const validIds = new Set(inventory.value.map(x => x.localId))
     selectedIds.value = selectedIds.value.filter(id => validIds.has(id))
-
   } catch (err) {
     console.error('Failed to load MongoDB inventory:', err)
-    inventoryError.value = err.message
+    inventoryError.value = err.response?.status === 401
+      ? 'Please log in to view your inventory.'
+      : err.response ? `Inventory request failed (${err.response.status}).` : err.message
   } finally {
     inventoryLoading.value = false
   }
 }
+
+
 
 // ==========================================
 // EXPIRY CALCULATIONS
@@ -323,14 +310,25 @@ function isSaved(id) { return savedIds.value.includes(String(id)) }
 function cookCount(id) { return Number(userRecord(id)?.cookCount || 0) }
 
 async function historyRequest(path, options = {}) {
-  const response = await fetch(path, {
-    credentials: 'include', ...options,
-    headers: { ...authHeaders(), ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.message || data.error || `Request failed (${response.status})`)
-  return data
+  try {
+    const response = await axios({
+      url: path,
+      method: options.method || 'GET',
+      data: options.body ? JSON.parse(options.body) : undefined,
+      withCredentials: true,
+      headers: { ...authHeaders(), ...options.headers },
+      signal: options.signal,
+    })
+    return response.data ?? {}
+  } catch (error) {
+    if (axios.isCancel(error)) throw error
+    const data = error.response?.data
+    throw new Error(data?.message || data?.error ||
+      (error.response ? `Request failed (${error.response.status})` : error.message))
+  }
 }
+
+
 
 async function loadUserRecipes() {
   try {
@@ -402,46 +400,38 @@ function normalizeRecipe(raw) {
 }
 
 async function requestRecipes(url, signal) {
-  const response = await fetch(url, {
-    credentials: 'include',
+  const response = await axios.get(url, {
+    withCredentials: true,
     headers: authHeaders(),
     signal,
   })
-
-  if (!response.ok) {
-    throw new Error(`Recipe request failed (${response.status})`)
-  }
-
-  const data = await response.json()
-
+  const data = response.data
   const list = Array.isArray(data)
     ? data
-    : data?.recipes ??
-      data?.data?.recipes ??
-      data?.meals ??
-      []
-
-  if (!Array.isArray(list)) {
-    throw new Error('Invalid recipe response')
-  }
-
+    : data?.recipes ?? data?.data?.recipes ?? data?.meals ?? []
+  if (!Array.isArray(list)) throw new Error('Invalid recipe response')
   return list.map(normalizeRecipe).filter(recipe => recipe.id)
 }
+
+
 
 let recipeController = null
 let recipeRequestId = 0
 
 async function loadRecipesByIds(ids, signal) {
   const results = await Promise.allSettled(ids.map(async id => {
-    const response = await fetch(`/api/freshness/recipes/${encodeURIComponent(id)}`, {
-      credentials: 'include', headers: authHeaders(), signal,
+    const response = await axios.get(`/api/freshness/recipes/${encodeURIComponent(id)}`, {
+      withCredentials: true,
+      headers: authHeaders(),
+      signal,
     })
-    if (!response.ok) throw new Error('Recipe unavailable')
-    const data = await response.json()
+    const data = response.data
     return normalizeRecipe(data.recipe ?? data)
   }))
   return results.filter(x => x.status === 'fulfilled').map(x => x.value).filter(x => x.id)
 }
+
+
 
 async function loadRecipes() {
   const requestId = ++recipeRequestId
@@ -492,7 +482,7 @@ async function loadRecipes() {
       void loadTimeEstimates(result, requestId, signal)
     }
   } catch (err) {
-    if (err.name === 'AbortError') return
+    if (axios.isCancel(err) || err.name === 'AbortError') return
     if (requestId === recipeRequestId) {
       console.error('Recipe loading failed:', err)
       recipesError.value = err.message || 'Recipes could not be loaded.'
@@ -508,71 +498,40 @@ async function loadRecipes() {
 
 async function loadTimeEstimates(list, requestId, signal) {
   if (!list.length) return
-
   estimatingTimes.value = true
-
   try {
     const estimates = {}
-
     // Backend accepts up to 30 recipes per request.
     for (let i = 0; i < list.length; i += 30) {
       if (signal.aborted) return
-
       const batch = list.slice(i, i + 30)
-
-      const response = await fetch(
-        '/api/freshness/recipes/estimate-times',
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            ...authHeaders(),
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            recipes: batch.map(recipe => ({
-              id: recipe.id,
-              name: recipe.name,
-              ingredients: recipe.ingredients,
-              instructions: recipe.instructions,
-            })),
-          }),
-          signal,
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error(
-          `Time estimation failed (${response.status})`
-        )
-      }
-
-      const data = await response.json()
-      Object.assign(estimates, data.estimates || {})
+      const response = await axios.post('/api/freshness/recipes/estimate-times', {
+        recipes: batch.map(recipe => ({
+          id: recipe.id,
+          name: recipe.name,
+          ingredients: recipe.ingredients,
+          instructions: recipe.instructions,
+        })),
+      }, {
+        withCredentials: true,
+        headers: authHeaders(),
+        signal,
+      })
+      Object.assign(estimates, response.data?.estimates || {})
     }
-
-    if (
-      requestId === recipeRequestId &&
-      !signal.aborted
-    ) {
-      timeEstimates.value = {
-        ...timeEstimates.value,
-        ...estimates,
-      }
+    if (requestId === recipeRequestId && !signal.aborted) {
+      timeEstimates.value = { ...timeEstimates.value, ...estimates }
     }
   } catch (error) {
-    if (error.name !== 'AbortError') {
-      console.warn(
-        'Cooking-time estimates unavailable:',
-        error.message
-      )
+    if (!axios.isCancel(error) && error.name !== 'AbortError') {
+      console.warn('Cooking-time estimates unavailable:', error.message)
     }
   } finally {
-    if (requestId === recipeRequestId) {
-      estimatingTimes.value = false
-    }
+    if (requestId === recipeRequestId) estimatingTimes.value = false
   }
 }
+
+
 
 function estimatedMinutes(recipe) {
   const value = timeEstimates.value[String(recipe.id)]
