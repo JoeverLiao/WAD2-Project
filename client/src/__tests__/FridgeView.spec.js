@@ -686,30 +686,17 @@ it('renders visible expiry badges for expired and soon-to-expire shelf food', as
   expect(wrapper.find('[data-food-id="fresh"] .food-expiry-badge').exists()).toBe(false)
 })
 
-it('moves a food from the card to a named pantry even when the API omits pantryName', async () => {
-  localStorage.setItem('full-circle-pantries', JSON.stringify(['Pantry 2']))
-  try {
-    wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
-    await flushPromises()
-    await wrapper.get('.fridge-door').trigger('click')
-    await wrapper.get('.shelf-compartment').trigger('click')
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({
-      item: { ...food, storage: 'pantry', storageZone: 'dry-storage' },
-    }) })
-    await wrapper.get('select[aria-label="Move Apples to another location"]')
-      .setValue(JSON.stringify({ type: 'pantry', name: 'Pantry 2' }))
-    await flushPromises()
-    expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
-      method: 'PATCH',
-      body: JSON.stringify({ pantryName: 'Pantry 2', storage: 'pantry', storageZone: 'dry-storage' }),
-    }))
-    expect(wrapper.findAll('.food-card')).toHaveLength(0)
-    expect(JSON.parse(localStorage.getItem('full-circle-item-storage-assignments'))['apple-1'])
-      .toEqual({ pantryName: 'Pantry 2' })
-  } finally {
-    localStorage.removeItem('full-circle-pantries')
-    localStorage.removeItem('full-circle-item-storage-assignments')
-  }
+it('moves a food card to the single Pantry without a named assignment', async () => {
+  await openFridge()
+  await wrapper.get('.shelf-compartment').trigger('click')
+  request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storage: 'pantry', storageZone: 'dry-storage' } }) })
+  await wrapper.get('select[aria-label="Move Apples to another location"]')
+    .setValue(JSON.stringify({ type: 'pantry', name: 'Pantry' }))
+  await flushPromises()
+  expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
+    method: 'PATCH', body: JSON.stringify({ storage: 'pantry', storageZone: 'dry-storage' }),
+  }))
+  expect(wrapper.findAll('.food-card')).toHaveLength(0)
 })
 
 
@@ -822,18 +809,17 @@ describe('Storage guidance arrangement', () => {
     })
   }
 
-  it('arranges an individual food in the same named fridge without moving other guidance items', async () => {
+  it('arranges legacy named food in the shared Fridge without moving other guidance items', async () => {
     localStorage.setItem('full-circle-fridges', JSON.stringify(['Fridge 2']))
     inventoryRequest(misplaced.map(item => ({ ...item, fridgeName: 'Fridge 2' })))
     await openFridge()
-    await wrapper.findAll('.storage-slide-options > button').find(button => button.text() === 'Fridge 2').trigger('click')
     expect(wrapper.findAll('.recommendation-card')).toHaveLength(2)
     await wrapper.get('[aria-label="Arrange Apples"]').trigger('click')
     await flushPromises()
     const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
     expect(patches).toHaveLength(1)
     expect(patches[0][0]).toBe('/api/inventory/fruit-guidance')
-    expect(JSON.parse(patches[0][1].body)).toEqual({ storage: 'fridge', storageZone: 'crisper', fridgeName: 'Fridge 2', pantryName: null })
+    expect(JSON.parse(patches[0][1].body)).toEqual({ storage: 'fridge', storageZone: 'crisper' })
     expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
     expect(wrapper.get('.recommendation-card').text()).toContain('Milk')
     expect(wrapper.get('[data-drop-zone="crisper"] [data-food-id="fruit-guidance"]').exists()).toBe(true)
@@ -854,8 +840,8 @@ describe('Storage guidance arrangement', () => {
     expect(Object.keys(payloads)).toHaveLength(4)
     expect(payloads['milk-guidance'].storageZone).toBe('middle-shelf')
     expect(payloads['fruit-guidance'].storageZone).toBe('crisper')
-    expect(payloads['ice-guidance']).toMatchObject({ storage: 'freezer', storageZone: 'freezer-main', fridgeName: 'Main fridge' })
-    expect(payloads['rice-guidance']).toMatchObject({ storage: 'pantry', storageZone: 'dry-storage', pantryName: 'Pantry', fridgeName: null })
+    expect(payloads['ice-guidance']).toMatchObject({ storage: 'freezer', storageZone: 'freezer-main' })
+    expect(payloads['rice-guidance']).toMatchObject({ storage: 'pantry', storageZone: 'dry-storage' })
     expect(wrapper.findAll('.recommendation-card').map(card => card.text())).toEqual([])
     expect(wrapper.get('.guidance-arrange-all').attributes('disabled')).toBeDefined()
   })
@@ -1124,5 +1110,39 @@ describe('Storage guidance after moving food', () => {
     await flushPromises()
     expect(document.querySelector('.storage-move-warning')).toBeNull()
     expect(wrapper.find('.food-storage-badge').exists()).toBe(false)
+  })
+})
+
+
+describe('Single Fridge and Pantry', () => {
+  const keys = ['full-circle-fridges', 'full-circle-pantries', 'full-circle-main-storage-labels', 'full-circle-last-fridge', 'full-circle-item-storage-assignments']
+  afterEach(() => keys.forEach(key => localStorage.removeItem(key)))
+  it.each([false, true])('shows only Fridge and Pantry and preserves access to every legacy item (embedded: %s)', async embedded => {
+    localStorage.setItem('full-circle-fridges', JSON.stringify(['Fridge 2']))
+    localStorage.setItem('full-circle-pantries', JSON.stringify(['Pantry 2']))
+    localStorage.setItem('full-circle-main-storage-labels', JSON.stringify(['Kitchen fridge', 'Cupboard']))
+    localStorage.setItem('full-circle-last-fridge', JSON.stringify(['Fridge 2']))
+    const foods = [food,
+      { ...food, _id: 'old-fridge', name: 'Milk', fridgeName: 'Fridge 2' },
+      { ...food, _id: 'old-pantry', name: 'Rice', storage: 'pantry', storageZone: 'dry-storage', pantryName: 'Pantry 2' },
+    ]
+    if (!embedded) request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    await openFridge(embedded ? { embedded: true, inventoryItems: foods } : {})
+    expect(wrapper.find('[aria-label="Storage settings"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/Add fridge|Add pantry|Rename fridge|Rename pantry|Delete fridge|Delete pantry|Kitchen fridge|Cupboard|Fridge 2|Pantry 2/)
+    expect(wrapper.get('.door-brand').text()).toBe('Fridge')
+    expect(wrapper.findAll('.shelf-compartment .mini-food')).toHaveLength(2)
+    if (embedded) {
+      expect(wrapper.get('.dashboard-fridge-name').text()).toBe('Fridge')
+      await wrapper.get('.dashboard-fridge-switch [aria-label="Next storage"]').trigger('click')
+      expect(wrapper.get('.dashboard-fridge-name').text()).toBe('Pantry')
+    } else {
+      expect(wrapper.findAll('.storage-slide-options > button').map(button => button.text())).toEqual(['Fridge', 'Pantry'])
+      expect(wrapper.get('.storage-slide-status').text()).toBe('1 / 2')
+      await wrapper.findAll('.storage-slide-options > button')[1].trigger('click')
+    }
+    expect(wrapper.get('.pantry-unit').classes()).toContain('slide-active')
+    expect(wrapper.get('.pantry-unit [data-food-id="old-pantry"]').exists()).toBe(true)
+    expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(0)
   })
 })

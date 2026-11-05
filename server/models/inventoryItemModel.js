@@ -12,7 +12,7 @@ const inventoryItemSchema = new mongoose.Schema(
     // Estimated (AI / rules) or typed by the user; total weight of everything in this item.
     weightKg: { type: Number, min: 0 },
     storage: { type: String, enum: ['fridge', 'freezer', 'pantry'], required: true },
-    // Optional named appliances; the shared inventory API preserves custom fridge/pantry choices.
+    // Legacy names are retained for compatibility; the app now uses one Fridge and one Pantry.
     fridgeName: { type: String, trim: true, maxlength: 60 },
     pantryName: { type: String, trim: true, maxlength: 60 },
     // Smart Fridge placement. storageZone is where the item is NOW (the Smart Fridge page changes it

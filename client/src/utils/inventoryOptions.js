@@ -36,6 +36,7 @@ export const CATEGORIES = [
 ]
 
 export const ZONE_VALUES = ZONES.map((z) => z.value)
+export const unifiedShelfZone = zone => ['upper-shelf', 'lower-shelf'].includes(zone) ? 'middle-shelf' : zone
 export const CATEGORY_VALUES = CATEGORIES.map((c) => c.value)
 
 export const zoneByValue = (value) => ZONES.find((z) => z.value === value) ?? null

@@ -27,7 +27,7 @@ function activitySnapshot(item, action, quantity, fraction = 1) {
     unit: hasCount ? item.unit || 'pieces' : 'kg', category: item.category || 'Other',
     weightKg: (Number(item.weightKg) || 0) * fraction,
     valueSgd: (Number(item.purchasePrice) || 0) * fraction,
-    location: item.storage === 'pantry' ? item.pantryName || 'Pantry' : item.fridgeName || 'Main fridge',
+    location: item.storage === 'pantry' ? 'Pantry' : 'Fridge',
     source: 'Inventory activity',
   }
 }
@@ -67,8 +67,6 @@ const editableFields = [
   'unit',
   'storage',
   'storageZone',
-  'fridgeName',
-  'pantryName',
   'storageGuidanceIgnored',
   'purchasedAt',
   'expiresAt',
@@ -100,17 +98,6 @@ function validateItemFields(fields, { creating = false } = {}) {
   if (Object.prototype.hasOwnProperty.call(fields, 'storageGuidanceIgnored') &&
       typeof fields.storageGuidanceIgnored !== 'boolean') {
     return 'Storage guidance preference must be true or false.'
-  }
-  for (const key of ['fridgeName', 'pantryName']) {
-    if (!Object.prototype.hasOwnProperty.call(fields, key)) continue
-    if (fields[key] === null || fields[key] === '') {
-      fields[key] = null
-      continue
-    }
-    if (typeof fields[key] !== 'string' || fields[key].trim().length === 0 || fields[key].trim().length > 60) {
-      return 'Storage name must be between 1 and 60 characters.'
-    }
-    fields[key] = fields[key].trim()
   }
   if (creating || Object.prototype.hasOwnProperty.call(fields, 'name')) {
     if (typeof fields.name !== 'string' || !fields.name.trim()) {

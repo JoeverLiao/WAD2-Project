@@ -53,50 +53,7 @@ const emit = defineEmits(['inventory-change', 'reload'])
 const router = inject(routerKey, null)
 const route = inject(routeLocationKey, null)
 const localItems = ref([])
-const itemStorageAssignmentsKey = 'full-circle-item-storage-assignments'
-
-function readItemStorageAssignments() {
-    try {
-        const saved = JSON.parse(localStorage.getItem(itemStorageAssignmentsKey) || '{}')
-        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {}
-        return Object.fromEntries(Object.entries(saved).flatMap(([id, assignment]) => {
-            if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) return []
-            const clean = {}
-            if (typeof assignment.fridgeName === 'string') clean.fridgeName = assignment.fridgeName
-            if (typeof assignment.pantryName === 'string') clean.pantryName = assignment.pantryName
-            return Object.keys(clean).length ? [[id, clean]] : []
-        }))
-    } catch {
-        return {}
-    }
-}
-
-const itemStorageAssignments = ref(readItemStorageAssignments())
 const activeStorage = ref('fridge')
-const storageSettingsOpen = ref(false)
-const storageSettingsGear = ref(null)
-let gearStartX
-let gearShift
-
-function animateSettingsGear() {
-    const gear = storageSettingsGear.value
-    if (!gear || gearStartX === undefined) return
-    gearShift?.cancel()
-    const offset = gearStartX - gear.getBoundingClientRect().left
-    gearStartX = undefined
-    if (offset && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-        gearShift = gear.animate?.(
-            [{ translate: `${offset}px 0` }, { translate: '0 0' }],
-            { duration: 240, easing: 'ease-out' },
-        )
-    }
-}
-
-function toggleStorageSettings() {
-    gearStartX = storageSettingsGear.value?.getBoundingClientRect().left
-    storageSettingsOpen.value = !storageSettingsOpen.value
-    if (storageSettingsOpen.value) nextTick(animateSettingsGear)
-}
 const animateStorageSlide = ref(true)
 function showStorage(storage, animate = false) {
     if (props.embedded) return
@@ -142,7 +99,6 @@ function toDateInputValue(value) {
 function normaliseItem(apiItem) {
     const id = String(apiItem._id || apiItem.id)
     return {
-        ...itemStorageAssignments.value[id],
         ...apiItem,
         // MongoDB uses _id; our existing Vue template uses id.
         id,
@@ -248,8 +204,7 @@ onMounted(async () => {
 })
 watch(() => [
   route?.query?.location,
-  route?.query?.highlight,
-  route?.query?.storageName
+  route?.query?.highlight
 ], () => {
   if (!props.embedded) openLinkedCompartment()
 })
@@ -274,11 +229,6 @@ function openLinkedCompartment() {
     const zone = route?.query?.location
     const location = locations[zone]
     if (!location) return
-    const storageName = route?.query?.storageName
-    const type = location.storage === 'pantry' ? 'pantry' : 'fridge'
-    if (typeof storageName === 'string' && storageOptions.value.some(option => option.type === type && option.name === storageName)) {
-        activeNames[type].value = storageName
-    }
     fridgeDoorOpen.value = true
     openCompartment({ id: zone, zone, ...location })
 }
@@ -447,183 +397,29 @@ function scrollCompartment(event) {
 
 // `computed` updates this list automatically when the inventory or
 // search text changes. An empty query matches every item.
-const mainFridge = 'Main fridge'
-const mainPantry = 'Pantry'
-const activeFridge = ref(mainFridge)
-const activePantry = ref(mainPantry)
-
-function readStorageNames(key) {
-    try {
-        const names = JSON.parse(localStorage.getItem(key) || '[]')
-        return Array.isArray(names) ? names.filter(name => typeof name === 'string') : []
-    } catch { return [] }
-}
-
-const storageKeys = { fridge: 'full-circle-fridges', pantry: 'full-circle-pantries' }
-const extraNames = { fridge: ref(readStorageNames(storageKeys.fridge)), pantry: ref(readStorageNames(storageKeys.pantry)) }
-const mainNames = { fridge: mainFridge, pantry: mainPantry }
-const assignmentFields = { fridge: 'fridgeName', pantry: 'pantryName' }
-const activeNames = { fridge: activeFridge, pantry: activePantry }
-const mainLabels = ref(readStorageNames('full-circle-main-storage-labels'))
-
-// Keep a browser fallback for older inventory records that predate named
-// fridge and pantry fields in the shared schema.
-function rememberItemStorage(itemId, type, name) {
-    const id = String(itemId || '')
-    if (!id || id === 'undefined' || !mainNames[type]) return
-
-    const assignments = { ...itemStorageAssignments.value }
-    const field = assignmentFields[type]
-    const assignment = name && name !== mainNames[type] ? { [field]: name } : null
-    if (assignment) assignments[id] = assignment
-    else delete assignments[id]
-
-    itemStorageAssignments.value = assignments
-    try {
-        localStorage.setItem(itemStorageAssignmentsKey, JSON.stringify(assignments))
-    } catch {
-        // Keep the current session usable if browser storage is unavailable.
-    }
-}
-
-function forgetItemStorage(itemId) {
-    const id = String(itemId || '')
-    if (!id || id === 'undefined' || !itemStorageAssignments.value[id]) return
-    const assignments = { ...itemStorageAssignments.value }
-    delete assignments[id]
-    itemStorageAssignments.value = assignments
-    try {
-        localStorage.setItem(itemStorageAssignmentsKey, JSON.stringify(assignments))
-    } catch {
-        // The API deletion still succeeds when browser storage is unavailable.
-    }
-}
-
-const storageOptions = computed(() => ['fridge', 'pantry'].flatMap(type =>
-    [...new Set([mainNames[type], ...extraNames[type].value, ...items.value.map(item => item[assignmentFields[type]]).filter(Boolean)])]
-        .map(name => ({
-            type, name,
-            label: name === mainNames[type] ? mainLabels.value[type === 'fridge' ? 0 : 1] || (type === 'fridge' ? 'Fridge' : 'Pantry') : name,
-        })),
-))
-const fridgeItems = computed(() => items.value.filter(item =>
-    (item.storage === 'pantry'
-        ? (item.pantryName || mainPantry) === activePantry.value
-        : (item.fridgeName || mainFridge) === activeFridge.value),
-))
-const storageIndex = computed(() => storageOptions.value.findIndex(option =>
-    option.type === activeStorage.value && option.name === activeNames[option.type].value,
-))
+// One fridge (including its freezer) and one pantry. Legacy named items remain visible.
+const storageOptions = computed(() => [
+    { type: 'fridge', name: 'Main fridge', label: 'Fridge' },
+    { type: 'pantry', name: 'Pantry', label: 'Pantry' },
+])
+const fridgeItems = computed(() => items.value)
+const storageIndex = computed(() => storageOptions.value.findIndex(option => option.type === activeStorage.value))
 const currentStorage = computed(() => storageOptions.value[storageIndex.value])
-const fridgeDoorTitle = computed(() => storageDisplayName('fridge', activeFridge.value))
-
-function storageDisplayName(type, name) {
-    return storageOptions.value.find(option => option.type === type && option.name === name)?.label || name
-}
+const fridgeDoorTitle = 'Fridge'
 
 function itemStorageName(item) {
-    return item.storage === 'pantry'
-        ? storageDisplayName('pantry', item.pantryName || mainPantry)
-        : storageDisplayName('fridge', item.fridgeName || mainFridge)
-}
-
-function storeNames(key, names) {
-    try { localStorage.setItem(key, JSON.stringify(names)) } catch { /* Keep the current session usable. */ }
+    return item.storage === 'pantry' ? 'Pantry' : 'Fridge'
 }
 
 function selectStorage(option) {
-    activeNames[option.type].value = option.name
     changeStorage(option.type)
     if (props.embedded) activeStorage.value = option.type
 }
-
-const dashboardFridges = computed(() => storageOptions.value.filter(option => option.type === 'fridge'))
-
-const lastFridgeKey = 'full-circle-last-fridge'
-let rememberedFridge = readStorageNames(lastFridgeKey)[0]
-watch(dashboardFridges, options => {
-    if (rememberedFridge && options.some(option => option.name === rememberedFridge)) {
-        activeFridge.value = rememberedFridge
-        rememberedFridge = null
-    }
-}, { immediate: true })
-watch(activeFridge, name => {
-    rememberedFridge = null
-    storeNames(lastFridgeKey, [name])
-})
 
 function stepStorage(direction) {
     const count = storageOptions.value.length
     selectStorage(storageOptions.value[(storageIndex.value + direction + count) % count])
 }
-
-async function editStorage(type, previous = null) {
-    const current = storageOptions.value.find(option => option.type === type && option.name === previous)
-    const input = await showPrompt({
-        title: previous ? `Rename ${current.label}` : `Add a ${type}`,
-        label: 'Storage name',
-        defaultValue: current?.label || '',
-        confirmLabel: previous ? 'Rename' : 'Add',
-        validate: value => {
-            const name = value.trim()
-            if (!name || name.length > 60) return 'Enter a name of 1 to 60 characters.'
-            if (name.toLowerCase() === mainNames[type].toLowerCase() ||
-                storageOptions.value.some(option => option.type === type && option.name !== previous &&
-                    [option.name, option.label].some(existing => existing.toLowerCase() === name.toLowerCase()))) return 'That name is already used.'
-            return ''
-        },
-    })
-    if (!input?.trim() || input.trim() === current?.label) return
-    const name = input.trim()
-    if (previous === mainNames[type]) {
-        const labels = [mainLabels.value[0] || '', mainLabels.value[1] || '']
-        labels[type === 'fridge' ? 0 : 1] = name
-        mainLabels.value = labels
-        storeNames('full-circle-main-storage-labels', labels)
-        return
-    }
-    if (previous && !await reassignStorage(type, previous, name)) {
-        extraNames[type].value = [...new Set([...extraNames[type].value, previous, name])]
-        storeNames(storageKeys[type], extraNames[type].value)
-        return
-    }
-    extraNames[type].value = [...extraNames[type].value.filter(existing => existing !== previous), name]
-    storeNames(storageKeys[type], extraNames[type].value)
-    selectStorage({ type, name })
-}
-
-async function reassignStorage(type, from, to) {
-    const field = assignmentFields[type]
-    const group = items.value.filter(item => item[field] === from)
-    errorMessage.value = ''
-    shiftingFood.value = true
-    try {
-        const moved = await saveFoodGroup(group, 'PATCH', { [field]: to })
-        if (moved.size === group.length) return true
-        errorMessage.value = 'Some foods could not be moved. Both storage locations remain available.'
-        return false
-    } finally { shiftingFood.value = false }
-}
-
-async function deleteStorage() {
-    const { type, name, label } = currentStorage.value
-    if (name === mainNames[type]) return
-    const confirmed = await showConfirm({
-        title: `Delete ${label}?`,
-        message: `Food assigned here will move to ${mainNames[type]}.`,
-        confirmLabel: `Delete ${type}`,
-        danger: true,
-    })
-    if (!confirmed || !await reassignStorage(type, name, mainNames[type])) return
-    extraNames[type].value = extraNames[type].value.filter(existing => existing !== name)
-    storeNames(storageKeys[type], extraNames[type].value)
-    selectStorage({ type, name: mainNames[type] })
-}
-
-watch(activeFridge, () => {
-    selectedFoodIds.value = new Set()
-    foodTooltip.value = null
-})
 
 const filteredItems = computed(() => {
     const query = searchQuery.value.trim().toLowerCase()
@@ -781,14 +577,6 @@ async function saveItem(formData) {
     const isEditing = Boolean(originalItem)
     const itemId = originalItem?.id
     const payload = prepareItemForApi(formData)
-    const storageType = payload.storage === 'pantry' ? 'pantry' : 'fridge'
-    const assignmentField = assignmentFields[storageType]
-    const originalStorageType = originalItem?.storage === 'pantry' ? 'pantry' : 'fridge'
-    const assignedStorageName = originalItem && originalStorageType === storageType
-        ? originalItem[assignmentField] || mainNames[storageType]
-        : activeNames[storageType].value || mainNames[storageType]
-    payload[assignmentField] = assignedStorageName
-    payload[assignmentFields[storageType === 'pantry' ? 'fridge' : 'pantry']] = null
     const origins = originalItem ? foodTransfer.capture([originalItem]) : []
 
     try {
@@ -816,7 +604,6 @@ async function saveItem(formData) {
         const responseData = await response.json()
         // Support either a direct item response or { item: ... }.
         const savedApiItem = responseData.item || responseData
-        rememberItemStorage(savedApiItem._id || savedApiItem.id || itemId, storageType, assignedStorageName)
         const savedItem = normaliseItem(savedApiItem)
 
         if (isEditing) {
@@ -896,7 +683,6 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
 
             if (removesItem) {
                 items.value = items.value.filter(existingItem => existingItem.id !== item.id)
-                forgetItemStorage(item.id)
                 await nextTick()
                 if (selectedCompartment.value) dialogRef.value?.focus()
             } else {
@@ -997,7 +783,6 @@ async function changeFoodQuantity(item, action, onAnimationSuccess) {
             items.value = items.value.filter(
                 existingItem => existingItem.id !== item.id
             )
-            forgetItemStorage(item.id)
             await nextTick()
             if (selectedCompartment.value) dialogRef.value?.focus()
         } else {
@@ -1070,7 +855,6 @@ async function removeItem(item) {
 
         // Only update the screen after the backend confirms deletion.
         items.value = items.value.filter(existingItem => existingItem.id !== item.id)
-        forgetItemStorage(item.id)
         await nextTick()
         if (selectedCompartment.value) dialogRef.value?.focus()
     } catch (error) {
@@ -1328,16 +1112,6 @@ async function saveFoodGroup(group, method, payload) {
         if (method === 'DELETE') return item
         const data = await response.json()
         const savedApiItem = data.item || data
-        const storageType = (itemPayload?.storage || savedApiItem.storage || item.storage) === 'pantry' ? 'pantry' : 'fridge'
-        const field = assignmentFields[storageType]
-        const hasExplicitName = Object.prototype.hasOwnProperty.call(itemPayload || {}, field)
-        const wasInSameStorage = (item.storage === 'pantry') === (storageType === 'pantry')
-        const storageName = hasExplicitName
-            ? itemPayload[field]
-            : wasInSameStorage
-                ? item[field] || mainNames[storageType]
-                : activeNames[storageType].value || mainNames[storageType]
-        rememberItemStorage(savedApiItem._id || savedApiItem.id || item.id, storageType, storageName)
         return normaliseItem(savedApiItem)
     }))
     const succeeded = new Set()
@@ -1347,7 +1121,6 @@ async function saveFoodGroup(group, method, payload) {
         const id = group[index].id
         succeeded.add(id)
         updates.set(id, result.value)
-        if (method === 'DELETE') forgetItemStorage(id)
     })
     // Commit the whole group once so an embedded parent's props cannot lag between items.
     if (succeeded.size) items.value = method === 'DELETE'
@@ -1368,18 +1141,15 @@ async function saveFoodGroup(group, method, payload) {
 
 function otherStorageOptions(item) {
     const type = item.storage === 'pantry' ? 'pantry' : 'fridge'
-    const name = item[assignmentFields[type]] || mainNames[type]
-    return storageOptions.value.filter(option => option.type !== type || option.name !== name)
+    return storageOptions.value.filter(option => option.type !== type)
 }
 
 async function moveToStorage({ item, destination }) {
     if (shiftingFood.value || actionPending.value || saving.value) return
     if (!otherStorageOptions(item).some(option => option.type === destination.type && option.name === destination.name)) return
-    const sourceType = item.storage === 'pantry' ? 'pantry' : 'fridge'
-    const payload = { [assignmentFields[destination.type]]: destination.name }
-    if (sourceType !== destination.type) {
-        payload.storage = destination.type
-        payload.storageZone = destination.type === 'pantry' ? 'dry-storage' : 'middle-shelf'
+    const payload = {
+        storage: destination.type,
+        storageZone: destination.type === 'pantry' ? 'dry-storage' : 'middle-shelf',
     }
     errorMessage.value = ''
     shiftingFood.value = true
@@ -1428,14 +1198,6 @@ async function dropOnArea(area, event, onSuccess) {
     if (onSuccess) actionPending.value = true
     try {
         const destination = { storage, storageZone }
-        if (!props.embedded && storage === 'pantry') {
-            destination.pantryName = activePantry.value
-            destination.fridgeName = null
-        }
-        if (!props.embedded && storage !== 'pantry') {
-            destination.fridgeName = activeFridge.value
-            destination.pantryName = null
-        }
         const succeeded = await saveFoodGroup(group, 'PATCH', destination)
         if (succeeded.size) showStorage(storage)
         await foodTransfer.play(origins, succeeded, locationLabel({ storage, storageZone }))
@@ -1525,15 +1287,7 @@ function guidanceDestination(item) {
     }
     const storage = storageForZone(zone)
     if (!storage || (storage === item.storage && zone === item.storageZone)) return null
-    const type = storage === 'pantry' ? 'pantry' : 'fridge'
-    const sourceType = item.storage === 'pantry' ? 'pantry' : 'fridge'
-    // Keep food in its current named fridge when changing compartments.
-    const name = type === sourceType ? item[assignmentFields[type]] || mainNames[type] : activeNames[type].value
-    return {
-        storage, storageZone: zone,
-        fridgeName: type === 'fridge' ? name : null,
-        pantryName: type === 'pantry' ? name : null,
-    }
+    return { storage, storageZone: zone }
 }
 
 function guidanceDestinationLabel(item) {
@@ -1686,9 +1440,7 @@ async function centerFridge() {
 function openCompartment(compartment) {
     if (props.embedded && router) {
         finishDrag()
-        const type = compartment.storage === 'pantry' ? 'pantry' : 'fridge'
         const query = { location: compartment.zone }
-        if (activeNames[type].value !== mainNames[type]) query.storageName = activeNames[type].value
         router.push({ name: 'fridge', query })
         return
     }
@@ -1842,7 +1594,7 @@ async function jumpToItem(item) {
     expiryPanelOpen.value = false
     searchQuery.value = ''
     const type = item.storage === 'pantry' ? 'pantry' : 'fridge'
-    selectStorage({ type, name: item[assignmentFields[type]] || mainNames[type] })
+    selectStorage({ type })
     if (type === 'fridge') fridgeDoorOpen.value = true
     await nextTick()
 
@@ -2006,20 +1758,7 @@ onBeforeUnmount(cancelActionReaction)
                     :disabled="shiftingFood || saving" :aria-pressed="storageIndex === index"
                     @click="selectStorage(option)">{{ option.label }}</button>
                 <span :key="storageIndex" class="storage-slide-status storage-switch-pulse" role="status">{{ storageIndex + 1 }} / {{ storageOptions.length }}</span>
-                <div class="storage-settings-row">
-                <button ref="storageSettingsGear" type="button" class="storage-settings-toggle" aria-label="Storage settings"
-                    :aria-expanded="storageSettingsOpen" aria-controls="storage-settings"
-                    @click="toggleStorageSettings"><span aria-hidden="true">⚙︎</span></button>
-                <Transition name="storage-settings" @after-leave="animateSettingsGear">
-                <div v-show="storageSettingsOpen" id="storage-settings" class="fridge-switcher-actions">
-                    <button type="button" :disabled="shiftingFood || saving" @click="editStorage('fridge')">＋ Add fridge</button>
-                    <button type="button" :disabled="shiftingFood || saving" @click="editStorage('pantry')">＋ Add pantry</button>
-                    <button type="button" :disabled="shiftingFood || saving" @click="editStorage(currentStorage.type, currentStorage.name)">Rename {{ activeStorage }}</button>
-                    <button v-if="currentStorage.name !== mainNames[activeStorage]" type="button"
-                        :disabled="shiftingFood || saving" @click="deleteStorage">Delete {{ activeStorage }}</button>
-                </div>
-                </Transition>
-                </div>
+
             </div>
             <button type="button" class="storage-slide-arrow" aria-label="Next storage" :disabled="shiftingFood || saving" @click="stepStorage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6l6 6-6 6" /></svg></button>
         </nav>
@@ -2032,7 +1771,7 @@ onBeforeUnmount(cancelActionReaction)
                 <div class="carousel-track">
                     <!-- Refrigerator unit -->
                     <section class="storage-unit fridge-unit" :class="{ 'slide-active': activeStorage === 'fridge' }" :inert="activeStorage !== 'fridge' ? true : undefined" :aria-hidden="activeStorage !== 'fridge'" aria-label="Refrigerator">
-                        <div class="storage-unit-content" :key="activeFridge" :class="{ 'storage-switch-pulse': animateStorageSlide }">
+                        <div class="storage-unit-content" :class="{ 'storage-switch-pulse': animateStorageSlide }">
                         <div v-if="!embedded" class="unit-top-label"><span>❄️</span> FRESH &amp; CHILLED</div>
                         <button v-if="fridgeDoorOpen" type="button" class="mobile-fridge-close" @click="toggleDoor">Close fridge</button>
                         <div class="fridge-body" :class="{ 'fridge-is-open': fridgeDoorOpen, 'door-moving': doorGesture?.moved, 'light-on': fridgeLightOn, 'fridge-is-idle': embedded && doorAngle === 0 && !doorGesture }" :style="{ '--door-angle': `${doorAngle}deg`, '--open-progress': doorAngle / 170 }">
@@ -2118,7 +1857,7 @@ onBeforeUnmount(cancelActionReaction)
                     <section v-if="!embedded || activeStorage === 'pantry'" class="storage-unit pantry-unit" :class="{ 'slide-active': activeStorage === 'pantry' }" :inert="activeStorage !== 'pantry' ? true : undefined" :aria-hidden="activeStorage !== 'pantry'" aria-label="Pantry">
                         <input v-if="!embedded && activeStorage === 'pantry'" v-model="searchQuery" class="storage-search pantry-search" type="search"
                             aria-label="Search pantry food" placeholder="Search food…">
-                        <div class="storage-unit-content" :key="activePantry" :class="{ 'storage-switch-pulse': animateStorageSlide }">
+                        <div class="storage-unit-content" :class="{ 'storage-switch-pulse': animateStorageSlide }">
                         <div class="unit-top-label pantry-label">{{ countItems('pantry') }} pantry items · Four open shelves</div>
                         <div class="pantry-cabinet pantry-single-storage open-pantry">
                             <div class="open-pantry-shelves">
@@ -3260,22 +2999,6 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
 .storage-switcher > .storage-slide-arrow:first-child { left:0; }
 .storage-switcher > .storage-slide-arrow:last-child { right:0; }
 .fridge-switcher-options .storage-slide-status { flex-basis:100%; text-align:center; }
-.storage-settings-row,.fridge-switcher-actions {
-    display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px;
-}
-.storage-settings-row { flex-basis:100%; }
-.storage-slide-options .storage-settings-toggle {
-    display:grid; place-items:center; width:44px; height:44px; padding:0;
-    border:2px solid var(--ink); border-radius:50%; background:var(--paper);
-}
-.storage-settings-toggle span { display:inline-block; font:26px/1 sans-serif; }
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-    .storage-settings-toggle:hover span { animation:settings-gear-spin 480ms ease-in-out; }
-}
-@keyframes settings-gear-spin {
-    from { rotate:0deg; }
-    to { rotate:180deg; }
-}
 .storage-search {
     flex:1; min-width:0; width:100%; max-width:320px;
     padding:4px 8px; border:1px solid #416f77; border-radius:8px;
@@ -3370,9 +3093,6 @@ button:focus-visible,input:focus-visible { outline:3px solid #f0b93d; outline-of
     .inventory-modal :deep(.icon-button) { min-height:44px; min-width:44px; }
     .expiry-dropdown-panel { max-height:55dvh; }
 }
-@media (prefers-reduced-motion: no-preference) {
-    .storage-settings-enter-active,.storage-settings-leave-active { transition:opacity 200ms ease, translate 200ms ease; }
-    .storage-settings-enter-from,.storage-settings-leave-to { opacity:0; translate:-14px 0; }
-}
+
 .primary-button { text-decoration:none; }
 </style>
