@@ -6,7 +6,7 @@ import {
   seedFood as originalSeedFood,
   json,
   id,
-} from './helpers/helpers.js'
+} from './helpers.js'
 
 export { expect, json, id }
 

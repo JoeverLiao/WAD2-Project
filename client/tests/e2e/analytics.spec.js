@@ -12,7 +12,7 @@ import {
   openActivityEditor,
   saveActivityEditor,
   metric,
-} from './headers/analytics-helpers.js'
+} from './helpers/analytics-helpers.js'
 
 // Avoid chart animations affecting position assertions.
 test.use({ reducedMotion: 'reduce' })
