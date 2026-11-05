@@ -8,6 +8,7 @@ export function dateTimeLabel(value) {
 
   return Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat('en-SG', {
+    timeZone: 'Asia/Singapore',
         day: 'numeric',
         month: 'short',
         hour: 'numeric',

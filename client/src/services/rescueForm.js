@@ -1,24 +1,30 @@
-// Datetime-local inputs use the browser's timezone. API payloads use ISO instants.
+import { CATEGORY_OPTIONS } from "./rescueCategories.js";
+import {
+  rescueDate,
+  singaporeInput,
+  inventoryExpiryDay,
+  endOfExpiryDay,
+} from "./rescueDates.js";
 export function toLocalInput(value) {
-  const date = new Date(value);
-  if (!value || !Number.isFinite(date.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return singaporeInput(value);
 }
 export function toISO(value) {
-  const date = new Date(value);
-  if (!value || !Number.isFinite(date.getTime()))
+  const date = rescueDate(value);
+  if (!Number.isFinite(date.getTime()))
     throw new Error("Enter a valid date and time.");
   return date.toISOString();
 }
 export function inventoryExpiry(item) {
-  // The replacement store preserves the original API timestamp here.
-  return item?.expiresAtISO || "";
+  const day = inventoryExpiryDay(item);
+  return day ? endOfExpiryDay(day) : "";
 }
 export function validateForm(
   form,
   { linked = false, linkedExpiry = "", now = Date.now() } = {},
 ) {
+  const category = form.category ?? "other";
+  if (!CATEGORY_OPTIONS.some((option) => option.value === category))
+    throw new Error("Choose a valid food category.");
   if (!form.title?.trim() || form.title.trim().length > 120)
     throw new Error("Enter a food name with at most 120 characters.");
   if (
@@ -70,6 +76,7 @@ export function validateForm(
   )
     throw new Error("Use-by cannot be later than the inventory expiry.");
   return {
+    category,
     title: form.title.trim(),
     description: (form.description || "").trim(),
     quantity: Number(form.quantity),

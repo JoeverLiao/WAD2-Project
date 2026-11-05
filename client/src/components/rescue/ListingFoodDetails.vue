@@ -1,7 +1,7 @@
 <script setup>
-import { computed } from 'vue'
-import { CATEGORY_OPTIONS } from '@/services/rescueCategories.js'
-import { toLocalInput } from '@/services/rescueForm.js'
+import { computed } from "vue";
+import { CATEGORY_OPTIONS } from "@/services/rescueCategories.js";
+import { toLocalInput } from "@/services/rescueForm.js";
 
 // This section displays parent-owned state and emits user actions.
 const props = defineProps({
@@ -9,66 +9,65 @@ const props = defineProps({
   form: { type: Object, required: true },
   linked: { type: Boolean, required: true },
   linkedExpiry: { type: String, required: true },
-  localTimezone: { type: String, required: true },
   maxShareQuantity: { type: Number, required: true },
   minDatetime: { type: String, required: true },
-})
+});
 
-const emit = defineEmits(['update-field'])
+const emit = defineEmits(["update-field"]);
 
 const fieldTitle = computed({
   get() {
-    return props.form.title
+    return props.form.title;
   },
   set(value) {
-    emit('update-field', 'title', value)
+    emit("update-field", "title", value);
   },
-})
+});
 
 const fieldCategory = computed({
   get() {
-    return props.form.category
+    return props.form.category;
   },
   set(value) {
-    emit('update-field', 'category', value)
+    emit("update-field", "category", value);
   },
-})
+});
 
 const fieldQuantity = computed({
   get() {
-    return props.form.quantity
+    return props.form.quantity;
   },
   set(value) {
-    emit('update-field', 'quantity', value)
+    emit("update-field", "quantity", value);
   },
-})
+});
 
 const fieldUnit = computed({
   get() {
-    return props.form.unit
+    return props.form.unit;
   },
   set(value) {
-    emit('update-field', 'unit', value)
+    emit("update-field", "unit", value);
   },
-})
+});
 
 const fieldExpiresAt = computed({
   get() {
-    return props.form.expiresAt
+    return props.form.expiresAt;
   },
   set(value) {
-    emit('update-field', 'expiresAt', value)
+    emit("update-field", "expiresAt", value);
   },
-})
+});
 
 const fieldDescription = computed({
   get() {
-    return props.form.description
+    return props.form.description;
   },
   set(value) {
-    emit('update-field', 'description', value)
+    emit("update-field", "description", value);
   },
-})
+});
 </script>
 
 <template>
@@ -76,9 +75,7 @@ const fieldDescription = computed({
     class="editor-section rounded-4 p-3 p-md-4"
     aria-labelledby="food-details-heading"
   >
-    <h3 id="food-details-heading" class="mb-3">
-      1. What are you sharing?
-    </h3>
+    <h3 id="food-details-heading" class="mb-3">1. What are you sharing?</h3>
 
     <div class="row g-3">
       <!-- Name and category -->
@@ -123,11 +120,7 @@ const fieldDescription = computed({
           class="form-control"
           type="number"
           min="1"
-          :max="
-          linked && !editing
-          ? maxShareQuantity
-          : 1000000
-          "
+          :max="linked && !editing ? maxShareQuantity : 1000000"
           step="1"
           :readonly="linked && editing"
           required
@@ -160,7 +153,7 @@ const fieldDescription = computed({
       </div>
 
       <div class="col-12 col-md-6">
-        <label class="form-label" for="listing-expiry">Use-by date and time *</label>
+        <label class="form-label" for="listing-expiry">Use-by date *</label>
 
         <input
           id="listing-expiry"
@@ -169,22 +162,21 @@ const fieldDescription = computed({
           type="date"
           :min="minDatetime.slice(0, 10)"
           :max="
-          linkedExpiry
-          ? toLocalInput(linkedExpiry).slice(0, 10)
-          : undefined
+            linkedExpiry ? toLocalInput(linkedExpiry).slice(0, 10) : undefined
           "
           required
         />
 
         <p class="small text-muted mb-0 mt-2">
-          All dates and times use your device timezone:
-          {{ localTimezone }}.
+          All dates and pickup times use Singapore time (SGT).
         </p>
       </div>
 
       <!-- Description -->
       <div class="col-12">
-        <label class="form-label" for="listing-description">Short description</label>
+        <label class="form-label" for="listing-description"
+          >Short description</label
+        >
 
         <textarea
           id="listing-description"
