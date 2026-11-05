@@ -271,8 +271,7 @@ const vReveal = {
         <div class="col-lg-7 d-flex flex-column gap-3">
           <section ref="fridgeSection" aria-labelledby="dashboard-fridge-heading">
             <h2 id="dashboard-fridge-heading" class="section-title">Your Smart Fridge</h2>
-            <SmartKitchen ref="dashboardFridge" embedded :inventory-items="items"
-              @inventory-change="items = $event" @reload="inventoryStore.loadInventory()" />
+            <SmartKitchen ref="dashboardFridge" embedded />
           </section>
 
 

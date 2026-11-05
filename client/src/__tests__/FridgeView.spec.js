@@ -1,3 +1,6 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { useInventoryStore } from '../stores/inventory.js'
+import { normaliseItem } from '../utils/inventoryModel.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -8,7 +11,7 @@ import { showConfirm, showPrompt } from '../utils/dialog.js'
 import { storageGuidance } from '../../../server/services/storageGuidance.js'
 
 vi.mock('../utils/dialog.js')
-vi.mock('../components/EggLoader.vue', () => ({ default: { template: '<div />' } }))
+
 
 const food = { _id: 'apple-1', name: 'Apples', quantity: 3, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', expiresAt: '2026-11-05' }
 let wrapper
@@ -17,6 +20,8 @@ function transfer() {
   return { setData: vi.fn(), getData: () => food._id, setDragImage: vi.fn(), effectAllowed: '' }
 }
 async function openFridge(props = {}) {
+  if (props.inventoryItems) useInventoryStore().items = props.inventoryItems.map(normaliseItem)
+  props = { embedded: props.embedded || false }
   wrapper = mount(FridgeView, { attachTo: document.body, props, global: { stubs: { RouterLink: true } } })
   await flushPromises()
   await wrapper.get('.fridge-door').trigger('click')
@@ -27,6 +32,7 @@ async function beginDrag() {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia())
   request = vi.fn(async (_url, options) => ({ ok: true, json: async () => options?.method === 'DELETE' ? {} : [food] }))
   vi.stubGlobal('fetch', request)
   showPrompt.mockResolvedValue('3')
@@ -80,12 +86,12 @@ describe('Fridge interactions', () => {
     await openFridge()
     const calls = request.mock.calls.length
     expect(wrapper.get('.fridge-unit').classes()).toContain('slide-active')
-    await wrapper.get('[aria-label="Next storage: Pantry"]').trigger('click')
+    await wrapper.get('[aria-label="Next storage"]').trigger('click')
     expect(wrapper.get('.pantry-unit').classes()).toContain('slide-active')
     expect(wrapper.get('.pantry-unit').attributes('inert')).toBeUndefined()
     expect(wrapper.get('.fridge-unit').attributes('inert')).toBeDefined()
     expect(wrapper.get('.storage-slide-status').text()).toBe('2 / 2')
-    await wrapper.get('[aria-label="Previous storage: Fridge"]').trigger('click')
+    await wrapper.get('[aria-label="Previous storage"]').trigger('click')
     expect(wrapper.get('.fridge-unit').classes()).toContain('slide-active')
     expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
     await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
@@ -289,9 +295,9 @@ describe('scrollable food previews', () => {
     expect(row.scrollLeft).toBe(120)
     await freezer.trigger('wheel', { deltaY: -80 })
     expect(row.scrollLeft).toBe(40)
-    await freezer.get('.mini-food').trigger('mouseenter')
-    expect(document.querySelector('.fridge-food-tooltip').textContent).toBe('Apple 0')
-    await freezer.get('.mini-food').trigger('mouseleave')
+    await freezer.get('.mini-food').trigger('pointerenter', { pointerType: 'mouse' })
+    expect(document.querySelector('.fridge-food-tooltip .food-tooltip-name').textContent).toBe('Apple 0')
+    await freezer.get('.mini-food').trigger('pointerleave', { pointerType: 'mouse' })
     expect(document.querySelector('.fridge-food-tooltip')).toBeNull()
   })
 })
@@ -397,11 +403,12 @@ describe('dashboard compartment links', () => {
     ['crisper', 'Crisper drawer'], ['door', 'Upper door shelf'], ['door-lower', 'Lower door shelf'],
   ])('opens the selected %s location on the full fridge page', async (zone, title) => {
     const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/scanning', name: 'scanning', component: { template: '<div />' } },
       { path: '/dashboard', name: 'dashboard', component: { template: '<div />' } },
       { path: '/fridge', name: 'fridge', component: FridgeView },
     ] })
     await router.push('/dashboard')
-    wrapper = mount(FridgeView, { attachTo: document.body, props: { embedded: true, inventoryItems: [food] }, global: { plugins: [router] } })
+    wrapper = mount(FridgeView, { attachTo: document.body, props: { embedded: true }, global: { plugins: [router] } })
     await wrapper.get('.fridge-door').trigger('click')
     await wrapper.get(`[data-drop-zone="${zone}"]`).trigger('click')
     await flushPromises()
@@ -412,7 +419,7 @@ describe('dashboard compartment links', () => {
     wrapper = mount(FridgeView, { attachTo: document.body, global: { plugins: [router] } })
     await flushPromises()
     expect(wrapper.get('#compartment-title').text()).toBe(title)
-    expect(wrapper.get('.modal-toolbar').text()).toContain('Add to this compartment')
+    expect(wrapper.get('.modal-toolbar').text()).toContain('Scan to add food')
     expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
   })
 })
@@ -632,14 +639,13 @@ describe('selected food group actions', () => {
     expect(document.querySelector('.pantry-target.celebrating')).not.toBeNull()
     expect(showConfirm).not.toHaveBeenCalled()
   })
-  it('emits the entire moved group in one update when embedded', async () => {
+  it('updates the shared inventory for the entire moved group when embedded', async () => {
     await selectGroup(true)
     await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
     await flushPromises()
-    const updates = wrapper.emitted('inventory-change')
-    expect(updates).toHaveLength(1)
-    expect(updates[0][0]).toHaveLength(2)
-    expect(updates[0][0].every(item => item.storage === 'freezer' && item.storageZone === 'freezer-main')).toBe(true)
+    const updates = useInventoryStore().items
+    expect(updates).toHaveLength(2)
+    expect(updates.every(item => item.storage === 'freezer' && item.storageZone === 'freezer-main')).toBe(true)
   })
   it.each(['consume', 'discard'])('%s uses a single confirmation for the full selection', async (action) => {
     await selectGroup()
@@ -756,10 +762,6 @@ describe('Lower door drops and compartment food reveal', () => {
     await flushPromises()
     const patch = request.mock.calls.find(([, options]) => options?.method === 'PATCH')
     expect(JSON.parse(patch[1].body)).toEqual(expect.objectContaining({ storage: 'fridge', storageZone: 'door-lower' }))
-    if (embedded) {
-      const updated = wrapper.emitted('inventory-change').at(-1)[0]
-      await wrapper.setProps({ inventoryItems: updated })
-    }
     expect(wrapper.findAll('[data-drop-zone="door-lower"] [data-food-id="apple-1"]')).toHaveLength(1)
     expect(wrapper.findAll('.shelf-compartment [data-food-id="apple-1"]')).toHaveLength(0)
   })
@@ -786,7 +788,7 @@ describe('Lower door drops and compartment food reveal', () => {
     expect(document.activeElement).toBe(icon)
     expect(icon.classList.contains('food-location-highlight')).toBe(true)
     expect(icon.animate).toHaveBeenCalled()
-    if (storage !== 'pantry') expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.fridge-door').attributes('aria-expanded')).toBe('true')
     expect(request.mock.calls.filter(([, options]) => options?.method !== 'GET')).toHaveLength(0)
   })
 })
@@ -1077,10 +1079,9 @@ describe('Storage guidance after moving food', () => {
     await drag()
     await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: { ...transfer(), getData: () => 'move-advice' } })
     await flushPromises()
-    if (embedded) await wrapper.setProps({ inventoryItems: wrapper.emitted('inventory-change').at(-1)[0] })
     expect(document.querySelector('.storage-move-warning').textContent).toContain('Crisper drawer')
     expect(wrapper.get('[data-food-id="move-advice"] .food-storage-badge').exists()).toBe(true)
-    if (!embedded) expect(wrapper.get('.recommendation-card').text()).toContain('Apples')
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(embedded ? 0 : 1)
     await wrapper.get('[data-food-id="move-advice"]').trigger('pointerenter', { pointerType: 'mouse' })
     expect(document.querySelector('.food-tooltip-storage').textContent).toContain('Crisper drawer')
     document.querySelector('[aria-label="Dismiss storage guidance prompt"]').click()
@@ -1133,15 +1134,13 @@ describe('Single Fridge and Pantry', () => {
     expect(wrapper.text()).not.toMatch(/Add fridge|Add pantry|Rename fridge|Rename pantry|Delete fridge|Delete pantry|Kitchen fridge|Cupboard|Fridge 2|Pantry 2/)
     expect(wrapper.get('.door-brand').text()).toBe('Fridge')
     expect(wrapper.findAll('.shelf-compartment .mini-food')).toHaveLength(2)
-    if (embedded) {
-      expect(wrapper.get('.dashboard-fridge-name').text()).toBe('Fridge')
-      await wrapper.get('.dashboard-fridge-switch [aria-label="Next storage"]').trigger('click')
-      expect(wrapper.get('.dashboard-fridge-name').text()).toBe('Pantry')
-    } else {
-      expect(wrapper.findAll('.storage-slide-options > button').map(button => button.text())).toEqual(['Fridge', 'Pantry'])
-      expect(wrapper.get('.storage-slide-status').text()).toBe('1 / 2')
-      await wrapper.findAll('.storage-slide-options > button')[1].trigger('click')
-    }
+    const options = wrapper.findAll('.storage-slide-options > button')
+    expect(options.map(button => button.text())).toEqual(embedded ? [] : ['Fridge', 'Pantry'])
+    const status = embedded ? '.dashboard-fridge-name' : '.storage-slide-status'
+    expect(wrapper.get(status).text()).toBe(embedded ? 'Fridge' : '1 / 2')
+    const next = embedded ? wrapper.get('.dashboard-fridge-switch [aria-label="Next storage"]') : options[1]
+    await next.trigger('click')
+    expect(wrapper.get(status).text()).toBe(embedded ? 'Pantry' : '2 / 2')
     expect(wrapper.get('.pantry-unit').classes()).toContain('slide-active')
     expect(wrapper.get('.pantry-unit [data-food-id="old-pantry"]').exists()).toBe(true)
     expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(0)

@@ -1,6 +1,10 @@
 <script setup>
+import { computed, ref, watch } from 'vue'
+import { useFoodActivity, actionLabels } from '../../composables/useFoodActivity.js'
+import { useAnalyticsChart } from '../../composables/useAnalyticsChart.js'
+import { useAnimatedTotals } from '../../composables/useAnimatedTotals.js'
+import { foodActivityDay } from '../../utils/foodActivityDates.js'
 import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { usePageLoading } from '../../utils/pageLoading.js'
 import VegetableCompanions from '../../components/analytics/VegetableCompanions.vue'
@@ -12,99 +16,89 @@ import {
   foodPeriodChange,
 } from '../../utils/analyticsUtils.js'
 
-const actionLabels = {
-  consumed: 'Consumed',
-  discarded: 'Discarded',
-  shared: 'Shared',
-  rescued: 'Rescued',
-}
+const {
+  events,
+  loading,
+  saving,
+  loadError,
+  editor,
+  selectedDate,
+  drafts,
+  editError,
+  loadActivity,
+  openDate,
+  closeEditor,
+  saveDay,
+  addDraft,
+} = useFoodActivity()
+const {
+  days,
+  range,
+  visibleDays,
+  activityIndex,
+  chart,
+  chartWidth,
+  compactChart,
+  plot,
+  daily,
+  renderedDays,
+  renderedYMax,
+  x,
+  y,
+  globalX,
+  points,
+  xTicks,
+  hoverDay,
+  hover,
+  drag,
+  setRange,
+  startDrag,
+  movePointer,
+  finishDrag,
+  cancelDrag,
+  resetZoom,
+  changeRange,
+  wheelZoom,
+  openDay,
+  clickDate,
+} = useAnalyticsChart({ events, openDate })
+usePageLoading(loading, 'Loading your food activity')
+
 const series = [
   { key: 'saved', label: 'Consumed, shared or rescued', color: '#3e9a8e' },
   { key: 'discarded', label: 'Discarded', color: '#cf563e' },
 ]
-const events = ref([])
-const loading = ref(false)
-const saving = ref(false)
-const loadError = ref('')
-usePageLoading(loading, 'Loading your food activity')
-const days = ref([])
-const range = ref([0, 1])
 
-function updateDays() {
-  const today = new Date().toISOString().slice(0, 10)
-  const dates = events.value.map(event => event.occurredAt.slice(0, 10)).sort()
-  const end = dates.at(-1) > today ? dates.at(-1) : today
-  const fallback = new Date(end + 'T00:00:00Z').getTime() - 29 * 86400000
-  const start = Math.min(fallback, dates[0] ? Date.parse(dates[0] + 'T00:00:00Z') : fallback)
-  const count = Math.round((Date.parse(end + 'T00:00:00Z') - start) / 86400000) + 1
-  days.value = Array.from({ length: count }, (_, index) => new Date(start + index * 86400000).toISOString().slice(0, 10))
-  range.value = [Math.max(0, count - 30), count - 1]
-}
-updateDays()
-
-async function loadActivity() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const response = await fetch('/api/analytics/history', { credentials: 'include' })
-    if (!response.ok) throw new Error('Could not load your food activity.')
-    const data = await response.json()
-    events.value = data.events || []
-    updateDays()
-    updateViewport(false)
-  } catch (error) { loadError.value = error.message }
-  finally { loading.value = false }
-}
-
-const editor = ref(null)
-const selectedDate = ref(null)
-const drafts = ref([])
-const editError = ref('')
-let suppressClick = false
-const drag = ref(null)
-const hover = ref(null)
-const chart = ref(null)
-const chartWidth = ref(1000)
-const compactChart = computed(() => chartWidth.value < 600)
-const plot = reactive({ left: 70, right: 950, top: 30, bottom: 300 })
-let chartObserver
-
-function resizeChart(width) {
-  if (width <= 0) return
-  const compact = width < 600
-  chartWidth.value = compact ? width : 1000
-  plot.left = compact ? 45 : 70
-  plot.right = compact ? width - 27 : 950
-  plot.bottom = compact ? 225 : 300
-}
 const currency = new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' })
+
 const dateFormat = new Intl.DateTimeFormat('en-SG', {
   day: 'numeric',
   month: 'short',
   timeZone: 'UTC',
 })
+
 const formatDate = (date) => dateFormat.format(new Date(`${date}T12:00:00Z`))
+
 const isZoomed = computed(() => range.value[0] !== 0 || range.value[1] !== days.value.length - 1)
-const visibleDays = computed(() => days.value.slice(range.value[0], range.value[1] + 1))
+
 const visibleEvents = computed(() =>
-  events.value.filter(
-    (event) =>
-      event.occurredAt.slice(0, 10) >= visibleDays.value[0] &&
-      event.occurredAt.slice(0, 10) <= visibleDays.value.at(-1),
-  ),
+  visibleDays.value.flatMap((day) => activityIndex.value.get(day)?.events || []),
 )
 const totals = computed(() => summarizeFoodEvents(visibleEvents.value))
+
 const comparison = computed(() =>
   previousFoodPeriod(visibleDays.value[0], visibleDays.value.at(-1), days.value[0]),
 )
+
 const previousTotals = computed(() =>
   summarizeFoodEvents(
     events.value.filter((event) => {
-      const date = event.occurredAt.slice(0, 10)
+      const date = foodActivityDay(event.occurredAt)
       return date >= comparison.value.start && date <= comparison.value.end
     }),
   ),
 )
+
 function periodChange(key) {
   return foodPeriodChange(
     totals.value[key],
@@ -112,383 +106,76 @@ function periodChange(key) {
     ['discarded', 'discardedValue'].includes(key),
   )
 }
+
 const rankingMetric = ref('value')
+
 const rankingOptions = [
   { key: 'value', label: 'Cost' },
   { key: 'weight', label: 'Weight' },
   { key: 'frequency', label: 'Frequency' },
 ]
+
 const wasteRanking = computed(() => rankWastedFoods(visibleEvents.value, rankingMetric.value))
+
 const topWastedFoods = computed(() => wasteRanking.value.slice(0, 5))
+
 const selectedFood = ref(null)
+
 const selectedWaste = computed(() =>
   wasteRanking.value.find((food) => food.key === selectedFood.value),
 )
+
 const rankingMax = computed(() =>
   Math.max(1e-9, ...topWastedFoods.value.map((food) => food[rankingMetric.value])),
 )
+
 function rankingValue(food) {
   if (rankingMetric.value === 'value') return currency.format(food.value)
   if (rankingMetric.value === 'weight') return `${food.weight.toFixed(2)} kg`
   return `${food.frequency} ${food.frequency === 1 ? 'occasion' : 'occasions'}`
 }
+
 function selectFood(key) {
   selectedFood.value = selectedFood.value === key ? null : key
 }
+
 watch(wasteRanking, (foods) => {
   if (selectedFood.value && !foods.some((food) => food.key === selectedFood.value))
     selectedFood.value = null
 })
+
 const periodPresets = [
   { label: 'All dates', count: null },
   { label: 'Last 7 days', count: 7 },
   { label: 'Last 14 days', count: 14 },
   { label: 'Last 30 days', count: 30 },
 ]
+
 function choosePeriod(count) {
   selectedFood.value = null
   cancelDrag()
-  setRange(count ? [Math.max(0, days.value.length - count), days.value.length - 1] : [0, days.value.length - 1], true)
+  setRange(
+    count
+      ? [Math.max(0, days.value.length - count), days.value.length - 1]
+      : [0, days.value.length - 1],
+    true,
+  )
 }
+
 function isPreset(count) {
   return (
     range.value[1] === days.value.length - 1 &&
     range.value[0] === (count ? Math.max(0, days.value.length - count) : 0)
   )
 }
-const animatedTotals = ref({ ...totals.value })
-let numberFrame
-let motionPreference
-let mounted = false
 
-function animateTotals(target) {
-  cancelAnimationFrame(numberFrame)
-  if (!mounted || motionPreference?.matches) {
-    animatedTotals.value = { ...target }
-    return
-  }
-  // Retarget from the currently displayed values when dates change quickly.
-  const from = { ...animatedTotals.value }
-  const started = performance.now()
-  function tick(now) {
-    const progress = Math.min((now - started) / 650, 1)
-    const eased = 1 - (1 - progress) ** 3
-    animatedTotals.value = Object.fromEntries(
-      Object.keys(target).map((key) => [key, from[key] + (target[key] - from[key]) * eased]),
-    )
-    if (progress < 1) numberFrame = requestAnimationFrame(tick)
-    else animatedTotals.value = { ...target }
-  }
-  numberFrame = requestAnimationFrame(tick)
-}
-watch(totals, animateTotals)
-
-function updateMotion() {
-  if (!motionPreference?.matches) return
-  cancelAnimationFrame(numberFrame)
-  animatedTotals.value = { ...totals.value }
-  updateViewport(false)
-}
-onMounted(() => {
-  loadActivity()
-  mounted = true
-  resizeChart(chart.value?.clientWidth ?? 0)
-  if (chart.value && typeof ResizeObserver !== 'undefined') {
-    chartObserver = new ResizeObserver(([entry]) => resizeChart(entry.contentRect.width))
-    chartObserver.observe(chart.value)
-  }
-  motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)')
-  motionPreference?.addEventListener('change', updateMotion)
-})
-onBeforeUnmount(() => {
-  mounted = false
-  chartObserver?.disconnect()
-  cancelAnimationFrame(numberFrame)
-  cancelAnimationFrame(zoomFrame)
-  motionPreference?.removeEventListener('change', updateMotion)
-})
-const daily = computed(() =>
-  visibleDays.value.map((date) => {
-    const events = visibleEvents.value.filter((event) => event.occurredAt.startsWith(date))
-    return {
-      date,
-      saved: events
-        .filter((event) => event.action !== 'discarded')
-        .reduce((sum, event) => sum + event.weightKg, 0),
-      discarded: events
-        .filter((event) => event.action === 'discarded')
-        .reduce((sum, event) => sum + event.weightKg, 0),
-    }
-  }),
-)
-const yMax = computed(() =>
-  Math.max(
-    0.5,
-    Math.ceil(Math.max(...daily.value.flatMap((day) => [day.saved, day.discarded])) * 2) / 2,
-  ),
-)
-const renderedRange = ref([...range.value])
-const renderedYMax = ref(yMax.value)
-let zoomFrame
-const fullDaily = computed(() =>
-  days.value.map((date) => {
-    const records = events.value.filter((event) => event.occurredAt.startsWith(date))
-    return {
-      date,
-      saved: records
-        .filter((event) => event.action !== 'discarded')
-        .reduce((sum, event) => sum + event.weightKg, 0),
-      discarded: records
-        .filter((event) => event.action === 'discarded')
-        .reduce((sum, event) => sum + event.weightKg, 0),
-    }
-  }),
-)
-const globalX = (index) =>
-  plot.left +
-  ((index - renderedRange.value[0]) / (renderedRange.value[1] - renderedRange.value[0])) *
-    (plot.right - plot.left)
-const x = (index) => globalX(range.value[0] + index)
-const y = (value) => plot.bottom - (value / renderedYMax.value) * (plot.bottom - plot.top)
-const points = (key) =>
-  fullDaily.value.map((day, index) => `${globalX(index)},${y(day[key])}`).join(' ')
-function updateViewport(animate = false) {
-  cancelAnimationFrame(zoomFrame)
-  const targetRange = [...range.value]
-  const targetY = yMax.value
-  if (!animate || !mounted || motionPreference?.matches) {
-    renderedRange.value = targetRange
-    renderedYMax.value = targetY
-    return
-  }
-  const from = [...renderedRange.value]
-  const fromY = renderedYMax.value
-  const started = performance.now()
-  function tick(now) {
-    const progress = Math.min((now - started) / 320, 1)
-    const eased = 1 - (1 - progress) ** 3
-    renderedRange.value = from.map((value, index) => value + (targetRange[index] - value) * eased)
-    renderedYMax.value = fromY + (targetY - fromY) * eased
-    if (progress < 1) zoomFrame = requestAnimationFrame(tick)
-    else {
-      renderedRange.value = targetRange
-      renderedYMax.value = targetY
-    }
-  }
-  zoomFrame = requestAnimationFrame(tick)
-}
-function setRange(next, animate = false) {
-  range.value = next
-  updateViewport(animate)
-}
-watch(events, () => updateViewport(false))
-const xTicks = computed(() => {
-  const count = Math.min(compactChart.value ? 3 : 6, daily.value.length)
-  if (count <= 1) return count ? [0] : []
-  return [
-    ...new Set(
-      Array.from({ length: count }, (_, index) =>
-        Math.round((index * (daily.value.length - 1)) / (count - 1)),
-      ),
-    ),
-  ]
-})
-const hoverDay = computed(() => (hover.value === null ? null : fullDaily.value[hover.value]))
 const recentEvents = computed(() =>
   visibleEvents.value
     .filter((event) => !selectedFood.value || foodKey(event.name) === selectedFood.value)
     .slice()
     .reverse(),
 )
-
-function chartPoint(event) {
-  // Account for responsive SVG scaling and letterboxing.
-  const point = chart.value.createSVGPoint()
-  point.x = event.clientX
-  point.y = event.clientY
-  return point.matrixTransform(chart.value.getScreenCTM().inverse())
-}
-function pointerX(event) {
-  return Math.max(plot.left, Math.min(plot.right, chartPoint(event).x))
-}
-function indexAt(position) {
-  return Math.max(
-    0,
-    Math.min(
-      days.value.length - 1,
-      Math.round(
-        renderedRange.value[0] +
-          ((position - plot.left) / (plot.right - plot.left)) *
-            (renderedRange.value[1] - renderedRange.value[0]),
-      ),
-    ),
-  )
-}
-function startDrag(event) {
-  if (!event.isPrimary || event.button !== 0) return
-  suppressClick = false
-  const point = chartPoint(event)
-  if (point.x < plot.left || point.x > plot.right || point.y < plot.top || point.y > plot.bottom)
-    return
-  updateViewport(false)
-  chart.value.setPointerCapture(event.pointerId)
-  drag.value = {
-    start: point.x,
-    clientX: event.clientX,
-    range: [...range.value],
-    pointerId: event.pointerId,
-    moved: false,
-  }
-  hover.value = null
-}
-function movePointer(event) {
-  if (drag.value && drag.value.pointerId === event.pointerId) {
-    if (Math.abs(event.clientX - drag.value.clientX) >= 6) drag.value.moved = true
-    if (!drag.value.moved) return
-    suppressClick = true
-    const [first, last] = drag.value.range
-    const span = last - first
-    // Move the dates with the pointer, preserving the original zoom level.
-    const shift = Math.round(
-      ((drag.value.start - chartPoint(event).x) / (plot.right - plot.left)) * span,
-    )
-    const start = Math.max(0, Math.min(days.value.length - 1 - span, first + shift))
-    setRange([start, start + span])
-  } else if (!drag.value) hover.value = indexAt(pointerX(event))
-}
-function finishDrag(event) {
-  if (!drag.value || drag.value.pointerId !== event.pointerId) return
-  movePointer(event)
-  drag.value = null
-  chart.value.releasePointerCapture(event.pointerId)
-  hover.value = null
-}
-function cancelDrag() {
-  const pointerId = drag.value?.pointerId
-  drag.value = null
-  hover.value = null
-  if (pointerId !== undefined && chart.value.hasPointerCapture?.(pointerId)) {
-    chart.value.releasePointerCapture(pointerId)
-  }
-}
-function resetZoom() {
-  setRange([0, days.value.length - 1], true)
-  cancelDrag()
-}
-function changeRange(boundary, event) {
-  const index = Number(event.target.value)
-  const next = [...range.value]
-  next[boundary] =
-    boundary === 0
-      ? Math.max(0, Math.min(index, next[1] - 1))
-      : Math.min(days.value.length - 1, Math.max(index, next[0] + 1))
-  event.target.value = next[boundary]
-  setRange(next)
-  cancelDrag()
-}
-function wheelZoom(event) {
-  if (drag.value || event.ctrlKey || event.deltaY === 0) return
-  const point = chartPoint(event)
-  if (point.x < plot.left || point.x > plot.right || point.y < plot.top || point.y > plot.bottom)
-    return
-  event.preventDefault()
-  const fraction = (point.x - plot.left) / (plot.right - plot.left)
-  const span = range.value[1] - range.value[0]
-  const change = Math.max(1, Math.round(span * 0.2))
-  const nextSpan = Math.max(
-    1,
-    Math.min(days.value.length - 1, span + (event.deltaY < 0 ? -change : change)),
-  )
-  if (nextSpan === span) return
-  // Keep the date under the pointer at the same position within the new window.
-  const anchor = range.value[0] + fraction * span
-  const start = Math.max(
-    0,
-    Math.min(days.value.length - 1 - nextSpan, Math.round(anchor - fraction * nextSpan)),
-  )
-  setRange([start, start + nextSpan], true)
-  hover.value = indexAt(point.x)
-}
-function openDay(index) {
-  return openDate(daily.value[index].date)
-}
-async function openDate(date) {
-  selectedDate.value = date
-  drafts.value = events.value
-    .filter((event) => event.occurredAt.startsWith(selectedDate.value))
-    .map((event) => ({ ...event }))
-  editError.value = ''
-  await nextTick()
-  editor.value.showModal()
-}
-function clickDate(event) {
-  if (suppressClick) {
-    suppressClick = false
-    return
-  }
-  const point = chartPoint(event)
-  if (
-    point.x < plot.left ||
-    point.x > plot.right ||
-    point.y < plot.top ||
-    point.y > plot.bottom + 40
-  )
-    return
-  openDate(fullDaily.value[indexAt(point.x)].date)
-}
-function closeEditor() {
-  if (saving.value) return
-  editor.value.close()
-  selectedDate.value = null
-  drafts.value = []
-}
-async function saveDay() {
-  if (
-    drafts.value.some(
-      (event) =>
-        !event.name.trim() ||
-        !event.unit.trim() ||
-        !event.location.trim() ||
-        !Object.hasOwn(actionLabels, event.action) ||
-        ['quantity', 'weightKg', 'valueSgd'].some(
-          (field) =>
-            typeof event[field] !== 'number' || !Number.isFinite(event[field]) || event[field] < 0,
-        ),
-    )
-  ) {
-    editError.value = 'Enter a food name, unit and location, and valid non-negative numbers.'
-    return
-  }
-  if (saving.value) return
-  saving.value = true
-  try {
-    for (const draft of drafts.value) {
-      const existing = Boolean(draft._id)
-      const response = await fetch(existing ? '/api/analytics/events/' + draft._id : '/api/analytics/events', {
-        method: existing ? 'PUT' : 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...draft, occurredAt: selectedDate.value + 'T00:00:00.000Z' }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Could not save activity.')
-      const index = events.value.findIndex(event => event._id === data.event._id)
-      if (index >= 0) events.value[index] = data.event
-      else events.value.push(data.event)
-      draft._id = data.event._id
-    }
-    updateDays()
-    updateViewport(false)
-    saving.value = false
-    closeEditor()
-  } catch (error) { editError.value = error.message }
-  finally { saving.value = false }
-}
-
-function addDraft() {
-  drafts.value.push({ name: '', action: 'consumed', quantity: 1, unit: 'pieces', weightKg: 0,
-    valueSgd: 0, location: 'My kitchen', category: 'Other', source: 'Manual entry' })
-}
-
+const animatedTotals = useAnimatedTotals(totals)
 </script>
 
 <template>
@@ -516,26 +203,36 @@ function addDraft() {
       </div>
     </header>
 
-    <div v-if="loadError" class="alert alert-danger" role="alert">{{ loadError }} <button type="button" @click="loadActivity">Retry</button></div>
-    <p v-if="!loading && !events.length" class="mb-4">No food activity yet. Consume or discard food in your fridge to start tracking your impact.</p>
+    <div v-if="loadError" class="alert alert-danger" role="alert">
+      {{ loadError }} <button type="button" @click="loadActivity">Retry</button>
+    </div>
+    <p v-if="!loading && !events.length" class="mb-4">
+      No food activity yet. Consume or discard food in your fridge to start tracking your impact.
+    </p>
     <ImpactOverview
       class="mb-5"
       :totals="totals"
       :animated-totals="animatedTotals"
       :period-change="comparison.complete ? periodChange : undefined"
     />
-    <section id="daily-food-impact" class="panel chart-panel mb-5" aria-labelledby="impact-chart-heading">
+    <section
+      id="daily-food-impact"
+      class="panel chart-panel mb-5"
+      aria-labelledby="impact-chart-heading"
+    >
       <div>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div>
             <h2 id="impact-chart-heading" class="panel-title mb-2">Daily food impact</h2>
             <p id="chart-help" class="text-muted small">
               <template v-if="compactChart">
-                Pick a date range below. Swipe sideways when zoomed in, or tap a date to edit its activity.
+                Pick a date range below. Swipe sideways when zoomed in, or tap a date to edit its
+                activity.
               </template>
               <template v-else>
-                Scroll over the graph to zoom. When zoomed in, drag sideways to move through the dates.
-                Drag the bar handles to adjust the range, or click a date to edit its activity.
+                Scroll over the graph to zoom. When zoomed in, drag sideways to move through the
+                dates. Drag the bar handles to adjust the range, or click a date to edit its
+                activity.
               </template>
             </p>
           </div>
@@ -574,20 +271,20 @@ function addDraft() {
               type="range"
               aria-label="Start date"
               :aria-valuetext="formatDate(days[range[0]])"
-              :value="range[0]"
               min="0"
               :max="days.length - 1"
               step="1"
+              :value="range[0]"
               @input="changeRange(0, $event)"
             />
             <input
               type="range"
               aria-label="End date"
               :aria-valuetext="formatDate(days[range[1]])"
-              :value="range[1]"
               min="0"
               :max="days.length - 1"
               step="1"
+              :value="range[1]"
               @input="changeRange(1, $event)"
             />
           </div>
@@ -606,8 +303,8 @@ function addDraft() {
             ></template
           >
           <template v-else
-            >Not enough earlier history to compare this {{ comparison.length }}-day period. Try Last 7
-            days or Last 14 days. Recorded history: {{ formatDate(days[0]) }}–{{
+            >Not enough earlier history to compare this {{ comparison.length }}-day period. Try Last
+            7 days or Last 14 days. Recorded history: {{ formatDate(days[0]) }}–{{
               formatDate(days.at(-1))
             }}
             .</template
@@ -690,14 +387,16 @@ function addDraft() {
                 :stroke-dasharray="line.key === 'discarded' ? '6 4' : undefined"
               />
               <circle
-                v-for="(day, index) in fullDaily"
+                v-for="day in renderedDays"
                 :key="day.date"
-                :cx="globalX(index)"
+                :cx="globalX(day.index)"
                 :cy="y(day[line.key])"
                 r="3"
                 :fill="line.color"
                 :tabindex="
-                  line.key === 'saved' && index >= range[0] && index <= range[1] ? 0 : undefined
+                  line.key === 'saved' && day.index >= range[0] && day.index <= range[1]
+                    ? 0
+                    : undefined
                 "
                 :role="line.key === 'saved' ? 'button' : undefined"
                 :aria-label="
@@ -717,7 +416,9 @@ function addDraft() {
               stroke="#65776c"
               stroke-dasharray="4 4"
             />
-            <g :transform="`translate(${Math.max(8, Math.min(globalX(hover) + 10, chartWidth - 228))}, 35)`">
+            <g
+              :transform="`translate(${Math.max(8, Math.min(globalX(hover) + 10, chartWidth - 228))}, 35)`"
+            >
               <rect width="220" height="85" rx="8" fill="#fff" stroke="#ced8d1" />
               <text x="12" y="23" class="tooltip-label">{{ formatDate(hoverDay.date) }}</text>
               <text x="12" y="47" class="tooltip-label">
@@ -730,7 +431,8 @@ function addDraft() {
           </g>
         </svg>
         <p class="small text-muted mb-0">
-          Cards and activity follow the selected dates. Weights and values reflect your recorded activity.
+          Cards and activity follow the selected dates. Weights and values reflect your recorded
+          activity.
         </p>
       </div>
     </section>
@@ -837,7 +539,7 @@ function addDraft() {
         <div class="table-responsive" role="region" aria-label="Food activity table" tabindex="0">
           <table class="activity-table">
             <caption>
-              Sample activity for the selected dates{{
+              Food activity for the selected dates{{
                 selectedWaste ? `, filtered to ${selectedWaste.name}` : ''
               }}, newest first.
             </caption>
@@ -857,9 +559,9 @@ function addDraft() {
                 <td class="text-nowrap">
                   <button
                     class="date-link"
-                    @click="openDay(visibleDays.indexOf(event.occurredAt.slice(0, 10)))"
+                    @click="openDay(visibleDays.indexOf(foodActivityDay(event.occurredAt)))"
                   >
-                    {{ formatDate(event.occurredAt.slice(0, 10)) }}
+                    {{ formatDate(foodActivityDay(event.occurredAt)) }}
                   </button>
                 </td>
                 <td>
@@ -903,8 +605,15 @@ function addDraft() {
         <p id="editor-help" class="small text-muted">
           Record what happened on this date. Saved activity updates your chart and totals.
         </p>
-        <button type="button" class="btn-paper mb-3" :disabled="saving" @click="addDraft">Add record</button>
-        <fieldset :disabled="saving" v-for="(draft, index) in drafts" :key="draft._id" class="editor-record p-3 mb-3">
+        <button type="button" class="btn-paper mb-3" :disabled="saving" @click="addDraft">
+          Add record
+        </button>
+        <fieldset
+          :disabled="saving"
+          v-for="(draft, index) in drafts"
+          :key="draft._id"
+          class="editor-record p-3 mb-3"
+        >
           <legend class="float-none w-auto fs-6 px-2">Food record {{ index + 1 }}</legend>
           <div class="row g-3">
             <label class="col-sm-8"
@@ -975,10 +684,16 @@ function addDraft() {
         </fieldset>
         <p v-if="editError" class="text-danger" role="alert">{{ editError }}</p>
         <div class="d-flex justify-content-end gap-2">
-          <button type="button" class="btn-paper btn-paper-secondary" @click="!saving && closeEditor()">
+          <button
+            type="button"
+            class="btn-paper btn-paper-secondary"
+            @click="!saving && closeEditor()"
+          >
             Cancel
           </button>
-          <button type="submit" class="btn-paper" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>
+          <button type="submit" class="btn-paper" :disabled="saving">
+            {{ saving ? 'Saving…' : 'Save changes' }}
+          </button>
         </div>
       </form>
     </dialog>
@@ -986,764 +701,4 @@ function addDraft() {
   </section>
 </template>
 
-<style scoped>
-.analytics-page {
-  max-width: 1200px;
-}
-@media (min-width: 1200px) {
-  .analytics-page { max-width: min(1200px, 54vw); }
-}
-
-.activity-editor {
-  width: min(640px, calc(100% - 32px));
-  max-height: 85vh;
-  overflow-y: auto;
-  border: 2px solid var(--ink);
-  border-radius: 20px;
-  background: var(--paper-bright);
-  color: var(--ink);
-  box-shadow: var(--shadow-paper);
-  padding: 24px;
-}
-
-.activity-editor::backdrop {
-  background: rgb(18 37 27 / 50%);
-}
-
-.impact-chart circle[role='button']:focus-visible {
-  outline: 3px solid #203c2c;
-}
-
-.date-range-bar {
-  position: relative;
-  height: 40px;
-  margin: 0 12px;
-}
-
-.date-range-track {
-  position: absolute;
-  inset: 16px 0;
-  border-radius: 8px;
-  background: linear-gradient(
-    to right,
-    #dfe7e2 var(--range-start),
-    #3e9a8e var(--range-start),
-    #3e9a8e var(--range-end),
-    #dfe7e2 var(--range-end)
-  );
-}
-
-.date-range-bar input {
-  position: absolute;
-  inset: 0 -12px;
-  width: calc(100% + 24px);
-  height: 40px;
-  margin: 0;
-  appearance: none;
-  background: transparent;
-  pointer-events: none;
-}
-
-.date-range-bar input::-webkit-slider-thumb {
-  appearance: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 3px solid #3e9a8e;
-  background: white;
-  pointer-events: auto;
-  cursor: ew-resize;
-}
-
-.date-range-bar input::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 3px solid #3e9a8e;
-  background: white;
-  pointer-events: auto;
-  cursor: ew-resize;
-}
-
-.date-range-bar input:focus-visible {
-  outline: 2px solid #3e9a8e;
-  outline-offset: 2px;
-  border-radius: 8px;
-}
-
-.impact-chart {
-  display: block;
-  width: 100%;
-  min-height: 230px;
-  touch-action: pan-y;
-  user-select: none;
-  cursor: grab;
-}
-
-.impact-chart.is-dragging {
-  cursor: grabbing;
-}
-
-.axis-label {
-  font-size: 13px;
-  fill: #536259;
-}
-
-.impact-chart.is-compact .axis-label {
-  font-size: 14px;
-}
-
-.tooltip-label {
-  font-size: 14px;
-  fill: #203c2c;
-}
-
-.legend-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-right: 7px;
-}
-
-/* Match the dashboard's paper panels, handwritten hierarchy and soft palette. */
-.analytics-page {
-  color: var(--ink);
-}
-.hero {
-  position: relative;
-  isolation: isolate;
-}
-.eyebrow {
-  margin-bottom: 0.5rem;
-  color: #1f6e66;
-  font-size: 1.05rem;
-  letter-spacing: 0.12em;
-}
-.hero-title {
-  margin: 0 0 1rem;
-  font-size: clamp(2.6rem, 6vw, 4.2rem);
-  font-weight: 700;
-}
-.hero-sub {
-  margin: 0;
-  color: var(--muted);
-  font-size: 1.35rem;
-}
-.scribble {
-  position: relative;
-  white-space: nowrap;
-}
-.scribble::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -0.05em;
-  height: 0.22em;
-  border-radius: 999px;
-  background: #9fdcd3;
-  z-index: -1;
-}
-.stamp {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 260px;
-  height: 190px;
-  padding: 1rem;
-  border: 2px dashed var(--line);
-  border-radius: 50%;
-  text-align: center;
-  transform: rotate(-4deg);
-}
-.stamp-icon {
-  width: 40px;
-  height: 40px;
-  color: #3e9a8e;
-}
-.stamp-icon,
-.metric-icon svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.stamp-title {
-  margin: 0.25rem 0 0;
-  font-family: var(--font-display);
-  font-size: 1.6rem;
-  font-weight: 700;
-  line-height: 1.1;
-}
-.stamp-sub {
-  margin: 0;
-  color: var(--muted);
-}
-.stamp-note {
-  margin-top: 0.35rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-.demo-note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 1.5rem;
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-.panel {
-  background: #fff;
-  border: 2px solid var(--ink);
-  border-radius: 20px;
-  box-shadow: var(--shadow-paper);
-  padding: 1.5rem;
-}
-.panel-tint {
-  background: #e3f3ee;
-}
-.panel-title {
-  margin: 0;
-  font-size: 1.7rem;
-  font-weight: 700;
-}
-.panel-sub {
-  margin: 0;
-  color: var(--muted);
-}
-.scrawl {
-  margin: 0;
-  color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 1.4rem;
-  transform: rotate(-4deg);
-}
-.metric-card {
-  height: 100%;
-  padding: 1.2rem;
-  border: 1.5px solid var(--line);
-  border-radius: 16px;
-  background: #fff;
-}
-.metric-icon {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  margin-bottom: 1rem;
-  border-radius: 14px;
-  transform: rotate(-4deg);
-}
-.metric-icon svg {
-  width: 27px;
-  height: 27px;
-}
-.icon-lime {
-  background: var(--lime);
-}
-.icon-coral {
-  background: #fde0dc;
-  color: #9a3a2e;
-}
-.icon-yellow {
-  background: var(--yellow-sticky);
-}
-.icon-aqua {
-  background: var(--aqua-soft);
-}
-.metric-label {
-  margin: 0 0 0.4rem;
-  font-family: var(--font-sans);
-  font-size: 1.05rem;
-  font-weight: 400;
-  color: var(--muted);
-}
-.metric-value {
-  font-variant-numeric: tabular-nums;
-  display: block;
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  line-height: 1.2;
-  margin-bottom: 0.4rem;
-}
-.metric-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-.pill {
-  display: inline-block;
-  padding: 3px 12px;
-  border-radius: 999px;
-  font-size: 0.95rem;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-.pill-aqua,
-.pill-shared {
-  background: var(--aqua-soft);
-  color: #1f6e66;
-}
-.pill-consumed {
-  background: var(--lime);
-  color: #3f5a12;
-}
-.pill-rescued {
-  background: var(--yellow-sticky);
-  color: #72561e;
-}
-.pill-discarded {
-  background: #fde0dc;
-  color: #9a3a2e;
-}
-.btn-paper {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  padding: 10px 20px;
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  background: #3e9a8e;
-  color: #fff;
-  font-size: 1.05rem;
-  box-shadow: var(--shadow-small);
-  transition:
-    transform 120ms ease,
-    box-shadow 120ms ease;
-}
-.btn-paper:hover:not(:disabled) {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 2px 0 var(--ink);
-}
-.btn-paper:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-.btn-paper-secondary {
-  background: var(--paper-bright);
-  color: var(--ink);
-}
-.btn-paper:focus-visible,
-.date-link:focus-visible {
-  outline: 3px solid var(--aqua);
-  outline-offset: 4px;
-}
-#chart-help {
-  max-width: 760px;
-}
-.range-panel {
-  margin-top: 1rem;
-  padding: 1rem;
-  border: 1.5px dashed var(--line);
-  border-radius: 14px;
-  background: var(--paper-bright);
-}
-.range-summary {
-  color: var(--ink);
-  font-size: 0.95rem;
-}
-.activity-panel {
-  padding: 0;
-  overflow: hidden;
-}
-.activity-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 1.5rem;
-}
-.activity-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.activity-panel .table-responsive {
-  max-height: 480px;
-  overflow: auto;
-}
-.activity-panel .table-responsive:focus-visible {
-  outline: 3px solid var(--aqua);
-  outline-offset: -3px;
-}
-.activity-table caption {
-  padding: 12px 16px;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-.activity-table th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 14px 16px;
-  background: var(--aqua-soft);
-  border-bottom: 2px solid var(--ink);
-  font-family: var(--font-display);
-  font-weight: 700;
-  text-align: left;
-  white-space: nowrap;
-}
-.activity-table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid #e3efec;
-  vertical-align: middle;
-}
-.activity-table tbody tr:last-child td {
-  border-bottom: none;
-}
-.activity-table tbody tr:hover {
-  background: #f4fbf9;
-}
-.date-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #1f7d74;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.editor-record {
-  border: 1.5px solid var(--line);
-  border-radius: 16px;
-  background: #fff;
-}
-.activity-editor .form-control,
-.activity-editor .form-select {
-  border: 1.5px solid var(--line);
-  border-radius: 10px;
-  color: var(--ink);
-}
-.activity-editor .form-control:focus,
-.activity-editor .form-select:focus {
-  border-color: #3e9a8e;
-  box-shadow: 0 0 0 3px var(--aqua-soft);
-}
-.analytics-page .text-muted {
-  color: var(--muted) !important;
-}
-@media (max-width: 575.98px) {
-  .hero {
-    padding-top: 48px;
-  }
-  .analytics-page {
-    padding-left: 16px;
-    padding-right: 20px;
-  }
-  .hero-title {
-    font-size: clamp(2rem, 9vw, 2.6rem);
-  }
-  .stamp {
-    width: 220px;
-    height: 160px;
-  }
-  .stamp-title {
-    font-size: 1.3rem;
-  }
-  .panel {
-    padding: 1rem;
-  }
-  .metric-card {
-    padding: 0.85rem;
-  }
-  .metric-label {
-    min-height: 2.4em;
-  }
-  .metric-value {
-    font-size: 1.45rem;
-  }
-  .activity-panel {
-    padding: 0;
-  }
-  .activity-heading {
-    padding: 1rem;
-  }
-  .range-panel {
-    padding: 0.7rem;
-  }
-  .activity-editor {
-    padding: 18px;
-  }
-}
-
-.discarded-cost {
-  margin: 0.35rem 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #9a3a2e;
-}
-.period-change {
-  display: inline-block;
-  margin: 0.8rem 0 0;
-  padding: 4px 9px;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  animation: comparison-in 240ms ease;
-}
-.change-good {
-  color: #24633f;
-  background: #e5f3df;
-}
-.change-bad {
-  color: #9a3a2e;
-  background: #fde0dc;
-}
-.change-neutral {
-  color: var(--muted);
-  background: #eef4f2;
-}
-.comparison-note {
-  margin: 0 0 1rem;
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-.comparison-note > span {
-  display: inline-block;
-  padding: 2px 7px;
-  border-radius: 8px;
-}
-.period-presets,
-.ranking-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.period-presets {
-  margin-top: 1rem;
-}
-.filter-chip {
-  padding: 7px 13px;
-  border: 1.5px solid var(--line);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--ink);
-  font-size: 0.95rem;
-  transition:
-    background-color 180ms ease,
-    color 180ms ease,
-    transform 180ms ease;
-}
-.filter-chip[aria-pressed='true'] {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: #fff;
-}
-.filter-chip:hover {
-  transform: translateY(-1px);
-  border-color: #3e9a8e;
-}
-.filter-chip:focus-visible,
-.ranking-row:focus-visible {
-  outline: 3px solid var(--aqua);
-  outline-offset: 3px;
-}
-.ranking-heading {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: start;
-  gap: 16px;
-}
-.ranking-hint {
-  margin: 0.75rem 0 1.25rem;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-.ranking-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-.waste-ranking {
-  position: relative;
-  display: grid;
-  gap: 9px;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-.ranking-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 12px;
-  border: 1.5px solid transparent;
-  border-radius: 14px;
-  background: transparent;
-  color: var(--ink);
-  text-align: left;
-  transition:
-    background-color 180ms ease,
-    border-color 180ms ease;
-}
-.ranking-row:hover {
-  background: #f4fbf9;
-}
-.ranking-row[aria-pressed='true'] {
-  border-color: #3e9a8e;
-  background: var(--aqua-soft);
-}
-.ranking-position {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: #fff2dd;
-  font-family: var(--font-display);
-}
-.ranking-food {
-  flex: 1;
-  min-width: 0;
-}
-.ranking-food-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-.ranking-amount {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-.ranking-track {
-  display: block;
-  height: 12px;
-  overflow: hidden;
-  margin: 8px 0 4px;
-  border-radius: 8px;
-  background: #f6e9e5;
-}
-.ranking-track > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #d68070;
-  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.ranking-meta {
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-.waste-insight {
-  padding: 1.3rem;
-  border: 1.5px dashed var(--line);
-  border-radius: 18px;
-  background: var(--yellow-sticky);
-}
-.waste-insight h3 {
-  margin: 0.6rem 0;
-  font-size: 1.6rem;
-}
-.waste-insight p {
-  margin: 0.7rem 0;
-  color: var(--muted);
-}
-.waste-insight .insight-value {
-  color: var(--ink);
-  font-weight: 700;
-}
-.insight-link {
-  color: #1f7d74;
-  font-weight: 700;
-  text-underline-offset: 4px;
-}
-.waste-empty {
-  padding: 24px;
-  border: 1.5px dashed var(--line);
-  border-radius: 14px;
-  background: var(--paper-bright);
-  color: var(--muted);
-}
-.activity-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 1.5rem 1rem;
-  margin: 0;
-  color: var(--muted);
-}
-.activity-filter .date-link {
-  margin-left: auto;
-}
-.ranking-move,
-.ranking-enter-active,
-.ranking-leave-active {
-  transition:
-    transform 500ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 280ms ease;
-}
-.ranking-enter-from,
-.ranking-leave-to {
-  opacity: 0;
-  transform: translateY(12px);
-}
-.ranking-leave-active {
-  position: absolute;
-  width: 100%;
-}
-@keyframes comparison-in {
-  from {
-    opacity: 0;
-    translate: 0 3px;
-  }
-  to {
-    opacity: 1;
-    translate: 0 0;
-  }
-}
-@media (max-width: 767.98px) {
-  .period-presets .filter-chip,
-  .chart-panel .btn-paper {
-    min-height: 44px;
-  }
-  #chart-help {
-    font-size: .95rem;
-  }
-  .ranking-layout {
-    grid-template-columns: 1fr;
-  }
-  .ranking-row {
-    padding: 10px 4px;
-    gap: 9px;
-  }
-  .ranking-food-heading {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .ranking-amount {
-    margin-left: auto;
-  }
-  .ranking-meta {
-    font-size: 0.8rem;
-  }
-  .activity-filter {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .filter-chip,
-  .ranking-row,
-  .ranking-track > span,
-  .ranking-move,
-  .ranking-enter-active,
-  .ranking-leave-active {
-    transition: none;
-  }
-  .period-change {
-    animation: none;
-  }
-
-  .btn-paper {
-    transition: none;
-  }
-}
-</style>
+<style scoped src="../../styles/analytics/analytics.css"></style>

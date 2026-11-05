@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, RouterLinkStub } from '@vue/test-utils'
+import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import AnalyticsView from '../views/analytics/AnalyticsView.vue'
 import { sampleAnalyticsEvents } from '../data/analyticsDemo.js'
 
-function mountChart() {
+vi.mock('../components/analytics/VegetableCompanions.vue', () => ({ default: { template: '<div />' } }))
+
+async function mountChart() {
   const wrapper = mount(AnalyticsView, { global: { stubs: { RouterLink: RouterLinkStub } } })
+  await flushPromises()
+  await wrapper.get('.period-presets button').trigger('click')
   const svg = wrapper.get('.impact-chart')
   // jsdom has no SVG coordinate transforms or pointer capture.
   svg.element.createSVGPoint = () => ({
@@ -40,8 +44,15 @@ function expectedVisibleRecords(wrapper) {
   return sampleAnalyticsEvents.filter(event => dates.has(event.occurredAt.slice(0, 10))).length
 }
 
-describe('Analytics demo', () => {
+describe('Analytics with API history', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-13T12:00:00Z'))
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+    vi.stubGlobal('fetch', vi.fn(async (url, options) => ({ ok: true, json: async () => {
+      if (options?.method === 'PUT') return { event: { ...JSON.parse(options.body), _id: url.split('/').at(-1) } }
+      return { events: structuredClone(sampleAnalyticsEvents) }
+    } })))
     HTMLDialogElement.prototype.showModal = vi.fn(function () {
       this.setAttribute('open', '')
     })
@@ -50,14 +61,16 @@ describe('Analytics demo', () => {
     })
   })
   afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
     delete HTMLDialogElement.prototype.showModal
     delete HTMLDialogElement.prototype.close
     vi.restoreAllMocks()
   })
-  it('shows 60 unique records and calculates totals from their weights', () => {
+  it('shows 60 unique records and calculates totals from their weights', async () => {
     expect(sampleAnalyticsEvents).toHaveLength(60)
     expect(new Set(sampleAnalyticsEvents.map((event) => event._id)).size).toBe(60)
-    const { wrapper } = mountChart()
+    const { wrapper } = await mountChart()
     const saved = sampleAnalyticsEvents
       .filter((event) => event.action !== 'discarded')
       .reduce((sum, event) => sum + event.weightKg, 0)
@@ -68,7 +81,7 @@ describe('Analytics demo', () => {
   })
 
   it('pans live in both directions without changing the zoom level, and resets the data', async () => {
-    const { wrapper, svg } = mountChart()
+    const { wrapper, svg } = await mountChart()
     const inputs = wrapper.findAll('input[type="range"]')
     await inputs[0].setValue('10')
     await inputs[1].setValue('30')
@@ -90,7 +103,7 @@ describe('Analytics demo', () => {
   })
 
   it('clamps panning at both date boundaries without shrinking the window', async () => {
-    const { wrapper, svg } = mountChart()
+    const { wrapper, svg } = await mountChart()
     const inputs = wrapper.findAll('input[type="range"]')
     await inputs[0].setValue('10')
     await inputs[1].setValue('30')
@@ -105,7 +118,7 @@ describe('Analytics demo', () => {
   })
 
   it('does not zoom on drag and ignores simple clicks and cancelled drags', async () => {
-    const { wrapper, svg } = mountChart()
+    const { wrapper, svg } = await mountChart()
     await dragAcross(svg, 246, 774)
     expect(wrapper.findAll('tbody tr')).toHaveLength(60)
     await dragAcross(svg, 246, 249)
@@ -118,7 +131,7 @@ describe('Analytics demo', () => {
   })
 
   it('updates dates with the range handles and prevents them crossing', async () => {
-    const { wrapper } = mountChart()
+    const { wrapper } = await mountChart()
     const inputs = wrapper.findAll('input[type="range"]')
     await inputs[0].setValue('37')
     expect(wrapper.findAll('tbody tr')).toHaveLength(expectedVisibleRecords(wrapper))
@@ -131,7 +144,7 @@ describe('Analytics demo', () => {
   })
 
   it('zooms around the cursor with the wheel and stays within the full date range', async () => {
-    const { wrapper, svg } = mountChart()
+    const { wrapper, svg } = await mountChart()
     const wheel = async (deltaY, clientX = 510, clientY = 100) => {
       const event = new WheelEvent('wheel', {
         bubbles: true,
@@ -167,7 +180,7 @@ describe('Analytics demo', () => {
   })
 
   it('opens a clicked date and saves changes to the table, chart and totals', async () => {
-    const { wrapper, svg } = mountChart()
+    const { wrapper, svg } = await mountChart()
     const before = wrapper.findAll('strong')[0].text()
     await svg.trigger('click', { clientX: 70, clientY: 100 })
     await nextTick()
@@ -178,6 +191,7 @@ describe('Analytics demo', () => {
     await dialog.get('[name="action"]').setValue('discarded')
     await dialog.get('[name="weightKg"]').setValue('2')
     await dialog.get('form').trigger('submit')
+    await flushPromises()
     expect(wrapper.find('dialog').exists()).toBe(false)
     expect(wrapper.findAll('tbody tr').at(-1).text()).toContain('Rescued apples')
     expect(wrapper.findAll('tbody tr').at(-1).text()).toContain('Discarded')
@@ -190,7 +204,7 @@ describe('Analytics demo', () => {
   })
 
   it('cancels edits, rejects invalid values, and opens the correct date after panning', async () => {
-    const { wrapper, svg } = mountChart()
+    const { wrapper, svg } = await mountChart()
     const inputs = wrapper.findAll('input[type="range"]')
     await inputs[0].setValue('5')
     await inputs[1].setValue('25')
@@ -211,7 +225,7 @@ describe('Analytics demo', () => {
     wrapper.unmount()
   })
   it('shows discarded value, compares equal periods and filters ranked food activity', async () => {
-    const { wrapper } = mountChart()
+    const { wrapper } = await mountChart()
     expect(wrapper.get('.discarded-cost').attributes('aria-label')).toContain(sampleAnalyticsEvents.filter(event => event.action === 'discarded').reduce((sum, event) => sum + event.valueSgd, 0).toFixed(2))
     expect(wrapper.get('.comparison-note').text()).toContain('Not enough earlier history')
     const firstFood = wrapper.get('.ranking-row .ranking-food-heading b').text()

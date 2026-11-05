@@ -6,6 +6,7 @@ import { useInventoryStore } from '../stores/inventory.js'
 import { showConfirm, showPrompt } from '../utils/dialog.js'
 
 vi.mock('../utils/dialog.js')
+vi.mock('../components/analytics/VegetableCompanions.vue', () => ({ default: { template: '<div />' } }))
 
 const food = { _id: 'apple-1', name: 'Apples', quantity: 3, unit: 'pieces', storage: 'fridge', storageZone: 'middle-shelf', expiresAt: '2026-11-05' }
 let wrapper
@@ -17,7 +18,10 @@ beforeEach(() => {
   request = vi.fn(async (url, options) => ({ ok: true, json: async () => {
     if (url.startsWith('/api/freshness/recipes')) return []
     if (options?.method === 'DELETE') return {}
-    if (options?.method === 'PATCH') return { item: { ...food, ...JSON.parse(options.body) } }
+    if (options?.method === 'PATCH') {
+      const body = JSON.parse(options.body)
+      return { item: { ...food, ...body, quantity: body.activity ? food.quantity - body.amount : food.quantity } }
+    }
     if (options?.method === 'POST') return { item: { ...JSON.parse(options.body), _id: 'new-food' } }
     return { items: [food] }
   } }))
@@ -68,7 +72,7 @@ describe('Dashboard Smart Fridge', () => {
     expect(wrapper.find('.pantry-unit').exists()).toBe(false)
     expect(wrapper.find('#inventory-search').exists()).toBe(false)
     expect(wrapper.find('.toolbar').exists()).toBe(false)
-    expect(wrapper.find('.modal-toolbar').exists()).toBe(false)
+    expect(wrapper.find('.modal-toolbar .primary-button').exists()).toBe(false)
     expect(wrapper.get('.food-card').text()).toContain('Apples')
   })
 })
