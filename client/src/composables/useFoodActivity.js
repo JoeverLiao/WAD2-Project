@@ -1,6 +1,7 @@
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { fetchFoodActivity, saveFoodActivity } from '../services/analytics.js'
 import { foodActivityDay, foodActivityTimestamp } from '../utils/foodActivityDates.js'
+import { isRequestCancelled } from '../services/http.js'
 
 export const actionLabels = {
   consumed: 'Consumed',
@@ -32,7 +33,7 @@ export function useFoodActivity() {
       const records = await fetchFoodActivity({ signal: current.signal })
       if (!disposed && request === current) events.value = records
     } catch (error) {
-      if (!disposed && request === current && error.name !== 'AbortError')
+      if (!disposed && request === current && !isRequestCancelled(error))
         loadError.value = error.message
     } finally {
       if (!disposed && request === current) loading.value = false

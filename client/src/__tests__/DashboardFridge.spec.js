@@ -1,3 +1,4 @@
+import { mockHttp } from './helpers/mockHttp.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
@@ -15,17 +16,17 @@ let pinia
 beforeEach(() => {
   pinia = createPinia()
   vi.stubGlobal('matchMedia', () => ({ matches: true }))
-  request = vi.fn(async (url, options) => ({ ok: true, json: async () => {
+  request = vi.fn(async (url, options) => ({ data: (()=>{
     if (url.startsWith('/api/freshness/recipes')) return []
     if (options?.method === 'DELETE') return {}
     if (options?.method === 'PATCH') {
-      const body = JSON.parse(options.body)
+      const body = JSON.parse(options.data)
       return { item: { ...food, ...body, quantity: body.activity ? food.quantity - body.amount : food.quantity } }
     }
-    if (options?.method === 'POST') return { item: { ...JSON.parse(options.body), _id: 'new-food' } }
+    if (options?.method === 'POST') return { item: { ...JSON.parse(options.data), _id: 'new-food' } }
     return { items: [food] }
-  } }))
-  vi.stubGlobal('fetch', request)
+  })(), status: 200 }))
+  mockHttp(request)
   showPrompt.mockResolvedValue('1')
   showConfirm.mockResolvedValue(true)
 })

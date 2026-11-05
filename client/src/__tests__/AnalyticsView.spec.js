@@ -1,3 +1,4 @@
+import { mockHttp } from './helpers/mockHttp.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -49,10 +50,10 @@ describe('Analytics with API history', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-13T12:00:00Z'))
     vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
-    vi.stubGlobal('fetch', vi.fn(async (url, options) => ({ ok: true, json: async () => {
-      if (options?.method === 'PUT') return { event: { ...JSON.parse(options.body), _id: url.split('/').at(-1) } }
+    mockHttp(vi.fn(async (url, options) => ({ data: (()=>{
+      if (options?.method === 'PUT') return { event: { ...JSON.parse(options.data), _id: url.split('/').at(-1) } }
       return { events: structuredClone(sampleAnalyticsEvents) }
-    } })))
+    })(), status: 200 })))
     HTMLDialogElement.prototype.showModal = vi.fn(function () {
       this.setAttribute('open', '')
     })

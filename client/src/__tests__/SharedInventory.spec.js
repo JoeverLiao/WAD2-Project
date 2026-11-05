@@ -1,7 +1,8 @@
+import { mockHttp } from './helpers/mockHttp.js'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInventoryStore } from '../stores/inventory.js'
-import { apiRequest } from '../services/api.js'
+import { fetchInventory, deleteInventoryItem } from '../services/inventory.js'
 import { useAuthStore } from '../stores/auth.js'
 
 beforeEach(() => setActivePinia(createPinia()))
@@ -15,20 +16,20 @@ it('shares a single load and normalizes legacy food consistently for every consu
         resolve = done
       }),
   )
-  vi.stubGlobal('fetch', request)
+  mockHttp(request)
   const fridge = useInventoryStore()
   const dashboard = useInventoryStore()
   const a = fridge.loadInventory()
   const b = dashboard.loadInventory()
   expect(request).toHaveBeenCalledTimes(1)
   resolve({
-    ok: true,
-    json: async () => ({
+    data: {
       items: [
         { _id: 'rice', storage: 'pantry', storageZone: 'middle-shelf', expiresAt: null },
         { _id: 'fish', storage: 'freezer', storageZone: 'door' },
       ],
-    }),
+    },
+    status: 200,
   })
   await Promise.all([a, b])
   expect(fridge).toBe(dashboard)
@@ -42,12 +43,11 @@ it('shares a single load and normalizes legacy food consistently for every consu
 })
 
 it('keeps existing inventory visible on a failed refresh and allows retrying', async () => {
-  vi.stubGlobal(
-    'fetch',
+  mockHttp(
     vi
       .fn()
-      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) }),
+      .mockResolvedValueOnce({ status: 401, data: {} })
+      .mockResolvedValueOnce({ data: { items: [] }, status: 200 }),
   )
   const store = useInventoryStore()
   store.items = [{ id: 'existing' }]
@@ -61,25 +61,13 @@ it('keeps existing inventory visible on a failed refresh and allows retrying', a
 })
 
 it('handles empty delete responses through the common API helper', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => ({ ok: true, status: 204 })),
-  )
-  expect(await apiRequest('/inventory/food', { method: 'DELETE' })).toBeNull()
+  mockHttp(vi.fn(async () => ({ status: 204 })))
+  expect(await deleteInventoryItem('food')).toBeNull()
 })
 
 it('retains a useful status message when an error response is not JSON', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => ({
-      ok: false,
-      status: 401,
-      json: async () => {
-        throw new SyntaxError('Not JSON')
-      },
-    })),
-  )
-  await expect(apiRequest('/inventory')).rejects.toMatchObject({
+  mockHttp(vi.fn(async () => ({ status: 401, data: 'Not JSON' })))
+  await expect(fetchInventory()).rejects.toMatchObject({
     status: 401,
     message: 'Your session has expired. Please sign in again.',
   })
@@ -87,8 +75,7 @@ it('retains a useful status message when an error response is not JSON', async (
 
 it('clears inventory when the account changes and ignores a late load from the old session', async () => {
   let resolve
-  vi.stubGlobal(
-    'fetch',
+  mockHttp(
     vi.fn(
       () =>
         new Promise((done) => {
@@ -103,7 +90,7 @@ it('clears inventory when the account changes and ignores a late load from the o
   const pending = store.loadInventory()
   auth.user = { id: 'second' }
   expect(store.items).toEqual([])
-  resolve({ ok: true, json: async () => ({ items: [{ _id: 'old-session-food' }] }) })
+  resolve({ data: { items: [{ _id: 'old-session-food' }] }, status: 200 })
   await pending
   expect(store.items).toEqual([])
   expect(store.loading).toBe(false)

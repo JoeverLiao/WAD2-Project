@@ -12,6 +12,8 @@ const eggTips = [
 ]
 import ImpactOverview from '../../components/analytics/ImpactOverview.vue'
 import { summarizeFoodEvents } from '../../utils/analyticsUtils.js'
+import { fetchFoodActivity } from '../../services/analytics.js'
+import { http } from '../../services/http.js'
 
 const impactEvents = ref([])
 const impactError = ref('')
@@ -19,10 +21,7 @@ const impactTotals = computed(() => summarizeFoodEvents(impactEvents.value))
 async function loadImpact() {
   impactError.value = ''
   try {
-    const response = await fetch('/api/analytics/history', { credentials: 'include' })
-    if (!response.ok) throw new Error('Could not load your impact.')
-    const data = await response.json()
-    impactEvents.value = data.events || []
+    impactEvents.value = await fetchFoodActivity()
   } catch (error) { impactError.value = error.message }
 }
 onMounted(loadImpact)
@@ -43,13 +42,10 @@ async function refreshUnreadMessages() {
   if (document.hidden || unreadRequest) return
   unreadRequest = new AbortController()
   try {
-    const response = await fetch('/api/rescue/messages/unread-count', {
-      credentials: 'include', signal: unreadRequest.signal,
+    const { data } = await http.get('/rescue/messages/unread-count', {
+      signal: unreadRequest.signal,
     })
-    if (response.ok) {
-      const data = await response.json()
-      unreadMessages.value = Number(data.count) || 0
-    }
+    unreadMessages.value = Number(data.count) || 0
   } catch { /* Retry on the next poll. */ }
   finally { unreadRequest = null }
 }
@@ -129,11 +125,9 @@ async function loadRecipes(ingredients) {
   recipesLoading.value = true
   recipesError.value = ''
   try {
-    const response = await fetch(`/api/freshness/recipes?ingredients=${encodeURIComponent(ingredients.join(','))}`, {
-      credentials: 'include',
+    const { data } = await http.get('/freshness/recipes', {
+      params: { ingredients: ingredients.join(',') },
     })
-    if (!response.ok) throw new Error(`Recipes HTTP ${response.status}`)
-    const data = await response.json()
     if (requestId !== recipeRequestId) return
     const list = Array.isArray(data) ? data : data?.recipes ?? data?.data?.recipes ?? []
     recipes.value = list.map(normalizeRecipe).filter(recipe => recipe.id)

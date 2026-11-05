@@ -15,8 +15,9 @@ passing copies of inventory through props and events.
 | `useFridgeGuidance.js` | Storage warnings, arrange/ignore actions, and their confirmations. |
 
 Shared inventory normalization and labels live in `utils/inventoryModel.js`.
-Requests go through `services/inventory.js` and `services/api.js`. The store owns
-loading and account changes. `FoodPreview.vue` renders the same food icon,
+Requests go through `services/inventory.js` and the shared Axios client in
+`services/http.js`. Analytics uses the same client through `services/analytics.js`.
+The store owns loading and account changes. `FoodPreview.vue` renders the same food icon,
 quantity, and warning badges in every compartment. Scoped fridge styles live in
 `styles/fridge/fridge.css`; preserve cascade order when changing responsive rules.
 

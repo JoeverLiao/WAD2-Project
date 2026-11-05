@@ -1,3 +1,4 @@
+import { mockHttp } from './helpers/mockHttp.js'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AnalyticsView from '../views/analytics/AnalyticsView.vue'
@@ -43,13 +44,12 @@ async function open() {
 }
 
 it('only renders the visible days when history spans years and preserves viewport changes', async () => {
-  vi.stubGlobal(
-    'fetch',
+  mockHttp(
     vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
+      data: {
         events: [{ ...event, _id: 'old', occurredAt: '2020-01-01T04:00:00Z' }, event],
-      }),
+      },
+      status: 200,
     })),
   )
   await open()
@@ -71,13 +71,13 @@ it('only renders the visible days when history spans years and preserves viewpor
 
 it('edits after-midnight Singapore activity on the right date without rewriting its timestamp', async () => {
   const request = vi.fn(async (_url, options) => ({
-    ok: true,
-    json: async () =>
+    data:
       options?.method === 'PUT'
-        ? { event: { ...event, ...JSON.parse(options.body) } }
+        ? { event: { ...event, ...JSON.parse(options.data) } }
         : { events: [event] },
+    status: 200,
   }))
-  vi.stubGlobal('fetch', request)
+  mockHttp(request)
   await open()
   await wrapper.get('tbody .date-link').trigger('click')
   await flushPromises()
@@ -85,30 +85,29 @@ it('edits after-midnight Singapore activity on the right date without rewriting 
   await wrapper.get('dialog form').trigger('submit')
   await flushPromises()
   const update = request.mock.calls.find(([, options]) => options.method === 'PUT')
-  expect(JSON.parse(update[1].body).occurredAt).toBe(event.occurredAt)
+  expect(JSON.parse(update[1].data).occurredAt).toBe(event.occurredAt)
 })
 
 it('retries partially saved records without creating the successful ones twice', async () => {
   let posts = 0
   let fail = true
   const request = vi.fn(async (url, options) => {
-    if (options.method === 'GET') return { ok: true, json: async () => ({ events: [] }) }
+    if (options.method === 'GET') return { data: { events: [] }, status: 200 }
     if (options.method === 'POST') {
       posts++
-      if (fail && posts === 2)
-        return { ok: false, status: 500, json: async () => ({ error: 'Try again' }) }
+      if (fail && posts === 2) return { status: 500, data: { error: 'Try again' } }
     }
     return {
-      ok: true,
-      json: async () => ({
+      data: {
         event: {
-          ...JSON.parse(options.body),
+          ...JSON.parse(options.data),
           _id: url.split('/').at(-1) === 'events' ? `new-${posts}` : url.split('/').at(-1),
         },
-      }),
+      },
+      status: 200,
     }
   })
-  vi.stubGlobal('fetch', request)
+  mockHttp(request)
   await open()
   await wrapper.findAll('circle[role="button"]').at(-1).trigger('keydown', { key: 'Enter' })
   await flushPromises()
@@ -126,5 +125,5 @@ it('retries partially saved records without creating the successful ones twice',
   expect(request.mock.calls.filter(([, options]) => options.method === 'PUT')).toHaveLength(1)
   expect(wrapper.findAll('tbody tr')).toHaveLength(2)
   const saved = request.mock.calls.filter(([, options]) => options.method === 'POST').at(-1)
-  expect(foodActivityDay(JSON.parse(saved[1].body).occurredAt)).toBe('2026-11-05')
+  expect(foodActivityDay(JSON.parse(saved[1].data).occurredAt)).toBe('2026-11-05')
 })

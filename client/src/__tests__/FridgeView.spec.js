@@ -1,3 +1,4 @@
+import { mockHttp } from './helpers/mockHttp.js'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInventoryStore } from '../stores/inventory.js'
 import { normaliseItem } from '../utils/inventoryModel.js'
@@ -33,8 +34,8 @@ async function beginDrag() {
 
 beforeEach(() => {
   setActivePinia(createPinia())
-  request = vi.fn(async (_url, options) => ({ ok: true, json: async () => options?.method === 'DELETE' ? {} : [food] }))
-  vi.stubGlobal('fetch', request)
+  request = vi.fn(async (_url, options) => ({ data: options?.method === 'DELETE' ? {} : [food], status: 200 }))
+  mockHttp(request)
   showPrompt.mockResolvedValue('3')
   showConfirm.mockResolvedValue(true)
 })
@@ -47,7 +48,7 @@ afterEach(() => {
 
 describe('Fridge interactions', () => {
   it.each(['stage', 'popup'])('offers Put in fridge for pantry food dragged from the %s and saves to shelves', async (source) => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, storage: 'pantry', storageZone: 'dry-storage' }] })
+    request.mockResolvedValueOnce({ data: [{ ...food, storage: 'pantry', storageZone: 'dry-storage' }], status: 200 })
     await openFridge()
     await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
     if (source === 'popup') await wrapper.get('.pantry-whole-storage').trigger('click')
@@ -61,9 +62,9 @@ describe('Fridge interactions', () => {
     Object.defineProperty(event, 'dataTransfer', { value: transfer() })
     target.dispatchEvent(event)
     await flushPromises()
-    expect(JSON.parse(request.mock.calls.at(-1)[1].body)).toEqual({ storage: 'fridge', storageZone: 'middle-shelf' })
+    expect(JSON.parse(request.mock.calls.at(-1)[1].data)).toEqual({ storage: 'fridge', storageZone: 'middle-shelf' })
     expect(document.querySelector('[data-food-action="fridge"]')).not.toBeNull()
-    complete({ ok: true, json: async () => ({ item: food }) })
+    complete({ data: { item: food }, status: 200 })
     await flushPromises()
     expect(wrapper.get('.shelf-compartment .mini-food').attributes('aria-label')).toBe('Apples')
     expect(wrapper.findAll('.pantry-unit .mini-food')).toHaveLength(0)
@@ -107,7 +108,7 @@ describe('Fridge interactions', () => {
   })
 
   it('leaves all four illustrated pantry shelves empty without inventory', async () => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [] })
+    request.mockResolvedValueOnce({ data: [], status: 200 })
     await openFridge()
     await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
     expect(wrapper.findAll('.open-pantry .pantry-whole-storage')).toHaveLength(4)
@@ -117,7 +118,7 @@ describe('Fridge interactions', () => {
 
   it('places every real pantry food on a shelf without adding decorative food', async () => {
     const foods = Array.from({ length: 29 }, (_, i) => ({ ...food, _id: `pantry-${i}`, storage: 'pantry', storageZone: 'dry-storage' }))
-    request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    request.mockResolvedValueOnce({ data: foods, status: 200 })
     await openFridge()
     await wrapper.get('.storage-slide-options button:nth-child(2)').trigger('click')
     const shelves = wrapper.findAll('.open-pantry .pantry-whole-storage')
@@ -157,10 +158,10 @@ describe('Fridge interactions', () => {
   })
 
   it('shows older pantry and freezer records in the correct compartments', async () => {
-    request.mockResolvedValue({ ok: true, json: async () => ({ items: [
+    request.mockResolvedValue({ data: { items: [
       { ...food, _id: 'pantry-old', storage: 'pantry' },
       { ...food, _id: 'freezer-old', storage: 'freezer' },
-    ] }) })
+    ] }, status: 200 })
     await openFridge()
     expect(wrapper.find('.pantry-foods .food-icon').exists()).toBe(true)
     expect(wrapper.find('.freezer-compartment .food-preview .food-icon').exists()).toBe(true)
@@ -221,7 +222,7 @@ describe('Fridge interactions', () => {
     await openFridge()
     await wrapper.get('[data-drop-zone="middle-shelf"]').trigger('click')
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
-    request.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ error: 'Inventory is temporarily unavailable' }) })
+    request.mockResolvedValueOnce({ status: 503, data: { error: 'Inventory is temporarily unavailable' } })
     const button = wrapper.findAll('.food-quantity-actions button')[0]
     await button.trigger('click')
     await flushPromises()
@@ -284,7 +285,7 @@ describe('Fridge interactions', () => {
 
 describe('scrollable food previews', () => {
   it('renders every food and scrolls the hovered compartment in both directions', async () => {
-    request.mockResolvedValue({ ok: true, json: async () => Array.from({ length: 8 }, (_, i) => ({ ...food, _id: `food-${i}`, name: `Apple ${i}`, storage: 'freezer', storageZone: 'freezer-main' })) })
+    request.mockResolvedValue({ data: Array.from({ length: 8 }, (_, i) => ({ ...food, _id: `food-${i}`, name: `Apple ${i}`, storage: 'freezer', storageZone: 'freezer-main' })), status: 200 })
     await openFridge()
     const freezer = wrapper.get('.freezer-compartment')
     expect(freezer.findAll('.mini-food')).toHaveLength(8)
@@ -305,7 +306,7 @@ describe('scrollable food previews', () => {
 
 describe('single-portion actions', () => {
   it.each(['consume', 'discard'])('immediately %s a single item without quantity or confirmation dialogs', async (action) => {
-    request.mockImplementation(async (_url, options) => ({ ok: true, json: async () => options?.method === 'DELETE' ? {} : [{ ...food, quantity: 1 }] }))
+    request.mockImplementation(async (_url, options) => ({ data: options?.method === 'DELETE' ? {} : [{ ...food, quantity: 1 }], status: 200 }))
     showPrompt.mockClear()
     showConfirm.mockClear()
     await openFridge()
@@ -326,7 +327,7 @@ describe('single-portion actions', () => {
 
 describe('unified fridge interior', () => {
   it('shows foods from all legacy shelves together in the main area and its dialog', async () => {
-    request.mockResolvedValue({ ok: true, json: async () => ['upper-shelf', 'middle-shelf', 'lower-shelf'].map((storageZone, i) => ({ ...food, _id: `shelf-${i}`, name: `Food ${i}`, storageZone })) })
+    request.mockResolvedValue({ data: ['upper-shelf', 'middle-shelf', 'lower-shelf'].map((storageZone, i) => ({ ...food, _id: `shelf-${i}`, name: `Food ${i}`, storageZone })), status: 200 })
     wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
     await flushPromises()
     await wrapper.get('.fridge-door').trigger('click')
@@ -341,7 +342,7 @@ describe('unified fridge interior', () => {
   })
 
   it.each([150, 250, 350])('uses one shelves destination when dropping at y=%i', async clientY => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, storage: 'freezer', storageZone: 'freezer-main' }] })
+    request.mockResolvedValueOnce({ data: [{ ...food, storage: 'freezer', storageZone: 'freezer-main' }], status: 200 })
     wrapper = mount(FridgeView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
     await flushPromises()
     await wrapper.get('.fridge-door').trigger('click')
@@ -350,24 +351,24 @@ describe('unified fridge interior', () => {
     await wrapper.get('.freezer-compartment .mini-food').trigger('dragstart', { dataTransfer: transfer(), clientX: 100, clientY: 50 })
     await shelf.trigger('dragover', { clientY })
     expect(document.querySelector('.drag-placement-hint').textContent).toBe('Place at Shelves')
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storageZone: 'middle-shelf' } }) })
+    request.mockResolvedValueOnce({ data: { item: { ...food, storageZone: 'middle-shelf' } }, status: 200 })
     await shelf.trigger('drop', { dataTransfer: transfer(), clientY })
     await flushPromises()
     expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
-      method: 'PATCH', body: expect.any(String),
+      method: 'PATCH', data: expect.any(String),
     }))
     const patch = request.mock.calls.find(([, options]) => options?.method === 'PATCH')
-    expect(JSON.parse(patch[1].body).storageZone).toBe('middle-shelf')
+    expect(JSON.parse(patch[1].data).storageZone).toBe('middle-shelf')
   })
 })
 
 
 describe('independent door shelves', () => {
   it('opens only the items belonging to each door shelf', async () => {
-    request.mockResolvedValue({ ok: true, json: async () => [
+    request.mockResolvedValue({ data: [
       { ...food, _id: 'upper', name: 'Milk', storageZone: 'door' },
       { ...food, _id: 'lower', name: 'Juice', storageZone: 'door-lower' },
-    ] })
+    ], status: 200 })
     await openFridge()
     expect(wrapper.get('.door-bin:not(.door-bin-small) .door-food').attributes('aria-label')).toBe('Milk')
     expect(wrapper.get('.door-bin-small .door-food').attributes('aria-label')).toBe('Juice')
@@ -434,7 +435,7 @@ describe('shifting food loader', () => {
     await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
     expect(document.querySelector('.shifting-food-overlay').textContent).toContain('Shifting food')
     expect(document.querySelector('.shifting-egg')).not.toBeNull()
-    completeMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    completeMove({ data: { ...food, storage: 'freezer', storageZone: 'freezer-main' }, status: 200 })
     await flushPromises()
     expect(document.querySelector('.shifting-food-overlay')).toBeNull()
     expect(wrapper.get('.freezer-compartment .mini-food').attributes('aria-label')).toBe('Apples')
@@ -467,7 +468,7 @@ describe('food transfer animations', () => {
     await beginDrag()
     await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
     expect(document.querySelector('.food-transfer-flight')).toBeNull()
-    complete({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    complete({ data: { ...food, storage: 'freezer', storageZone: 'freezer-main' }, status: 200 })
     await flushPromises()
     const flight = document.querySelector('.food-transfer-flight')
     expect(flight).not.toBeNull()
@@ -485,7 +486,7 @@ describe('food transfer animations', () => {
   it('does not animate a rejected move or remove the original food', async () => {
     await openFridge()
     mockLayout()
-    await saveMove({ ok: false, status: 500 })
+    await saveMove({ status: 500 })
     expect(document.querySelector('.food-transfer-flight')).toBeNull()
     expect(wrapper.get('.shelf-compartment .mini-food').attributes('aria-label')).toBe('Apples')
     expect(wrapper.get('.error-message').text()).toContain('could not be updated')
@@ -495,7 +496,7 @@ describe('food transfer animations', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true }))
     await openFridge()
     mockLayout()
-    await saveMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    await saveMove({ data: { ...food, storage: 'freezer', storageZone: 'freezer-main' }, status: 200 })
     expect(document.querySelector('.food-transfer-flight')).toBeNull()
     expect(wrapper.get('.freezer-compartment').classes()).toContain('food-transfer-arrival')
     expect(document.body.textContent).toContain('Moved 1 food item to Freezer.')
@@ -504,7 +505,7 @@ describe('food transfer animations', () => {
   it('restores the destination when scrolling interrupts the flight', async () => {
     await openFridge()
     mockLayout()
-    await saveMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+    await saveMove({ data: { ...food, storage: 'freezer', storageZone: 'freezer-main' }, status: 200 })
     expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
     window.dispatchEvent(new Event('scroll'))
     await flushPromises()
@@ -517,7 +518,7 @@ describe('food transfer animations', () => {
     mockLayout()
     await wrapper.get('.shelf-compartment').trigger('click')
     await wrapper.get('.food-card .icon-button').trigger('click')
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storage: 'freezer', storageZone: 'freezer-main' } }) })
+    request.mockResolvedValueOnce({ data: { item: { ...food, storage: 'freezer', storageZone: 'freezer-main' } }, status: 200 })
     wrapper.findComponent(FoodItemForm).vm.$emit('save', { ...food, storage: 'freezer', storageZone: 'freezer-main' })
     await flushPromises()
     expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
@@ -528,7 +529,7 @@ describe('food transfer animations', () => {
   it('keeps lower-door flights running when shelf contents scroll', async () => {
     await openFridge()
     mockLayout()
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({ ...food, storageZone: 'door-lower' }) })
+    request.mockResolvedValueOnce({ data: { ...food, storageZone: 'door-lower' }, status: 200 })
     await beginDrag()
     await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: transfer() })
     await flushPromises()
@@ -548,7 +549,7 @@ describe('food transfer animations', () => {
     mockLayout()
     vi.useFakeTimers()
     try {
-      await saveMove({ ok: true, json: async () => ({ ...food, storage: 'freezer', storageZone: 'freezer-main' }) })
+      await saveMove({ data: { ...food, storage: 'freezer', storageZone: 'freezer-main' }, status: 200 })
       expect(document.querySelector('.food-transfer-flight')).not.toBeNull()
       await vi.advanceTimersByTimeAsync(1600)
       expect(document.querySelector('.food-transfer-flight')).toBeNull()
@@ -560,7 +561,7 @@ describe('food transfer animations', () => {
 
 describe('food rectangle selection', () => {
   it('selects with clicks, toggles with modifiers and opens details with a double-click', async () => {
-    request.mockResolvedValue({ ok: true, json: async () => [food, { ...food, _id: 'pear-2', name: 'Pears' }] })
+    request.mockResolvedValue({ data: [food, { ...food, _id: 'pear-2', name: 'Pears' }], status: 200 })
     await openFridge()
     const icons = wrapper.findAll('.shelf-compartment .mini-food')
     await icons[0].trigger('click')
@@ -577,7 +578,7 @@ describe('food rectangle selection', () => {
   })
 
   it('highlights food across locations and clears with Escape', async () => {
-    request.mockResolvedValue({ ok: true, json: async () => [food, { ...food, _id: 'frozen', storage: 'freezer', storageZone: 'freezer-main' }] })
+    request.mockResolvedValue({ data: [food, { ...food, _id: 'frozen', storage: 'freezer', storageZone: 'freezer-main' }], status: 200 })
     await openFridge()
     const rect = (left, top, right, bottom) => ({ left, top, right, bottom, width: right - left, height: bottom - top })
     const stage = wrapper.get('.kitchen-stage')
@@ -604,9 +605,9 @@ describe('food rectangle selection', () => {
 describe('selected food group actions', () => {
   async function selectGroup(embedded = false) {
     const foods = [food, { ...food, _id: 'pear-2', name: 'Pears', storageZone: 'crisper' }]
-    request.mockImplementation(async (url, options) => ({ ok: true, json: async () => options?.method === 'PATCH'
-      ? { ...foods.find(item => url.endsWith(item._id)), ...JSON.parse(options.body) }
-      : options?.method === 'DELETE' ? {} : foods }))
+    request.mockImplementation(async (url, options) => ({ data: options?.method === 'PATCH'
+      ? { ...foods.find(item => url.endsWith(item._id)), ...JSON.parse(options.data) }
+      : options?.method === 'DELETE' ? {} : foods, status: 200 }))
     await openFridge(embedded ? { embedded: true, inventoryItems: foods } : {})
     const stage = wrapper.get('.kitchen-stage')
     const rect = { left: 100, top: 100, right: 150, bottom: 150, width: 50, height: 50 }
@@ -634,7 +635,7 @@ describe('selected food group actions', () => {
     await flushPromises()
     const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
     expect(patches).toHaveLength(2)
-    expect(patches.every(([, options]) => JSON.parse(options.body).storageZone === 'dry-storage')).toBe(true)
+    expect(patches.every(([, options]) => JSON.parse(options.data).storageZone === 'dry-storage')).toBe(true)
     expect(wrapper.findAll('.pantry-unit .mini-food')).toHaveLength(2)
     expect(document.querySelector('.pantry-target.celebrating')).not.toBeNull()
     expect(showConfirm).not.toHaveBeenCalled()
@@ -665,7 +666,7 @@ describe('selected food group actions', () => {
     await selectGroup()
     const original = request.getMockImplementation()
     request.mockImplementation((url, options) => url.endsWith('pear-2') && options?.method === 'PATCH'
-      ? Promise.resolve({ ok: false, status: 500 }) : original(url, options))
+      ? Promise.resolve({ status: 500 }) : original(url, options))
     await wrapper.get('.freezer-compartment').trigger('drop', { dataTransfer: transfer() })
     await flushPromises()
     expect(wrapper.findAll('.freezer-compartment .mini-food')).toHaveLength(1)
@@ -682,11 +683,11 @@ it('renders visible expiry badges for expired and soon-to-expire shelf food', as
     return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
       .map(part => String(part).padStart(2, '0')).join('-')
   }
-  request.mockResolvedValueOnce({ ok: true, json: async () => [
+  request.mockResolvedValueOnce({ data: [
     { ...food, _id: 'expired', expiresAt: dateAt(-1) },
     { ...food, _id: 'soon', expiresAt: dateAt(2) },
     { ...food, _id: 'fresh', expiresAt: dateAt(10) },
-  ] })
+  ], status: 200 })
   await openFridge()
   expect(wrapper.get('[data-food-id="expired"] .food-expiry-badge.expired').isVisible()).toBe(true)
   expect(wrapper.get('[data-food-id="soon"] .food-expiry-badge').classes()).not.toContain('expired')
@@ -696,12 +697,12 @@ it('renders visible expiry badges for expired and soon-to-expire shelf food', as
 it('moves a food card to the single Pantry without a named assignment', async () => {
   await openFridge()
   await wrapper.get('.shelf-compartment').trigger('click')
-  request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storage: 'pantry', storageZone: 'dry-storage' } }) })
+  request.mockResolvedValueOnce({ data: { item: { ...food, storage: 'pantry', storageZone: 'dry-storage' } }, status: 200 })
   await wrapper.get('select[aria-label="Move Apples to another location"]')
     .setValue(JSON.stringify({ type: 'pantry', name: 'Pantry' }))
   await flushPromises()
   expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
-    method: 'PATCH', body: JSON.stringify({ storage: 'pantry', storageZone: 'dry-storage' }),
+    method: 'PATCH', data: JSON.stringify({ storage: 'pantry', storageZone: 'dry-storage' }),
   }))
   expect(wrapper.findAll('.food-card')).toHaveLength(0)
 })
@@ -714,10 +715,10 @@ describe('Compartment popup UI', () => {
   })
 
   it('shows food illustrations, expiry counts and a searchable inventory', async () => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [
+    request.mockResolvedValueOnce({ data: [
       { ...food, expiresAt: '2000-01-01' },
       { ...food, _id: 'milk-2', name: 'Milk', expiresAt: null },
-    ] })
+    ], status: 200 })
     await openFridge()
     await wrapper.get('.shelf-compartment').trigger('click')
     expect(wrapper.get('.compartment-count').text()).toBe('2 foods')
@@ -737,13 +738,13 @@ describe('Compartment popup UI', () => {
   })
 
   it.each(['consume', 'discard'])('restores the %s card action without quantity prompts for a single item', async action => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, quantity: 1 }] })
+    request.mockResolvedValueOnce({ data: [{ ...food, quantity: 1 }], status: 200 })
     await openFridge()
     await wrapper.get('.shelf-compartment').trigger('click')
     await wrapper.get(`.${action}-button`).trigger('click')
     await flushPromises()
     expect(request).toHaveBeenCalledWith('/api/inventory/apple-1', expect.objectContaining({
-      method: 'DELETE', body: JSON.stringify({ activity: action === 'consume' ? 'consumed' : 'discarded' }),
+      method: 'DELETE', data: JSON.stringify({ activity: action === 'consume' ? 'consumed' : 'discarded' }),
     }))
     expect(showPrompt).not.toHaveBeenCalled()
     expect(wrapper.findAll('.food-card')).toHaveLength(0)
@@ -756,12 +757,12 @@ describe('Compartment popup UI', () => {
 describe('Lower door drops and compartment food reveal', () => {
   it.each([false, true])('moves food to the lower door shelf (embedded: %s)', async embedded => {
     await openFridge(embedded ? { embedded: true, inventoryItems: [food] } : {})
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...food, storageZone: 'door-lower' } }) })
+    request.mockResolvedValueOnce({ data: { item: { ...food, storageZone: 'door-lower' } }, status: 200 })
     await beginDrag()
     await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: transfer() })
     await flushPromises()
     const patch = request.mock.calls.find(([, options]) => options?.method === 'PATCH')
-    expect(JSON.parse(patch[1].body)).toEqual(expect.objectContaining({ storage: 'fridge', storageZone: 'door-lower' }))
+    expect(JSON.parse(patch[1].data)).toEqual(expect.objectContaining({ storage: 'fridge', storageZone: 'door-lower' }))
     expect(wrapper.findAll('[data-drop-zone="door-lower"] [data-food-id="apple-1"]')).toHaveLength(1)
     expect(wrapper.findAll('.shelf-compartment [data-food-id="apple-1"]')).toHaveLength(0)
   })
@@ -770,7 +771,7 @@ describe('Lower door drops and compartment food reveal', () => {
     ['fridge', 'middle-shelf'], ['freezer', 'freezer-main'], ['fridge', 'door'],
     ['fridge', 'door-lower'], ['fridge', 'crisper'], ['pantry', 'dry-storage'],
   ])('reveals a food picture in %s / %s after closing its compartment', async (storage, storageZone) => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...food, storage, storageZone }] })
+    request.mockResolvedValueOnce({ data: [{ ...food, storage, storageZone }], status: 200 })
     await openFridge()
     if (storage === 'pantry') {
       await wrapper.findAll('.storage-slide-options > button').find(button => button.text() === 'Pantry').trigger('click')
@@ -804,11 +805,11 @@ describe('Storage guidance arrangement', () => {
   function inventoryRequest(foods, failId = '') {
     request.mockImplementation(async (url, options) => {
       if (options?.method === 'PATCH') {
-        if (url.endsWith(failId) && failId) return { ok: false, status: 503 }
+        if (url.endsWith(failId) && failId) return { status: 503 }
         const item = foods.find(item => url.split('/').at(-1) === item._id)
-        return { ok: true, json: async () => ({ item: { ...item, ...JSON.parse(options.body) } }) }
+        return { data: { item: { ...item, ...JSON.parse(options.data) } }, status: 200 }
       }
-      return { ok: true, json: async () => foods }
+      return { data: foods, status: 200 }
     })
   }
 
@@ -822,7 +823,7 @@ describe('Storage guidance arrangement', () => {
     const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
     expect(patches).toHaveLength(1)
     expect(patches[0][0]).toBe('/api/inventory/fruit-guidance')
-    expect(JSON.parse(patches[0][1].body)).toEqual({ storage: 'fridge', storageZone: 'crisper' })
+    expect(JSON.parse(patches[0][1].data)).toEqual({ storage: 'fridge', storageZone: 'crisper' })
     expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
     expect(wrapper.get('.recommendation-card').text()).toContain('Milk')
     expect(wrapper.get('[data-drop-zone="crisper"] [data-food-id="fruit-guidance"]').exists()).toBe(true)
@@ -839,7 +840,7 @@ describe('Storage guidance arrangement', () => {
     await wrapper.get('.guidance-arrange-all').trigger('click')
     await flushPromises()
     const payloads = Object.fromEntries(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
-      .map(([url, options]) => [url.split('/').at(-1), JSON.parse(options.body)]))
+      .map(([url, options]) => [url.split('/').at(-1), JSON.parse(options.data)]))
     expect(Object.keys(payloads)).toHaveLength(4)
     expect(payloads['milk-guidance'].storageZone).toBe('middle-shelf')
     expect(payloads['fruit-guidance'].storageZone).toBe('crisper')
@@ -903,7 +904,7 @@ describe('Food storage warning badges', () => {
     { ...food, _id: 'correct-place', name: 'Correct apples', storageZone: 'crisper', expiresAt: '2099-01-01', suggestedLocation: 'crisper', allowedLocations: ['crisper'] },
   ]
   it.each([false, true])('shows only one warning badge with red expiry taking priority (embedded: %s)', async embedded => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    request.mockResolvedValueOnce({ data: foods, status: 200 })
     await openFridge(embedded ? { embedded: true, inventoryItems: foods } : {})
     const fresh = wrapper.get('[data-food-id="misplaced-fresh"]')
     expect(fresh.get('.food-storage-badge').isVisible()).toBe(true)
@@ -924,7 +925,7 @@ describe('Food storage warning badges', () => {
 
   it('shows only one yellow badge when a food is both expiring soon and misplaced', async () => {
     const soon = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10)
-    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...foods[0], expiresAt: soon }] })
+    request.mockResolvedValueOnce({ data: [{ ...foods[0], expiresAt: soon }], status: 200 })
     await openFridge()
     const icon = wrapper.get('[data-food-id="misplaced-fresh"]')
     expect(icon.findAll('.food-expiry-badge,.food-storage-badge')).toHaveLength(1)
@@ -934,9 +935,9 @@ describe('Food storage warning badges', () => {
   })
 
   it('removes the yellow placement badge after arranging a food into an allowed compartment', async () => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [foods[0]] })
+    request.mockResolvedValueOnce({ data: [foods[0]], status: 200 })
     await openFridge()
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...foods[0], storageZone: 'crisper' } }) })
+    request.mockResolvedValueOnce({ data: { item: { ...foods[0], storageZone: 'crisper' } }, status: 200 })
     await wrapper.get('[aria-label="Arrange Fresh apples"]').trigger('click')
     await flushPromises()
     const icon = wrapper.get('[data-drop-zone="crisper"] [data-food-id="misplaced-fresh"]')
@@ -957,10 +958,10 @@ describe('Ignoring storage guidance', () => {
     request.mockImplementation(async (url, options) => {
       if (options?.method === 'PATCH') {
         const index = saved.findIndex(item => url.split('/').at(-1) === item._id)
-        saved[index] = { ...saved[index], ...JSON.parse(options.body) }
-        return { ok: true, json: async () => ({ item: saved[index] }) }
+        saved[index] = { ...saved[index], ...JSON.parse(options.data) }
+        return { data: { item: saved[index] }, status: 200 }
       }
-      return { ok: true, json: async () => saved }
+      return { data: saved, status: 200 }
     })
   })
 
@@ -969,7 +970,7 @@ describe('Ignoring storage guidance', () => {
     await wrapper.get('[aria-label="Ignore storage guidance for Apples"]').trigger('click')
     await flushPromises()
     expect(request).toHaveBeenCalledWith('/api/inventory/ignore-apple', expect.objectContaining({
-      method: 'PATCH', body: JSON.stringify({ storageGuidanceIgnored: true }),
+      method: 'PATCH', data: JSON.stringify({ storageGuidanceIgnored: true }),
     }))
     expect(saved[0].storageZone).toBe('middle-shelf')
     expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
@@ -983,7 +984,7 @@ describe('Ignoring storage guidance', () => {
     expect(wrapper.get('[data-food-id="ignore-apple"]').find('.food-storage-badge').exists()).toBe(false)
     await wrapper.get('.guidance-arrange-all').trigger('click')
     await flushPromises()
-    const moves = request.mock.calls.filter(([, options]) => options?.method === 'PATCH' && JSON.parse(options.body).storageZone)
+    const moves = request.mock.calls.filter(([, options]) => options?.method === 'PATCH' && JSON.parse(options.data).storageZone)
     expect(moves).toHaveLength(1)
     expect(moves[0][0]).toBe('/api/inventory/ignore-milk')
     expect(saved[0].storageZone).toBe('middle-shelf')
@@ -1011,7 +1012,7 @@ describe('Ignoring storage guidance', () => {
     expect(showConfirm).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: 'Ignore all' }))
     const patches = request.mock.calls.filter(([, options]) => options?.method === 'PATCH')
     expect(patches).toHaveLength(2)
-    expect(patches.every(([, options]) => JSON.parse(options.body).storageGuidanceIgnored === true)).toBe(true)
+    expect(patches.every(([, options]) => JSON.parse(options.data).storageGuidanceIgnored === true)).toBe(true)
     expect(wrapper.findAll('.recommendation-card')).toHaveLength(0)
     expect(wrapper.get('.ignored-guidance').text()).toContain('Ignored guidance (2)')
     expect(wrapper.get('[data-food-id="ignore-apple"] .food-expiry-badge.expired').isVisible()).toBe(true)
@@ -1042,7 +1043,7 @@ describe('Ignoring storage guidance', () => {
 
   it('retains failed warnings for retry when Ignore all only partly succeeds', async () => {
     await openFridge()
-    request.mockResolvedValueOnce({ ok: false, status: 503 })
+    request.mockResolvedValueOnce({ status: 503 })
     await wrapper.get('.guidance-ignore-all').trigger('click')
     await flushPromises()
     expect(wrapper.findAll('.recommendation-card')).toHaveLength(1)
@@ -1054,7 +1055,7 @@ describe('Ignoring storage guidance', () => {
 
   it('keeps the warning and Ignore button if saving the preference fails', async () => {
     await openFridge()
-    request.mockResolvedValueOnce({ ok: false, status: 503 })
+    request.mockResolvedValueOnce({ status: 503 })
     await wrapper.get('[aria-label="Ignore storage guidance for Apples"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[aria-label="Ignore storage guidance for Apples"]').attributes('disabled')).toBeUndefined()
@@ -1073,9 +1074,9 @@ describe('Storage guidance after moving food', () => {
     })
   }
   it.each([false, true])('prompts after a successful move out of recommended storage (embedded: %s)', async embedded => {
-    if (!embedded) request.mockResolvedValueOnce({ ok: true, json: async () => [stored] })
+    if (!embedded) request.mockResolvedValueOnce({ data: [stored], status: 200 })
     await openFridge(embedded ? { embedded: true, inventoryItems: [stored] } : {})
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...stored, storageZone: 'door-lower' } }) })
+    request.mockResolvedValueOnce({ data: { item: { ...stored, storageZone: 'door-lower' } }, status: 200 })
     await drag()
     await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: { ...transfer(), getData: () => 'move-advice' } })
     await flushPromises()
@@ -1090,7 +1091,7 @@ describe('Storage guidance after moving food', () => {
   })
 
   it('uses a recorded suggestion when legacy food has no allowed-locations list', async () => {
-    request.mockResolvedValueOnce({ ok: true, json: async () => [{ ...stored, storageZone: 'door', allowedLocations: [] }] })
+    request.mockResolvedValueOnce({ data: [{ ...stored, storageZone: 'door', allowedLocations: [] }], status: 200 })
     await openFridge()
     expect(wrapper.get('.recommendation-card').text()).toContain('Crisper drawer')
     expect(wrapper.get('[data-food-id="move-advice"] .food-storage-badge').exists()).toBe(true)
@@ -1099,14 +1100,14 @@ describe('Storage guidance after moving food', () => {
 
   it('does not prompt when a move fails or when food moves between allowed places', async () => {
     const allowed = { ...stored, storageZone: 'middle-shelf', suggestedLocation: 'middle-shelf', allowedLocations: ['middle-shelf', 'door'] }
-    request.mockResolvedValueOnce({ ok: true, json: async () => [allowed] })
+    request.mockResolvedValueOnce({ data: [allowed], status: 200 })
     await openFridge()
-    request.mockResolvedValueOnce({ ok: false, status: 503 })
+    request.mockResolvedValueOnce({ status: 503 })
     await drag()
     await wrapper.get('[data-drop-zone="door-lower"]').trigger('drop', { dataTransfer: { ...transfer(), getData: () => 'move-advice' } })
     await flushPromises()
     expect(document.querySelector('.storage-move-warning')).toBeNull()
-    request.mockResolvedValueOnce({ ok: true, json: async () => ({ item: { ...allowed, storageZone: 'door' } }) })
+    request.mockResolvedValueOnce({ data: { item: { ...allowed, storageZone: 'door' } }, status: 200 })
     await drag()
     await wrapper.get('[data-drop-zone="door"]').trigger('drop', { dataTransfer: { ...transfer(), getData: () => 'move-advice' } })
     await flushPromises()
@@ -1128,7 +1129,7 @@ describe('Single Fridge and Pantry', () => {
       { ...food, _id: 'old-fridge', name: 'Milk', fridgeName: 'Fridge 2' },
       { ...food, _id: 'old-pantry', name: 'Rice', storage: 'pantry', storageZone: 'dry-storage', pantryName: 'Pantry 2' },
     ]
-    if (!embedded) request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    if (!embedded) request.mockResolvedValueOnce({ data: foods, status: 200 })
     await openFridge(embedded ? { embedded: true, inventoryItems: foods } : {})
     expect(wrapper.find('[aria-label="Storage settings"]').exists()).toBe(false)
     expect(wrapper.text()).not.toMatch(/Add fridge|Add pantry|Rename fridge|Rename pantry|Delete fridge|Delete pantry|Kitchen fridge|Cupboard|Fridge 2|Pantry 2/)
@@ -1158,7 +1159,7 @@ describe('Expanded category storage guidance', () => {
       { ...chicken, _id: 'chicken-shelves', storageZone: 'middle-shelf' },
       { ...chicken, _id: 'chicken-freezer', storage: 'freezer', storageZone: 'freezer-main' },
     ]
-    request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    request.mockResolvedValueOnce({ data: foods, status: 200 })
     await openFridge()
     expect(wrapper.findAll('.recommendation-card')).toHaveLength(2)
     for (const id of ['eggs-upper', 'eggs-lower']) expect(wrapper.get(`[data-food-id="${id}"] .food-storage-badge`).exists()).toBe(true)
