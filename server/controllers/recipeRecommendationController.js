@@ -6,6 +6,8 @@ import {
 } from '../services/recipeRecommendationService.js'
 
 export async function getRecommendations(req, res, next) {
+  console.log('[AI PICKS] Recommendation endpoint called')
+
   try {
     if (
       !Array.isArray(req.body?.candidates) ||

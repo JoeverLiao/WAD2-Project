@@ -12,6 +12,7 @@ import cors from 'cors';
 
 // Load config relative to this file, regardless of the terminal's current folder.
 dotenv.config({ path: fileURLToPath(new URL('./config.env', import.meta.url)), quiet: true });
+dotenv.config({ path: fileURLToPath(new URL('./.env', import.meta.url)), quiet: true });
 
 // Use working DNS for Atlas SRV queries before either MongoDB client connects.
 // Set DNS_SERVERS= in config.env to use system DNS instead. Windows settings are unchanged.

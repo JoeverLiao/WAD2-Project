@@ -1,7 +1,5 @@
 
 <script setup>
-import FoodIcon from '../../components/FoodIcon.vue'
-import { canonicalName, daysUntil, normalizeRecipe, analyseRecipes } from '../../utils/recipeSuggestions.js'
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -30,14 +28,6 @@ const pageSize = 6
 const eatSoonOpen = ref(false)
 const eatSoonSearch = ref('')
 const eatSoonSort = ref('expiry')
-function scrollIngredients(event) {
-  if (event.ctrlKey) return
-  const grid = event.currentTarget
-  if (grid.scrollWidth <= grid.clientWidth) return
-  event.preventDefault()
-  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
-  grid.scrollLeft += delta * (event.deltaMode === 1 ? 24 : event.deltaMode === 2 ? grid.clientWidth : 1)
-}
 const expandedItem = ref(null)
 
 const modalOpen = ref(false)
@@ -133,6 +123,20 @@ async function loadInventory() {
 // ==========================================
 // EXPIRY CALCULATIONS
 // ==========================================
+
+function daysUntil(value) {
+  if (!value) return null
+
+  const datePart = String(value).slice(0, 10)
+  const date = new Date(`${datePart}T12:00:00`)
+
+  if (Number.isNaN(date.getTime())) return null
+
+  const today = new Date()
+  today.setHours(12, 0, 0, 0)
+
+  return Math.round((date - today) / 86400000)
+}
 
 function expiryText(days) {
   if (days === null) return 'Date unknown'
@@ -279,6 +283,25 @@ function resetSelection() {
 // INGREDIENT NORMALISATION
 // ==========================================
 
+function canonicalName(value) {
+  const name = String(value).toLowerCase().trim()
+
+  const aliases = {
+    eggs: 'egg',
+    tomatoes: 'tomato',
+    potatoes: 'potato',
+    carrots: 'carrot',
+    onions: 'onion',
+    mushrooms: 'mushroom',
+    'chicken breast': 'chicken',
+    'white rice': 'rice',
+    'brown rice': 'rice',
+    'fresh milk': 'milk',
+  }
+
+  return aliases[name] ?? name
+}
+
 const apiIngredients = computed(() =>
   [...new Set(
     selectedItems.value
@@ -352,6 +375,29 @@ async function markCooked(recipe) {
 // THEMEALDB RECIPES
 // ==========================================
 
+function normalizeRecipe(raw) {
+  const ingredients = Array.isArray(raw.ingredients)
+    ? raw.ingredients
+        .map(item =>
+          typeof item === 'string'
+            ? item
+            : item.name ?? item.ingredient ?? ''
+        )
+        .filter(Boolean)
+    : []
+
+  return {
+    ...raw,
+    id: String(raw.id ?? raw.idMeal ?? ''),
+    name: raw.name ?? raw.strMeal ?? 'Recipe',
+    image: raw.image ?? raw.strMealThumb ?? '',
+    ingredients,
+    prepTime: Number(raw.prepTime) || null,
+    dietaryTags: Array.isArray(raw.dietaryTags)
+      ? raw.dietaryTags
+      : [],
+  }
+}
 
 async function requestRecipes(url, signal) {
   const response = await fetch(url, {
@@ -454,7 +500,68 @@ async function loadRecipes() {
 // RECIPE MATCHING
 // ==========================================
 
-const analysedRecipes = computed(() => analyseRecipes(recipes.value, selectedItems.value))
+function normaliseIngredient(value) {
+  return canonicalName(value)
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function matchesIngredient(recipeIngredient, ownedIngredient) {
+  const a = normaliseIngredient(recipeIngredient)
+  const b = normaliseIngredient(ownedIngredient)
+
+  if (!a || !b) return false
+
+  return (
+    a === b ||
+    a.startsWith(`${b} `) ||
+    a.endsWith(` ${b}`) ||
+    a.includes(` ${b} `) ||
+    b.startsWith(`${a} `)
+  )
+}
+
+const analysedRecipes = computed(() =>
+  recipes.value.map(recipe => {
+    const matched = []
+    const missing = []
+    const urgentIds = new Set()
+
+    for (const ingredient of recipe.ingredients) {
+      const found = selectedItems.value.find(item =>
+        matchesIngredient(ingredient, item.name)
+      )
+
+      if (found) {
+        matched.push(ingredient)
+
+        if (found.days !== null && found.days <= 3) {
+          urgentIds.add(found.localId)
+        }
+      } else {
+        missing.push(ingredient)
+      }
+    }
+
+    const percentage = recipe.ingredients.length
+      ? Math.round(
+          matched.length / recipe.ingredients.length * 100
+        )
+      : 0
+
+    return {
+      ...recipe,
+      matched,
+      missing,
+      percentage,
+      rescueScore: Math.round(
+        percentage * 0.7 +
+        Math.min(urgentIds.size, 3) * 10
+      ),
+    }
+  })
+)
 
 const filteredRecipes = computed(() => {
   const q = search.value.toLowerCase().trim()
@@ -532,6 +639,23 @@ watch(apiIngredients, () => {
 // ==========================================
 // NAVIGATION
 // ==========================================
+
+
+function goToInventory() {
+  document.querySelector('.kitchen-summary')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function goToUrgentItems() {
+  eatSoonOpen.value = true
+
+  nextTick(() => {
+    document.querySelector('.freshness-drawer')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+
 
 function goToRecipes() {
   document.getElementById('recipe-discovery')?.scrollIntoView({
@@ -679,31 +803,62 @@ onUnmounted(() => {
         your items to start discovering recipes.
       </p>
 
-      <div class="summary-grid">
-        <div class="summary-card total">
-          <span>In your kitchen</span>
-          <strong>{{ stats.total }}</strong>
-          <small>Total ingredients</small>
-        </div>
+      
+<div class="summary-grid">
+  <div class="summary-card total">
+    <div class="summary-card-top">
+      <span>In your kitchen</span>
+      <span class="summary-card-icon" aria-hidden="true">▤</span>
+    </div>
+    <strong>{{ stats.total }}</strong>
+    <small>Ingredients available</small>
+    <button class="summary-card-link" type="button"
+      @click="goToInventory">
+      View inventory <span aria-hidden="true">→</span>
+    </button>
+  </div>
 
-        <div class="summary-card fresh">
-          <span>Looking fresh</span>
-          <strong>{{ stats.fresh }}</strong>
-          <small>More time to enjoy</small>
-        </div>
+  <div class="summary-card fresh">
+    <div class="summary-card-top">
+      <span>Looking fresh</span>
+      <span class="summary-card-icon" aria-hidden="true">✿</span>
+    </div>
+    <strong>{{ stats.fresh }}</strong>
+    <small>No immediate expiry concern</small>
+    <button class="summary-card-link" type="button"
+      @click="goToInventory">
+      View ingredients <span aria-hidden="true">→</span>
+    </button>
+  </div>
 
-        <div class="summary-card soon">
-          <span>Use soon</span>
-          <strong>{{ stats.soon }}</strong>
-          <small>Within 3 days</small>
-        </div>
+  <div class="summary-card soon">
+    <div class="summary-card-top">
+      <span>Use soon</span>
+      <span class="summary-card-icon" aria-hidden="true">◷</span>
+    </div>
+    <strong>{{ stats.soon }}</strong>
+    <small>Estimated within 3 days</small>
+    <button class="summary-card-link" type="button"
+      @click="goToRecipes">
+      Find recipes <span aria-hidden="true">→</span>
+    </button>
+  </div>
 
-        <div class="summary-card expired">
-          <span>Past estimated date</span>
-          <strong>{{ stats.expired }}</strong>
-          <small>Check these items</small>
-        </div>
-      </div>
+  <div class="summary-card expired">
+    <div class="summary-card-top">
+      <span>Past estimated date</span>
+      <span class="summary-card-icon" aria-hidden="true">!</span>
+    </div>
+    <strong>{{ stats.expired }}</strong>
+    <small>Check before using</small>
+    <button class="summary-card-link" type="button"
+      @click="goToUrgentItems">
+      Review items <span aria-hidden="true">→</span>
+    </button>
+  </div>
+</div>
+
+
     </section>
 
     <!-- =====================================
@@ -795,9 +950,6 @@ onUnmounted(() => {
             <div
               v-if="visibleUrgentItems.length"
               class="urgent-grid"
-              tabindex="0"
-              aria-label="Expiring ingredients. Scroll sideways for more."
-              @wheel="scrollIngredients"
             >
               <div
                 v-for="item in visibleUrgentItems"
@@ -813,7 +965,6 @@ onUnmounted(() => {
                         : item.localId
                   "
                 >
-                  <FoodIcon :item="item" class="urgent-food-icon" />
                   <div>
                     <strong>{{ item.name }}</strong>
                     <small>
@@ -2410,19 +2561,6 @@ onUnmounted(() => {
 .recipe-cooked-action { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 14px; }
 .recipe-cooked-action button { border: 1px solid var(--ink); border-radius: 8px; padding: 6px 10px; background: var(--mint); color: var(--ink); font-weight: bold; }
 .recipe-cooked-action button:disabled { opacity: .5; }
-.urgent-grid {
-  grid-template-columns:none;
-  grid-template-rows:repeat(2, auto);
-  grid-auto-flow:column;
-  grid-auto-columns:max(160px, calc((100% - 36px) / 4));
-  align-items:stretch;
-  overflow-x:auto;
-  padding:4px 3px 12px;
-  overscroll-behavior-x:contain;
-}
-.urgent-item-main { flex-direction:column; text-align:center; height:auto; min-height:170px; }
-.urgent-item-main .urgent-food-icon { width:54px; height:54px; flex-shrink:0; }
-.urgent-grid:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
 </style>
 
 <style>
@@ -2638,4 +2776,74 @@ onUnmounted(() => {
     transition: none !important;
   }
 }
+
+/* Kitchen summary card improvements */
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.summary-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 2px solid currentColor;
+  border-radius: 12px;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.summary-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 12px 0 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: gap 0.2s ease;
+}
+
+.summary-card-link:hover {
+  gap: 14px;
+}
+
+.summary-card-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+@media (max-width: 480px) {
+  .summary-card-icon {
+    width: 30px;
+    height: 30px;
+    font-size: 18px;
+  }
+
+  .summary-card-link {
+    font-size: 0.8rem;
+  }
+}
+
+
+
+
 </style>
