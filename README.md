@@ -38,12 +38,6 @@ The application aims to make household food easier to manage by:
 
 ## Environment configuration
 
-The server loads `server/config.env` first and then `server/.env`. Start with the committed example and keep real values in the ignored local config file:
-
-```powershell
-Copy-Item server/config.env.example server/config.env
-```
-
 Set these required variables in `server/config.env`:
 
 ```dotenv
