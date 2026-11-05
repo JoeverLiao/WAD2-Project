@@ -9,6 +9,7 @@ import {
   amountLabel,
   dietTypeLabel,
   expiryBadge,
+  expiryDays,
   expiryLabel,
   locationLabel,
   itemStorageName,
