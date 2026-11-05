@@ -445,8 +445,8 @@ export function parseReceiptText(rawText, { today = new Date() } = {}) {
       skipped.push({ name: cleaned, price })
       continue
     }
-    // The same product always gets the same name, whatever the brand, size or shop.
-    const name = info.canonicalName ?? cleaned
+    // Classification supplies storage details; keep the product wording for review and saving.
+    const name = cleaned
     items.push({
       name,
       receiptName: cleaned,

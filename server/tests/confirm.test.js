@@ -58,6 +58,12 @@ const fakeBulk = (matched = 0) => async (ops) => ({ upsertedCount: ops.length - 
 const mockBulk = (t, impl = fakeBulk()) => {
   const bulk = mock.method(InventoryItem, 'bulkWrite', impl)
   t.after(() => bulk.mock.restore())
+  // These tests inspect write operations; stub the API's follow-up read without a real DB.
+  const read = mock.method(InventoryItem, 'findOne', () => ({
+    collation() { return this },
+    async lean() { return null },
+  }))
+  t.after(() => read.mock.restore())
   return bulk
 }
 
@@ -73,7 +79,7 @@ test('saves valid items for the logged-in user', async (t) => {
 
   const response = await post(base, { items: [milk, { name: 'Eggs', quantity: '1', storage: 'fridge' }] })
   assert.equal(response.status, 201)
-  assert.deepEqual(await response.json(), { saved: 2, added: 2, merged: 0 })
+  assert.deepEqual(await response.json(), { saved: 2, added: 2, merged: 0, items: [] })
 
   const ops = bulk.mock.calls[0].arguments[0]
   assert.equal(ops.length, 2)
@@ -89,14 +95,14 @@ test('saves valid items for the logged-in user', async (t) => {
   assert.equal(first.update.$setOnInsert.category, 'dairy')
   assert.equal(first.update.$setOnInsert.suggestedLocation, 'middle-shelf')
   assert.equal(first.update.$setOnInsert.storageZone, 'middle-shelf')
-  assert.deepEqual(first.update.$setOnInsert.allowedLocations, ['middle-shelf', 'upper-shelf'])
+  assert.deepEqual(first.update.$setOnInsert.allowedLocations, ['middle-shelf', 'upper-shelf', 'lower-shelf', 'freezer-main'])
 })
 
 test('an item already in stock has its quantity increased, not a second entry', async (t) => {
   mockBulk(t, fakeBulk(1))
   const base = await startApp(t)
   const response = await post(base, { items: [milk, { name: 'Eggs', quantity: 6, storage: 'fridge' }] })
-  assert.deepEqual(await response.json(), { saved: 2, added: 1, merged: 1 })
+  assert.deepEqual(await response.json(), { saved: 2, added: 1, merged: 1, items: [] })
 })
 
 test('the same product on several rows is saved as one with the quantities added', async (t) => {
@@ -114,7 +120,7 @@ test('the same product on several rows is saved as one with the quantities added
   assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 3, weightKg: 2, purchasePrice: 9 })
 })
 
-test('manual entry: no price needed, and common foods get their standard name', async (t) => {
+test('manual entry: no price needed, and confirmed product names are preserved', async (t) => {
   const bulk = mockBulk(t)
   const base = await startApp(t)
   const response = await post(base, {
@@ -126,7 +132,7 @@ test('manual entry: no price needed, and common foods get their standard name', 
   })
   assert.equal(response.status, 201)
   const ops = bulk.mock.calls[0].arguments[0]
-  assert.deepEqual(ops.map((o) => o.updateOne.filter.name), ['Milk', 'Grandma special sauce'])
+  assert.deepEqual(ops.map((o) => o.updateOne.filter.name), ['Full cream milk', 'Grandma special sauce'])
   assert.deepEqual(ops[0].updateOne.update.$inc, { quantity: 1, weightKg: 1 }) // no price field at all
 })
 
@@ -142,7 +148,8 @@ test('stores the smart details and the weight', async (t) => {
   const { update, filter } = bulk.mock.calls[0].arguments[0][0].updateOne
   assert.deepEqual(update.$inc, { quantity: 1, weightKg: 0.5 })
   assert.equal(update.$setOnInsert.icon, '🍗')
-  assert.equal(update.$setOnInsert.suggestedLocation, 'lower-shelf')
+  assert.equal(update.$setOnInsert.suggestedLocation, 'middle-shelf')
+  assert.equal(filter.storageZone, 'lower-shelf')
   assert.equal(filter.storage, 'fridge')
 })
 

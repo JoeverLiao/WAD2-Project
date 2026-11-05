@@ -102,9 +102,7 @@ const confirmItems = async (req, res) => {
 
   try {
     // `user` always comes from the login token, never from the request body.
-    const result = await addItemsToInventory(req.userId, items, {
-      standardiseNames: req.body?.source === 'manual',
-    })
+    const result = await addItemsToInventory(req.userId, items)
     return res.status(201).json(result)
   } catch (error) {
     if (error?.name === 'ValidationError') {

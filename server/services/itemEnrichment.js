@@ -300,22 +300,17 @@ export async function enrichItems(items, options = {}) {
     if (ai) {
       // The AI told us what the food really is. If our rules know that food, they decide everything
       // (the rules are more reliable than the AI); otherwise the checked AI answer is used.
+      // Recognition names are internal to classification; only derived details are returned.
       const known = ai.name ? classifyItem(ai.name) : null
       if (known?.category) {
         const named = { ...item, name: known.canonicalName ?? ai.name, icon: item.icon }
-        return {
-          ...build(named, { category: known.category, zone: known.zone, days: known.days, pieceKg: known.pieceKg ?? ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? known.diet, source: 'ai' }, today),
-          name: known.canonicalName ?? ai.name,
-        }
+        return build(named, { category: known.category, zone: known.zone, days: known.days, pieceKg: known.pieceKg ?? ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? known.diet, source: 'ai' }, today)
       }
       const frozen = r.frozen
       const category = frozen ? 'frozen' : ai.category
       const zone = frozen ? 'freezer-main' : ai.zone
       const days = frozen ? shelfDays('frozen', 'freezer') : ai.days
-      return {
-        ...build({ ...item, icon: item.icon ?? ai.icon }, { category, zone, days, pieceKg: ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? ai.diet, source: 'ai' }, today),
-        ...(ai.name ? { name: ai.name } : {}),
-      }
+      return build({ ...item, icon: item.icon ?? ai.icon }, { category, zone, days, pieceKg: ai.pieceKg, diet: dietFromText(item.receiptName ?? item.name) ?? ai.diet, source: 'ai' }, today)
     }
     return build(item, { category: 'other', zone: r.zone, days: null, pieceKg: null, diet: r.diet, source: 'rules' }, today)
   })
@@ -328,9 +323,8 @@ export function expiryDateKey(value) {
 }
 
 /**
- * After details are added, two lines can turn out to be the same food (for example two different
- * run-together spellings that the AI both named "Pumpkin"). Combine them: quantities, prices and
- * weights are added up.
+ * Combine repeated product names in the same expiry batch after details are added.
+ * Quantities, prices and weights are added up; classification labels are not product identities.
  */
 export function mergeDuplicateItems(items) {
   const groups = new Map()

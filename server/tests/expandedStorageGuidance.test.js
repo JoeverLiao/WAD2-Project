@@ -1,7 +1,7 @@
 import { afterEach, mock, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { storageGuidance, withStorageGuidance } from '../services/storageGuidance.js'
-import { completeItems, standardName } from '../services/inventoryService.js'
+import { completeItems } from '../services/inventoryService.js'
 import { enrichWithRules } from '../services/itemEnrichment.js'
 import { CATEGORIES, ZONE_IDS } from '../services/storageGuide.js'
 import InventoryItem from '../models/inventoryItemModel.js'
@@ -89,11 +89,11 @@ test('all categories have usable placement defaults with unified shelf aliases',
   }
 })
 
-test('storage-significant names survive receipt standardisation and confirmation', () => {
+test('storage-significant names and their guidance survive confirmation', () => {
   for (const name of ['Cooked rice', 'Frozen chicken', 'Opened UHT milk', 'Cut melon', 'Chicken noodle soup']) {
-    assert.equal(standardName(name), name)
     const enriched = enrichWithRules([{ name, quantity: 1 }])[0]
     const saved = completeItems([{ ...enriched, name }])[0]
+    assert.equal(saved.name, name)
     assert.deepEqual(saved.allowedLocations, enriched.allowedLocations)
     assert.equal(saved.suggestedLocation, enriched.suggestedLocation)
   }

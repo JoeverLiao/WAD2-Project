@@ -118,6 +118,37 @@ describe('ReceiptReviewForm', () => {
     expect(wrapper.emitted('reset')).toHaveLength(1)
   })
 
+  it.each([false, true])('submits and displays confirmed product names with manual=%s', async (manual) => {
+    const names = ['Brown Rice', 'White Rice', 'Spaghetti', 'Penne']
+    const fixture = parsed()
+    fixture.items = names.map((_, i) => ({
+      name: i < 2 ? 'Rice' : 'Pasta', quantity: 1, unit: 'pieces', weightKg: 1,
+      storage: 'pantry', storageZone: 'dry-storage', suggestedLocation: 'dry-storage',
+      category: 'pantry_staples', dietType: 'vegan', expiresAt: '2026-11-20', include: true, warnings: [],
+    }))
+    const fetchMock = vi.fn(async (_url, init) => {
+      const { items } = JSON.parse(init.body)
+      return jsonResponse(201, {
+        saved: items.length, added: items.length, merged: 0,
+        items: items.map((item, i) => ({ ...item, _id: `product-${i}` })),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ReceiptReviewForm, {
+      props: { parsed: fixture, manual }, global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    for (const [i, name] of names.entries()) {
+      await rows(wrapper)[i].get('[data-testid="name"]').setValue(`  ${name.replace(' ', '   ')}  `)
+    }
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.source).toBe(manual ? 'manual' : 'receipt')
+    expect(body.items.map(item => item.name)).toEqual(names)
+    for (const name of names) expect(wrapper.get('[data-testid="saved-message"]').text()).toContain(name)
+    wrapper.unmount()
+  })
+
   it('cannot be saved with nothing ticked', async () => {
     const wrapper = mount(ReceiptReviewForm, { props: { parsed: parsed() } })
     for (const row of rows(wrapper).slice(0, 2)) await row.get('[data-testid="include"]').setValue(false)

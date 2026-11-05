@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { checkAiAnswer, cleanStandardName, enrichItems, enrichWithRules, mergeDuplicateItems } from '../services/itemEnrichment.js'
+import { parseReceiptText } from '../services/receiptParser.js'
 import { ALL_ICONS, CATEGORIES, CATEGORY_IDS, DIET_LABELS, DIETS, ZONE_IDS } from '../services/storageGuide.js'
 
 const today = new Date('2026-11-01T10:00:00+08:00')
@@ -231,28 +232,50 @@ test('messy receipt names are recognised: run-together, abbreviated and misspelt
   ])
 })
 
-test('the AI names the real food, and then our rules decide the details', async () => {
+test('AI recognition drives the rules without replacing the receipt product name', async () => {
   // "Zxq Brxlnut" is nothing we know, so the AI is asked; it says the food is a pumpkin.
   const fetchImpl = aiAnswers([{ index: 0, standard_name: 'pumpkin', category: 'other', location: 'door', shelf_life_days: 2, piece_weight_kg: 9, diet: 'unknown' }])
-  const { items } = await enrichItems([{ name: 'Zxq Brxlnut', quantity: 1 }], { today, fetchImpl, apiKey: 'k' })
-  assert.equal(items[0].name, 'Pumpkin')
+  const original = { name: 'Zxq Brxlnut', quantity: 1 }
+  const { items } = await enrichItems([original], { today, fetchImpl, apiKey: 'k' })
+  assert.ok(!Object.hasOwn(items[0], 'name'))
+  assert.equal({ ...original, ...items[0] }.name, original.name)
   assert.equal(items[0].category, 'root_vegetables') // from our rules, not from the AI's "other"
   assert.equal(items[0].suggestedLocation, 'dry-storage')
   assert.equal(items[0].dietType, 'vegan')
   assert.equal(items[0].detailsSource, 'ai')
 })
 
-test('a clean food name from the AI is kept, odd ones are ignored', async () => {
+test('AI classification names are validated but do not overwrite an unknown product name', async () => {
   assert.equal(cleanStandardName('  dragon   fruit '), 'Dragon Fruit')
   assert.equal(cleanStandardName('<script>'), null)
   assert.equal(cleanStandardName('x'.repeat(50)), null)
   assert.equal(cleanStandardName(5), null)
   const fetchImpl = aiAnswers([{ index: 0, standard_name: 'Gochujang', category: 'condiments', location: 'dry-storage', shelf_life_days: 100, piece_weight_kg: 0.5, diet: 'vegan' }])
   const { items } = await enrichItems([{ name: 'GOCHUJNG 500G', quantity: 1 }], { today, fetchImpl, apiKey: 'k' })
-  assert.equal(items[0].name, 'Gochujang')
+  assert.ok(!Object.hasOwn(items[0], 'name'))
+  assert.equal({ name: 'GOCHUJNG 500G', ...items[0] }.name, 'GOCHUJNG 500G')
+  assert.equal(items[0].category, 'condiments')
+  assert.equal(items[0].suggestedLocation, 'dry-storage')
 })
 
-test('two lines that turn out to be the same food are combined', () => {
+test('receipt product variants survive parsing, enrichment and duplicate grouping', async () => {
+  const parsed = parseReceiptText('1 Brown Rice 2.00\n1 White Rice 3.00\n1 Spaghetti 4.00\n1 Penne 5.00', { today })
+  const { items: details, aiUsed } = await enrichItems(parsed.items, { today, apiKey: '' })
+  const reviewed = mergeDuplicateItems(parsed.items.map((item, i) => ({ ...item, ...details[i] })))
+  assert.equal(aiUsed, false)
+  assert.deepEqual(reviewed.map(item => item.name), ['Brown Rice', 'White Rice', 'Spaghetti', 'Penne'])
+  assert.deepEqual(reviewed.map(item => item.quantity), [1, 1, 1, 1])
+  assert.deepEqual(reviewed.map(item => item.price), [2, 3, 4, 5])
+  for (const item of reviewed) {
+    assert.equal(item.category, 'pantry_staples')
+    assert.ok(CATEGORIES.pantry_staples.icons.includes(item.icon))
+    assert.equal(item.suggestedLocation, 'dry-storage')
+    assert.ok(item.allowedLocations.includes('dry-storage'))
+    assert.equal(item.storage, 'pantry')
+  }
+})
+
+test('identical product names combine their quantities, prices and weights', () => {
   const merged = mergeDuplicateItems([
     { name: 'Pumpkin', unit: 'pieces', storage: 'pantry', quantity: 1, price: 2.5, weightKg: 1.5, warnings: ['a'], rawLine: 'x' },
     { name: 'pumpkin', unit: 'pieces', storage: 'pantry', quantity: 2, price: 5, weightKg: 3, warnings: ['a', 'b'], rawLine: 'y' },

@@ -67,7 +67,7 @@ export async function suggestItemDetails(items) {
  * On a 400 the thrown error has `.details`: [{ index, field, message }] telling which
  * item and field the server rejected, so the form can mark them.
  * @param {Array<object>} items payloads built by toPayload()
- * @param {'receipt'|'manual'} [source] where the items came from (manual entries get standard names)
+ * @param {'receipt'|'manual'} [source] where the items came from
  * @returns {Promise<{ saved: number, added: number, merged: number }>}
  */
 export async function confirmReceiptItems(items, source = 'receipt') {

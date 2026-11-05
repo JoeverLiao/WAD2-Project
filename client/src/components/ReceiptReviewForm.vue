@@ -380,8 +380,8 @@ const totalWarning = computed(() => {
         <h2 class="h5">{{ manual ? 'Add items yourself' : 'Check your items' }}</h2>
         <p v-if="manual" class="text-body-secondary small mb-3" data-testid="manual-intro">
           Type in what you bought. Only the name, quantity and where it is kept are needed: the price and the
-          use-by date are optional. Common foods are saved under a standard name (for example "Full cream milk"
-          becomes "Milk") so the same product is always counted together.
+          use-by date are optional. Product names are kept as entered; suggested categories and storage
+          details are saved separately.
         </p>
         <p v-else class="text-body-secondary small mb-3">
           We read these from the receipt. Fix anything that is wrong, untick things you do not want to

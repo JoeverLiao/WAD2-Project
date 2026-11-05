@@ -1,15 +1,9 @@
 // Writes confirmed items into a user's inventory. Used by both ways of adding food: scanned
 // receipts and manual entry. It expects items that already passed validateInventoryItems().
 import InventoryItem from '../models/inventoryItemModel.js'
-import { classifyItem } from './foodKnowledge.js'
 import { enrichWithRules, expiryDateKey } from './itemEnrichment.js'
 import { ALL_ICONS, CATEGORIES, ZONES } from './storageGuide.js'
-import { hasStorageState, storageGuidance, withStorageGuidance } from './storageGuidance.js'
-
-/** The standard name for a common food ("Full cream milk 1L" -> "Milk"); other names are kept. */
-export function standardName(name) {
-  return hasStorageState(name) ? name : classifyItem(name).canonicalName ?? name
-}
+import { storageGuidance, withStorageGuidance } from './storageGuidance.js'
 
 /**
  * Combine rows of the same batch (same name ignoring case, unit, storage, zone and expiry day):
@@ -73,12 +67,11 @@ export function completeItems(items) {
  *
  * @param {string} userId the logged-in user's id (from the login token, never from the request body)
  * @param {Array<object>} items validated items
- * @param {{ standardiseNames?: boolean }} [options] give common foods their standard name
  * @returns {Promise<{ saved: number, added: number, merged: number }>}
  */
-export async function addItemsToInventory(userId, items, { standardiseNames = false } = {}) {
-  const named = standardiseNames ? items.map((item) => ({ ...item, name: standardName(item.name) })) : items
-  const prepared = completeItems(named)
+export async function addItemsToInventory(userId, items) {
+  // Validated names are the user's confirmed product names, including any variants or brands.
+  const prepared = completeItems(items)
   const operations = groupSameProducts(prepared).map((item) => {
     const expiryDay = expiryDateKey(item.expiresAt)
     const expiryStart = expiryDay ? new Date(`${expiryDay}T00:00:00.000Z`) : null

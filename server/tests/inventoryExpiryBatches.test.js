@@ -174,6 +174,47 @@ async function startApp(t) {
 }
 
 for (const source of ['receipt', 'manual']) {
+  test(`${source} saves product variants separately and preserves confirmed names after reload`, async t => {
+    const records = inventoryMemory()
+    const legacy = await InventoryItem.create({
+      ...milk, user: owner, name: 'Rice', unit: 'pieces', quantity: 10,
+      storage: 'pantry', storageZone: 'dry-storage', expiresAt: date('2026-11-20'),
+    })
+    const request = await startApp(t)
+    const names = ['Brown Rice', 'White Rice', 'Spaghetti', 'Penne']
+    const items = names.map((name, i) => ({
+      name: `  ${name.replace(' ', '   ')}  `, quantity: i + 1, unit: 'pieces',
+      weightKg: (i + 1) * 0.5, purchasePrice: i + 2,
+      storage: 'pantry', storageZone: 'dry-storage', category: 'pantry_staples',
+      dietType: i < 2 ? 'vegan' : 'vegetarian', purchasedAt: '2026-10-01', expiresAt: '2026-11-20',
+    }))
+    const first = await request('/scanning/confirm', 'POST', { source, items })
+    assert.equal(first.added, 4)
+    assert.equal(first.merged, 0)
+    assert.deepEqual(first.items.map(item => item.name), names)
+    assert.equal(new Set(first.items.map(item => item._id)).size, 4)
+
+    const second = await request('/scanning/confirm', 'POST', {
+      source, items: [{ ...items[0], quantity: 2, weightKg: 1, purchasePrice: 3 }],
+    })
+    assert.equal(second.added, 0)
+    assert.equal(second.merged, 1)
+    assert.equal(second.items[0]._id, first.items[0]._id)
+    const loaded = (await request('/inventory')).items.map(normaliseItem)
+    const products = names.map(name => loaded.find(item => item.name === name))
+    assert.deepEqual(products.map(item => item.name), names)
+    assert.deepEqual(products.map(item => item.quantity), [3, 2, 3, 4])
+    assert.deepEqual(products.map(item => item.weightKg), [1.5, 1, 1.5, 2])
+    assert.deepEqual(products.map(item => item.purchasePrice), [5, 3, 4, 5])
+    for (const item of products) {
+      assert.equal(item.unit, 'pieces')
+      assert.equal(item.category, 'pantry_staples')
+      assert.equal(item.suggestedLocation, 'dry-storage')
+      assert.equal(item.expiresAt, '2026-11-20')
+    }
+    assert.deepEqual(records.find(item => item._id === legacy._id), legacy)
+  })
+
   test(`${source} confirmation preserves batch IDs and quantities after inventory reload and an isolated edit`, async t => {
     inventoryMemory()
     const request = await startApp(t)
@@ -193,7 +234,7 @@ for (const source of ['receipt', 'manual']) {
 
     const loaded = (await request('/inventory')).items.map(normaliseItem)
     assert.deepEqual(loaded.map(item => [item.name, item.quantity, item.expiresAt]), [
-      ['Milk', 3, '2026-11-10'], ['Milk', 1, '2026-11-20'],
+      [entry.name, 3, '2026-11-10'], [entry.name, 1, '2026-11-20'],
     ])
     assert.equal(new Set(loaded.map(item => item.id)).size, 2)
     await request(`/inventory/${loaded[0].id}`, 'PATCH', { quantity: 2 })
