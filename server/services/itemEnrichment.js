@@ -172,10 +172,14 @@ async function askAi(unknownItems, { fetchImpl, apiKey, model }) {
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
-      max_tokens: 2000,
-      system: SYSTEM,
+      // Room for adaptive thinking plus the tool call; low effort keeps this simple lookup fast.
+      max_tokens: 8000,
+      output_config: { effort: 'low' },
+      // Newer models (e.g. claude-sonnet-5-5) reject a forced tool_choice, so allow any tool
+      // and tell the model in the system prompt to always call this one.
+      system: `${SYSTEM}\nAlways answer by calling the ${TOOL.name} tool once with every item; do not reply in plain text.`,
       tools: [TOOL],
-      tool_choice: { type: 'tool', name: TOOL.name },
+      tool_choice: { type: 'auto' },
       messages: [
         {
           role: 'user',
