@@ -322,6 +322,11 @@ export async function enrichItems(items, options = {}) {
   return { items: result, aiUsed, aiStatus }
 }
 
+// Expiry dates are calendar days encoded as UTC dates (including legacy midnight and noon values).
+export function expiryDateKey(value) {
+  return value ? new Date(value).toISOString().slice(0, 10) : null
+}
+
 /**
  * After details are added, two lines can turn out to be the same food (for example two different
  * run-together spellings that the AI both named "Pumpkin"). Combine them: quantities, prices and
@@ -330,7 +335,7 @@ export async function enrichItems(items, options = {}) {
 export function mergeDuplicateItems(items) {
   const groups = new Map()
   for (const item of items) {
-    const key = `${String(item.name).toLowerCase()}|${item.unit ?? ''}|${item.storage}`
+    const key = JSON.stringify([String(item.name).toLowerCase(), item.unit ?? '', item.storage, expiryDateKey(item.expiresAt)])
     const group = groups.get(key)
     if (!group) {
       groups.set(key, { ...item, warnings: [...(item.warnings ?? [])] })

@@ -47,6 +47,27 @@ afterEach(() => {
 })
 
 describe('Fridge interactions', () => {
+  it.each(['consume', 'discard'])('renders same-name expiry batches separately and %ss only the chosen ID', async action => {
+    const batches = [
+      { ...food, _id: 'milk-early', name: 'Milk', quantity: 1, expiresAt: '2000-01-01' },
+      { ...food, _id: 'milk-later', name: 'Milk', quantity: 2, expiresAt: '2000-01-02' },
+    ]
+    request.mockResolvedValueOnce({ data: batches, status: 200 })
+    await openFridge()
+    expect(wrapper.findAll('[data-food-id]')).toHaveLength(2)
+    await wrapper.get('.expiry-dropdown > .expiry-button').trigger('click')
+    expect(wrapper.findAll('.expiry-food-row')).toHaveLength(2)
+    await wrapper.get('[aria-label="Close expiry panel"]').trigger('click')
+    await wrapper.get('[data-drop-zone="middle-shelf"]').trigger('click')
+    expect(wrapper.findAll('.food-card')).toHaveLength(2)
+    await wrapper.findAll('.food-card')[0].get(`.${action}-button`).trigger('click')
+    await flushPromises()
+    expect(request.mock.calls.filter(([, options]) => options.method === 'DELETE')
+      .map(([url]) => url)).toEqual(['/api/inventory/milk-early'])
+    expect(useInventoryStore().items).toEqual([normaliseItem(batches[1])])
+    expect(wrapper.findAll('.food-card')).toHaveLength(1)
+  })
+
   it('renders expired food in the Expired panel', async () => {
     request.mockResolvedValueOnce({ data: [{ ...food, expiresAt: '2000-01-01' }], status: 200 })
     await openFridge()

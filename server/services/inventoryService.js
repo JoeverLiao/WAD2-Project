@@ -2,7 +2,7 @@
 // receipts and manual entry. It expects items that already passed validateInventoryItems().
 import InventoryItem from '../models/inventoryItemModel.js'
 import { classifyItem } from './foodKnowledge.js'
-import { enrichWithRules } from './itemEnrichment.js'
+import { enrichWithRules, expiryDateKey } from './itemEnrichment.js'
 import { ALL_ICONS, CATEGORIES, ZONES } from './storageGuide.js'
 import { hasStorageState, storageGuidance, withStorageGuidance } from './storageGuidance.js'
 
@@ -12,13 +12,13 @@ export function standardName(name) {
 }
 
 /**
- * Combine rows that are the same product (same name ignoring case, same unit, same storage):
+ * Combine rows of the same batch (same name ignoring case, unit, storage, zone and expiry day):
  * quantities and prices are added up.
  */
 export function groupSameProducts(items) {
   const groups = new Map()
   for (const item of items) {
-    const key = JSON.stringify([item.name.toLowerCase(), item.unit ?? '', item.storage, item.storageZone])
+    const key = JSON.stringify([item.name.toLowerCase(), item.unit ?? '', item.storage, item.storageZone, expiryDateKey(item.expiresAt)])
     const group = groups.get(key)
     if (!group) {
       groups.set(key, { ...item })
@@ -67,7 +67,7 @@ export function completeItems(items) {
 
 /**
  * Add items to one user's inventory. An item that is already in stock (same name ignoring
- * upper/lower case, same unit, same storage) has its quantity increased instead of being added a
+ * upper/lower case, same unit, storage, zone and expiry day) has its quantity increased instead of being added a
  * second time, and keeps its own dates. The price is optional: when it is missing nothing is
  * added to the stored price.
  *
@@ -80,6 +80,8 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
   const named = standardiseNames ? items.map((item) => ({ ...item, name: standardName(item.name) })) : items
   const prepared = completeItems(named)
   const operations = groupSameProducts(prepared).map((item) => {
+    const expiryDay = expiryDateKey(item.expiresAt)
+    const expiryStart = expiryDay ? new Date(`${expiryDay}T00:00:00.000Z`) : null
     const inc = {}
     if (item.quantity !== undefined) inc.quantity = item.quantity
     if (item.weightKg !== undefined) inc.weightKg = item.weightKg
@@ -103,6 +105,9 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
         filter: {
           user: userId, name: item.name, unit: item.unit ?? null, storage: item.storage,
           storageZone: item.storageZone,
+          expiresAt: expiryStart
+            ? { $gte: expiryStart, $lt: new Date(expiryStart.getTime() + 86400000) }
+            : null,
         },
         update,
         upsert: true,
