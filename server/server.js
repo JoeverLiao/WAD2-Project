@@ -21,17 +21,6 @@ const dnsServers = (process.env.DNS_SERVERS ?? '1.1.1.1,8.8.8.8')
     .filter(Boolean);
 if (dnsServers.length) dns.setServers(dnsServers);
 
-
-// Static imports
-// import authRoutes from './routes/authRoutes.js'
-// import dashboardRoutes from './routes/dashboardRoutes.js'
-// import scanningRoutes from './routes/scanningRoutes.js';
-// import inventoryRoutes from './routes/inventoryRoutes.js'
-// import freshnessRoutes from './routes/freshnessRoutes.js';
-// import rescueRoutes from './routes/rescueRoutes.js'
-// import analyticsRoutes from './routes/analyticsRoutes.js';
-
-
 // Dynamic imports ensure config is loaded before auth and OCR read process.env.
 const { default: authRoutes } = await import('./routes/authRoutes.js');
 const { default: dashboardRoutes } = await import('./routes/dashboardRoutes.js');
