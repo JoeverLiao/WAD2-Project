@@ -93,7 +93,7 @@ function openRequest(item) {
         </div>
       </dl>
 
-      <div class="food-footer d-flex justify-content-between flex-wrap">
+      <div class="food-footer d-flex flex-column align-items-stretch gap-3">
         <div>
           <span class="detail-label">
             Pickup · {{ item.raw.pickupLabel }}

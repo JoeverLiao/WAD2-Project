@@ -1805,3 +1805,27 @@
   border-radius: 50%;
   background-color: #0d6efd;
 }
+
+/* Keep additional results inside a scrollable list. */
+.explore-nearby .food-results {
+  min-width: 0;
+  min-height: 0;
+  max-height: 700px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+  overscroll-behavior-y: contain;
+}
+
+/* Cards must not shrink to squeeze all results into the list. */
+.explore-nearby .food-results > .food-card {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* A shorter scrolling area when the map and list are stacked. */
+@media (max-width: 1100px) {
+  .explore-nearby .food-results {
+    max-height: min(650px, 70dvh);
+  }
+}

@@ -400,7 +400,7 @@ async function save() {
     }
 
     const expiryTimestamp = new Date(
-      `${form.expiresAt}T23:59:59.999+08:00`,
+      `${form.expiresAt}T20:00:00.000+08:00`,
     ).toISOString()
 
     payload = validateForm(

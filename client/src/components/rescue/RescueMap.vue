@@ -1070,7 +1070,7 @@ function markPhotoFailed(listingId) {
       </div>
 
       <div
-        class="food-results d-grid"
+        class="food-results d-flex flex-column gap-3"
         tabindex="0"
         aria-label="Scrollable nearby food listings"
       >

@@ -40,9 +40,6 @@ pnpm test:server
 pnpm lint
 ```
 
-For browser tests, install the browser once with `pnpm exec playwright install chromium`,
-then run `pnpm test:e2e --project=chromium`.
-
 ## Feature starting points
 
 | Teammate  | Folder under `src/views/` | Routes                                          | Planned work                                                                   |
@@ -94,3 +91,44 @@ authorization, OCR, recipes, and map integrations remain teammate work.
 Production hosting must serve `index.html` for application routes because the
 router uses HTML5 history mode. Route `/api` to Express in production as well;
 the Vite development proxy is only active during development.
+
+## End-to-end tests
+
+Start the frontend and backend using the local setup instructions above.
+Run these commands from the folder containing `playwright.config.js`.
+
+Install Chromium once:
+
+```sh
+npx playwright install chromium
+```
+
+Run all tests without opening a browser window:
+
+```sh
+npx playwright test --config playwright.config.js
+```
+
+Run all tests with the browser visible:
+
+```sh
+npx playwright test --config playwright.config.js --headed
+```
+
+Run a single feature:
+
+```sh
+npx playwright test rescue.spec.js --config playwright.config.js
+```
+
+Replace `rescue.spec.js` with another test filename as needed.
+Add `--headed` to see the browser.
+
+View the test report:
+
+```sh
+npx playwright show-report playwright-report
+```
+
+Tests use the real backend and external services, so the database and required
+APIs must be configured. Use a test database because tests create and modify data.
