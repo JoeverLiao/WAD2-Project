@@ -13,7 +13,7 @@ const getDashboard = async (req, res, next) => {
 
     let items = []
     try {
-      items = await InventoryItem.find({}).lean()
+      items = await InventoryItem.find({ user: req.userId }).lean()
     } catch {
       // No MongoDB available — return empty dashboard
     }
