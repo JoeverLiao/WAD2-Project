@@ -296,7 +296,6 @@ defineExpose({ highlightFood })
           <span class="hero-doodle" aria-hidden="true"><FoodIcon kind="ice" /></span>
           <div
             class="expiry-dropdown"
-            @pointerenter="$event.pointerType === 'mouse' && (expiryPanelOpen = true)"
             @pointerleave="leaveExpiryDropdown"
             @focusout="
               !discardingExpired &&
