@@ -32,7 +32,10 @@ export const ZONES = {
 }
 export const ZONE_IDS = Object.keys(ZONES)
 
-const FRIDGE_SHELVES = ['middle-shelf', 'upper-shelf']
+// Upper/lower ids are legacy aliases of the single Shelves area.
+export const FRIDGE_SHELVES = ['middle-shelf', 'upper-shelf', 'lower-shelf']
+export const CHILLED_OR_FROZEN = [...FRIDGE_SHELVES, 'freezer-main']
+export const DOOR_SHELVES = ['door', 'door-lower']
 
 // id -> { label, icons (a few fixed choices), zone (default), allowed zones, days per storage type, reason }
 export const CATEGORIES = {
@@ -40,9 +43,9 @@ export const CATEGORIES = {
     label: 'Dairy',
     icons: ['🥛', '🧀', '🧈', '🍼', '🥣'],
     zone: 'middle-shelf',
-    allowed: FRIDGE_SHELVES,
+    allowed: CHILLED_OR_FROZEN,
     days: { fridge: 10, freezer: 90 },
-    reason: 'Dairy keeps best at a steady cold temperature. The door is the warmest, most variable spot, so use a middle or upper shelf.',
+    reason: 'Keep dairy on Shelves at a steady cold temperature, away from the door. Freeze suitable dairy products only as their label permits; freezing can change texture.',
   },
   eggs: {
     label: 'Eggs',
@@ -50,37 +53,37 @@ export const CATEGORIES = {
     zone: 'middle-shelf',
     allowed: FRIDGE_SHELVES,
     days: { fridge: 28 },
-    reason: 'Keep eggs in their carton on a shelf, not in the door, where the temperature swings every time it opens.',
+    reason: 'Keep whole eggs in their original carton on Shelves, away from the door where opening lets warm air in. Do not freeze eggs in their shells.',
   },
   meat: {
     label: 'Meat & poultry',
     icons: ['🥩', '🍗', '🥓', '🍖', '🌭'],
     zone: 'lower-shelf',
-    allowed: ['lower-shelf'],
+    allowed: CHILLED_OR_FROZEN,
     days: { fridge: 3, freezer: 120 },
-    reason: 'Raw meat and poultry go on the lowest shelf, sealed, so juices cannot drip onto ready-to-eat food (FDA Food Code storage order).',
+    reason: 'Store raw meat and poultry in sealed, leak-proof containers low in the Shelves area, below ready-to-eat foods, or freeze promptly for longer storage. Do not use the door, crisper or pantry.',
   },
   seafood: {
     label: 'Fish & seafood',
     icons: ['🐟', '🦐', '🦑', '🦀', '🦞', '🐙', '🍣', '🦪', '🐠'],
     zone: 'lower-shelf',
-    allowed: ['lower-shelf'],
+    allowed: CHILLED_OR_FROZEN,
     days: { fridge: 2, freezer: 120 },
-    reason: 'Raw fish and seafood go on the lowest shelf, sealed, so juices cannot drip onto food that is eaten uncooked.',
+    reason: 'Keep raw fish and seafood sealed low in the Shelves area, below ready-to-eat foods, or freeze while fresh. Keep raw seafood out of the door, produce drawer and pantry.',
   },
   ready_to_eat: {
     label: 'Ready-to-eat & deli',
     icons: ['🥪', '🍱', '🥗', '🍕', '🌯', '🥙', '🍔', '🍜', '🍲', '🥟', '🍛', '🍝'],
     zone: 'upper-shelf',
-    allowed: ['upper-shelf', 'middle-shelf'],
+    allowed: CHILLED_OR_FROZEN,
     days: { fridge: 4, freezer: 60 },
-    reason: 'Food that is eaten without cooking goes on upper shelves, above raw meat, so it can never be contaminated by drips.',
+    reason: 'Keep ready-to-eat and cooked foods covered on Shelves above raw meat. Freeze suitable products for longer storage; check the label because some prepared salads do not freeze well.',
   },
   plant_protein: {
     label: 'Tofu & plant protein',
     icons: ['🫘', '🌱', '🥜'],
     zone: 'middle-shelf',
-    allowed: FRIDGE_SHELVES,
+    allowed: CHILLED_OR_FROZEN,
     days: { fridge: 7, freezer: 90 },
     reason: 'Tofu and tempeh are chilled foods: keep them on a shelf where the temperature is steady.',
   },
@@ -88,7 +91,7 @@ export const CATEGORIES = {
     label: 'Vegetables',
     icons: ['🥬', '🥦', '🥕', '🥒', '🌽', '🍅', '🍆', '🫑', '🌶️', '🍄', '🥗'],
     zone: 'crisper',
-    allowed: ['crisper', 'lower-shelf'],
+    allowed: ['crisper', ...CHILLED_OR_FROZEN],
     days: { fridge: 7, freezer: 240, pantry: 4 },
     reason: 'The crisper drawer has higher humidity, which slows wilting of fresh vegetables.',
   },
@@ -104,7 +107,7 @@ export const CATEGORIES = {
     label: 'Fruit',
     icons: ['🍎', '🍏', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝'],
     zone: 'crisper',
-    allowed: ['crisper', 'middle-shelf'],
+    allowed: ['crisper', ...CHILLED_OR_FROZEN],
     days: { fridge: 7, freezer: 240, pantry: 4 },
     reason: 'Ripe or cut fruit lasts longer chilled. Keep it apart from leafy vegetables, because some fruit gives off ethylene gas that makes greens spoil sooner.',
   },
@@ -120,17 +123,17 @@ export const CATEGORIES = {
     label: 'Drinks',
     icons: ['🧃', '🥤', '🍺', '🍷', '☕', '🍵', '🧋', '💧', '🍶', '🍾', '🍹'],
     zone: 'dry-storage',
-    allowed: ['dry-storage', 'door'],
+    allowed: ['dry-storage', ...FRIDGE_SHELVES, ...DOOR_SHELVES],
     days: { pantry: 180, fridge: 7 },
-    reason: 'Unopened soft drinks, water and alcohol are shelf-stable. Chilled juice goes in the fridge door.',
+    reason: 'Unopened soft drinks, water and alcohol are shelf-stable. Follow the label for juice and chilled drinks; once opened, refrigerate promptly.',
   },
   condiments: {
     label: 'Sauces & spreads',
     icons: ['🧂', '🫙', '🍯', '🍶', '🥄'],
     zone: 'dry-storage',
-    allowed: ['dry-storage', 'door'],
+    allowed: ['dry-storage', ...FRIDGE_SHELVES, ...DOOR_SHELVES],
     days: { pantry: 180, fridge: 90 },
-    reason: 'Salty, sour or sugary sauces cope with the door\'s changing temperature. Unopened jars are shelf-stable; refrigerate after opening.',
+    reason: 'Shelf-stable unopened sauces may use the pantry. Follow the label after opening; refrigerated sauces can use either door shelf or Shelves.',
   },
   pantry_staples: {
     label: 'Dry goods',

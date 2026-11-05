@@ -4,10 +4,11 @@ import InventoryItem from '../models/inventoryItemModel.js'
 import { classifyItem } from './foodKnowledge.js'
 import { enrichWithRules } from './itemEnrichment.js'
 import { ALL_ICONS, CATEGORIES, ZONES } from './storageGuide.js'
+import { hasStorageState, storageGuidance, withStorageGuidance } from './storageGuidance.js'
 
 /** The standard name for a common food ("Full cream milk 1L" -> "Milk"); other names are kept. */
 export function standardName(name) {
-  return classifyItem(name).canonicalName ?? name
+  return hasStorageState(name) ? name : classifyItem(name).canonicalName ?? name
 }
 
 /**
@@ -49,22 +50,14 @@ export function completeItems(items) {
     const rules = fromRules[i]
     const category = item.category ?? rules.category
     const info = CATEGORIES[category]
-    // A suggested location is only kept when it is allowed for the category.
-    const suggested =
-      item.suggestedLocation && info.allowed.includes(item.suggestedLocation)
-        ? item.suggestedLocation
-        : item.category
-          ? info.zone
-          : rules.suggestedLocation
-    const zone = item.storageZone ?? suggested
+    const placement = storageGuidance({ ...item, category })
+    const zone = item.storageZone ?? placement.suggestedLocation
     return {
       ...item,
       category,
       // Any icon from the full list is allowed (the user may pick one from another category).
       icon: ALL_ICONS.includes(item.icon) ? item.icon : info.icons[0],
-      suggestedLocation: suggested,
-      allowedLocations: info.allowed.includes(suggested) ? info.allowed : [suggested, ...info.allowed],
-      locationReason: info.reason,
+      ...placement,
       storageZone: zone,
       storage: ZONES[zone].storage,
       dietType: item.dietType ?? rules.dietType ?? undefined,
@@ -123,6 +116,6 @@ export async function addItemsToInventory(userId, items, { standardiseNames = fa
   ))
   return {
     saved: operations.length, added: result.upsertedCount ?? 0, merged: result.matchedCount ?? 0,
-    items: savedItems.filter(Boolean),
+    items: savedItems.filter(Boolean).map(withStorageGuidance),
   }
 }

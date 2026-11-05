@@ -5,6 +5,7 @@ import FridgeView from '../views/fridge/FridgeView.vue'
 import FoodDragActions from '../components/fridge/FoodDragActions.vue'
 import FoodItemForm from '../components/fridge/FoodItemForm.vue'
 import { showConfirm, showPrompt } from '../utils/dialog.js'
+import { storageGuidance } from '../../../server/services/storageGuidance.js'
 
 vi.mock('../utils/dialog.js')
 vi.mock('../components/EggLoader.vue', () => ({ default: { template: '<div />' } }))
@@ -1144,5 +1145,26 @@ describe('Single Fridge and Pantry', () => {
     expect(wrapper.get('.pantry-unit').classes()).toContain('slide-active')
     expect(wrapper.get('.pantry-unit [data-food-id="old-pantry"]').exists()).toBe(true)
     expect(request.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(0)
+  })
+})
+
+
+describe('Expanded category storage guidance', () => {
+  it('warns for both egg door locations while accepting chicken on Shelves or in Freezer', async () => {
+    const egg = { ...food, name: 'Eggs', category: 'eggs', expiresAt: '2099-01-01', ...storageGuidance({ name: 'Eggs' }) }
+    const chicken = { ...food, name: 'Chicken', category: 'meat', expiresAt: '2099-01-01', ...storageGuidance({ name: 'Chicken' }) }
+    const foods = [
+      { ...egg, _id: 'eggs-upper', storageZone: 'door' },
+      { ...egg, _id: 'eggs-lower', storageZone: 'door-lower' },
+      { ...chicken, _id: 'chicken-shelves', storageZone: 'middle-shelf' },
+      { ...chicken, _id: 'chicken-freezer', storage: 'freezer', storageZone: 'freezer-main' },
+    ]
+    request.mockResolvedValueOnce({ ok: true, json: async () => foods })
+    await openFridge()
+    expect(wrapper.findAll('.recommendation-card')).toHaveLength(2)
+    for (const id of ['eggs-upper', 'eggs-lower']) expect(wrapper.get(`[data-food-id="${id}"] .food-storage-badge`).exists()).toBe(true)
+    for (const id of ['chicken-shelves', 'chicken-freezer']) expect(wrapper.get(`[data-food-id="${id}"]`).find('.food-storage-badge').exists()).toBe(false)
+    expect(wrapper.findAll('.recommendation-card').every(card => card.text().includes('Eggs'))).toBe(true)
+    expect(wrapper.get('.recommendation-card').text()).toContain('warm air')
   })
 })
